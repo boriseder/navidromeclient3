@@ -2,10 +2,8 @@
 //  SongModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Pure Data Model (Sendable, No UI)
+//  Swift 6: Full Concurrency Support
 //
-
-import Foundation
 
 struct Song: Codable, Identifiable, Sendable, Hashable {
     let id: String
@@ -25,7 +23,8 @@ struct Song: Codable, Identifiable, Sendable, Hashable {
     let path: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, title, duration, coverArt, artist, album, albumId, track, year, genre, artistId, isVideo, contentType, suffix, path
+        case id, title, duration, coverArt, artist, album, albumId, track
+        case year, genre, artistId, isVideo, contentType, suffix, path
     }
     
     // MARK: - Initializers
@@ -99,7 +98,7 @@ extension Song {
         genre: String? = nil,
         contentType: String? = nil
     ) -> Song {
-        return Song(
+        Song(
             id: id,
             title: title,
             duration: duration,

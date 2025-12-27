@@ -2,7 +2,7 @@
 //  AlbumModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Pure Data Model (Sendable, No UI)
+//  Swift 6: Full Concurrency Support
 //
 
 import Foundation

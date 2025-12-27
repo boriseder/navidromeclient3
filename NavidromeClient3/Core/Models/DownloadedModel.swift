@@ -1,12 +1,11 @@
 //
-//  DownloadedAlbum.swift
+//  DownloadedModel.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 15.09.25.
+//  Swift 6: Full Concurrency Support
 //
-import Foundation
 
-struct DownloadedAlbum: Codable, Equatable {
+struct DownloadedAlbum: Codable, Sendable, Equatable {
     let albumId: String
     let albumName: String
     let artistName: String
@@ -16,10 +15,11 @@ struct DownloadedAlbum: Codable, Equatable {
     let downloadDate: Date
         
     var songIds: [String] {
-        return songs.map { $0.id }
+        songs.map { $0.id }
     }
     
     // Computed property for current folder path
+    // Note: FileManager is Sendable as of iOS 13+
     var folderPath: String {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return documentsPath
@@ -28,7 +28,8 @@ struct DownloadedAlbum: Codable, Equatable {
             .path
     }
 }
-struct DownloadedSong: Codable, Equatable, Identifiable {
+
+struct DownloadedSong: Codable, Sendable, Equatable, Identifiable {
     let id: String
     let title: String
     let artist: String?
@@ -44,7 +45,7 @@ struct DownloadedSong: Codable, Equatable, Identifiable {
     let downloadDate: Date
     
     func toSong() -> Song {
-        return Song.createFromDownload(
+        Song.createFromDownload(
             id: id,
             title: title,
             duration: duration,

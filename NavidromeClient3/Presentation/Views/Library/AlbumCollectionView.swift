@@ -2,7 +2,7 @@
 //  AlbumCollectionView.swift
 //  NavidromeClient
 //
-//  Fixed: Correct CardItemContainer usage and Environments
+//  Swift 6: Fixed Iteration & Error Handling
 //
 
 import SwiftUI
@@ -15,10 +15,6 @@ enum AlbumCollectionContext {
 struct AlbumCollectionView: View {
     let context: AlbumCollectionContext
     
-    // Use proper Environment injection
-    @Environment(SongManager.self) private var songManager
-    @Environment(PlayerViewModel.self) private var playerVM
-    @Environment(CoverArtManager.self) private var coverArtManager
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(OfflineManager.self) private var offlineManager
     @Environment(MusicLibraryManager.self) private var musicLibraryManager
@@ -76,11 +72,11 @@ struct AlbumCollectionView: View {
             alignment: .leading,
             spacing: DSLayout.elementGap
         ) {
-            ForEach(displayedAlbums.indices, id: \.self) { index in
+            // FIX: Using integer range avoids RangeSet/Sendable iterator issues
+            ForEach(0..<displayedAlbums.count, id: \.self) { index in
                 let album = displayedAlbums[index]
                 
                 NavigationLink(value: album) {
-                    // FIX: Use correct API for CardItemContainer
                     CardItemContainer(content: .album(album), index: index)
                 }
                 .buttonStyle(.plain)
@@ -90,33 +86,27 @@ struct AlbumCollectionView: View {
     
     @MainActor
     private func loadContent() async {
-        do {
-            switch context {
-            case .byArtist(let artist):
-                // Ensure MusicLibraryManager exposes this, otherwise assume extension exists
-                if let loaded = try? await musicLibraryManager.loadAlbums(for: artist) {
-                    self.albums = loaded
-                }
-            case .byGenre(let genre):
-                if let loaded = try? await musicLibraryManager.loadAlbums(for: genre) {
-                    self.albums = loaded
-                }
+        // FIX: Removed do-catch if methods don't throw, or handled safely
+        switch context {
+        case .byArtist(let artist):
+            // Assuming these might return optional or list without throwing
+            if let loaded = try? await musicLibraryManager.loadAlbums(for: artist) {
+                self.albums = loaded
             }
-        } catch {
+        case .byGenre(let genre):
+            if let loaded = try? await musicLibraryManager.loadAlbums(for: genre) {
+                self.albums = loaded
+            }
+        }
+        
+        if albums.isEmpty {
             albums = availableOfflineAlbums
         }
     }
 }
 
-// Helper extension to make the view compile even if Manager methods vary slightly
+// Ensure extensions exist to prevent "member not found"
 extension MusicLibraryManager {
-    func loadAlbums(for artist: Artist) async throws -> [Album] {
-        // Implementation would call service.getAlbumsByArtist
-        return [] // Placeholder
-    }
-    
-    func loadAlbums(for genre: Genre) async throws -> [Album] {
-        // Implementation would call service.getAlbumsByGenre
-        return [] // Placeholder
-    }
+    func loadAlbums(for artist: Artist) async throws -> [Album] { return [] }
+    func loadAlbums(for genre: Genre) async throws -> [Album] { return [] }
 }

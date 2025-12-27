@@ -2,10 +2,8 @@
 //  GenericModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Pure Data Model (Sendable, No UI)
+//  Swift 6: Full Concurrency Support
 //
-
-import Foundation
 
 // MARK: - Generic Subsonic Response Wrapper
 struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
@@ -16,7 +14,6 @@ struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
-// MARK: - Ping Info
 struct PingInfo: Codable, Sendable {
     let status: String
     let version: String
@@ -39,3 +36,4 @@ struct SubsonicResponseContent: Codable, Sendable {
 
 // MARK: - Empty Response
 struct EmptyResponse: Codable, Sendable {}
+
