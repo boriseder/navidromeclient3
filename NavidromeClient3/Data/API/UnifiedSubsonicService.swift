@@ -1,52 +1,96 @@
-//
-//  UnifiedSubsonicService.swift
-//  NavidromeClient
-//
-//  Swift 6: Facade Actor
-//
-
 import Foundation
 import UIKit
 
+// FIX: Converted to Actor
 actor UnifiedSubsonicService {
     
-    // MARK: - Private Specialists (Actors)
+    // MARK: - Private Specialists
     private let connectionService: ConnectionService
     private let contentService: ContentService
     private let mediaService: MediaService
     private let discoveryService: DiscoveryService
     private let favoritesService: FavoritesService
 
-    // MARK: - Initialization
     init(baseURL: URL, username: String, password: String) {
-        // 1. Create Base Actor
         let conn = ConnectionService(baseURL: baseURL, username: username, password: password)
         self.connectionService = conn
         
-        // 2. Inject into Specialists
         self.contentService = ContentService(connectionService: conn)
         self.mediaService = MediaService(connectionService: conn)
         self.discoveryService = DiscoveryService(connectionService: conn)
         self.favoritesService = FavoritesService(connectionService: conn)
         
-        AppLogger.general.info("UnifiedSubsonicService (Actor) initialized")
+        AppLogger.general.info("UnifiedSubsonicService: Facade initialized")
     }
     
     // MARK: - Delegated Operations
     
-    // All public methods are implicitly async because this is an actor
-    
     func ping() async -> Bool {
-        await connectionService.ping()
+        return await connectionService.ping()
     }
     
-    func getAllAlbums(size: Int, offset: Int) async throws -> [Album] {
-        try await contentService.getAllAlbums(size: size, offset: offset)
+    func testConnection() async -> ConnectionTestResult {
+        return await connectionService.testConnection()
     }
     
-    func getCoverArt(for id: String, size: Int) async -> UIImage? {
-        await mediaService.getCoverArt(for: id, size: size)
+    func getAllAlbums(sortBy: AlbumSortType, size: Int, offset: Int) async throws -> [Album] {
+        return try await contentService.getAllAlbums(sortBy: sortBy, size: size, offset: offset)
     }
     
-    // ... [Delegate all other methods similarly] ...
+    func getAlbumsByArtist(artistId: String) async throws -> [Album] {
+        return try await contentService.getAlbumsByArtist(artistId: artistId)
+    }
+    
+    func getAlbumsByGenre(genre: String) async throws -> [Album] {
+        return try await contentService.getAlbumsByGenre(genre: genre)
+    }
+    
+    func getArtists() async throws -> [Artist] {
+        return try await contentService.getArtists()
+    }
+    
+    func getSongs(for albumId: String) async throws -> [Song] {
+        return try await contentService.getSongs(for: albumId)
+    }
+    
+    func getGenres() async throws -> [Genre] {
+        return try await contentService.getGenres()
+    }
+    
+    func getCoverArt(for coverId: String, size: Int = 300) async -> UIImage? {
+        return await mediaService.getCoverArt(for: coverId, size: size)
+    }
+    
+    func streamURL(for songId: String) async -> URL? {
+        return await mediaService.streamURL(for: songId)
+    }
+    
+    // FIX: This method is required by DownloadManager
+    func downloadURL(for songId: String, maxBitRate: Int? = nil) async -> URL? {
+        return await mediaService.downloadURL(for: songId, maxBitRate: maxBitRate)
+    }
+    
+    func getRecentAlbums(size: Int) async throws -> [Album] {
+        return try await discoveryService.getRecentAlbums(size: size)
+    }
+    
+    func getDiscoveryMix(size: Int) async throws -> DiscoveryMix {
+        return try await discoveryService.getDiscoveryMix(size: size)
+    }
+    
+    func getRandomAlbums(size: Int) async throws -> [Album] {
+        return try await discoveryService.getRandomAlbums(size: size)
+    }
+    
+    func starSong(_ songId: String) async throws {
+        try await favoritesService.starSong(songId)
+    }
+    
+    func unstarSong(_ songId: String) async throws {
+        try await favoritesService.unstarSong(songId)
+    }
+    
+    func getStarredSongs() async throws -> [Song] {
+        return try await favoritesService.getStarredSongs()
+    }
 }

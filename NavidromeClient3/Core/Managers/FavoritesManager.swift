@@ -1,236 +1,95 @@
 //
-//  FavoritesManager.swift - FIXED: Pure Facade Pattern
+//  FavoritesManager.swift
 //  NavidromeClient
 //
+//  Swift 6: @Observable & Optimistic UI
 //
-//  FavoritesManager.swift
-//  Manages user's favorite songs with optimistic updates
-//  Responsibilities: Star/unstar songs, maintain favorites list, sync with server
-
 
 import Foundation
-import SwiftUI
+import Observation
 
 @MainActor
-class FavoritesManager: ObservableObject {
-    // REMOVED: static let shared = FavoritesManager()
+@Observable
+final class FavoritesManager {
     
-    // MARK: - Published State
-    @Published private(set) var favoriteSongs: [Song] = []
-    @Published private(set) var favoriteSongIds: Set<String> = []
-    @Published private(set) var isLoading = false
-    @Published private(set) var lastRefresh: Date?
-    @Published private(set) var errorMessage: String?
+    // MARK: - State
+    var favoriteSongs: Set<String> = [] // IDs of starred songs
+    var favoriteAlbums: Set<String> = [] // IDs of starred albums
     
-    // MARK: - Service Dependency
+    // Derived for UI
+    var starredSongsList: [Song] = []
+    
+    var isLoading = false
+    
+    // MARK: - Dependencies
     private weak var service: UnifiedSubsonicService?
     
     // MARK: - Configuration
-    private let refreshInterval: TimeInterval = 5 * 60
-    
-    init() {
-        setupFactoryResetObserver()
-    }
-    
-    // MARK: - Setup
-    
-    private func setupFactoryResetObserver() {
-        NotificationCenter.default.addObserver(
-            forName: .factoryResetRequested,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.reset()
-            }
-        }
-    }
-    
-    // MARK: - Service Configuration
-    
     func configure(service: UnifiedSubsonicService) {
         self.service = service
-        AppLogger.general.info("FavoritesManager configured with UnifiedSubsonicService facade")
     }
     
-    // MARK: - Public API
+    // MARK: - Loading
     
-    func isFavorite(_ songId: String) -> Bool {
-        return favoriteSongIds.contains(songId)
-    }
-    
-    func toggleFavorite(_ song: Song) async {
-        guard let service = service else {
-            errorMessage = "Service not available"
-            AppLogger.general.info("[FavoritesManager] UnifiedSubsonicService not configured")
-            return
-        }
-        
-        let songId = song.id
-        let wasFavorite = isFavorite(songId)
-        
-        updateUIOptimistically(song: song, isFavorite: !wasFavorite)
-        
-        do {
-            if wasFavorite {
-                try await service.unstarSong(songId)
-            } else {
-                try await service.starSong(songId)
-            }
-            
-            errorMessage = nil
-            
-        } catch {
-            AppLogger.general.info("Failed to \(wasFavorite ? "unstar" : "star") song: \(error)")
-            updateUIOptimistically(song: song, isFavorite: wasFavorite)
-            errorMessage = error.localizedDescription
-        }
-    }
-    
-    func loadFavoriteSongs(forceRefresh: Bool = false) async {
-        guard let service = service else {
-            errorMessage = "Service not available"
-            return
-        }
-        
-        guard shouldRefresh || forceRefresh else {
-            AppLogger.general.info("Favorites are fresh, skipping refresh")
-            return
-        }
-        
+    func loadFavoriteSongs() async {
+        guard let service = service else { return }
         isLoading = true
-        errorMessage = nil
         
         do {
             let songs = try await service.getStarredSongs()
+            self.starredSongsList = songs
+            self.favoriteSongs = Set(songs.map { $0.id })
             
-            favoriteSongs = songs
-            favoriteSongIds = Set(songs.map { $0.id })
-            lastRefresh = Date()
+            // If you had albums:
+            // self.favoriteAlbums = ...
             
         } catch {
-            AppLogger.general.info("Failed to load favorite songs: \(error)")
-            errorMessage = error.localizedDescription
+            AppLogger.general.error("Failed to load favorites: \(error)")
         }
         
         isLoading = false
     }
     
-    func clearAllFavorites() async {
-        guard let service = service else {
-            errorMessage = "Service not available"
-            return
-        }
-        
-        let songIds = Array(favoriteSongIds)
-        guard !songIds.isEmpty else { return }
-        
-        isLoading = true
-        errorMessage = nil
-        
-        do {
-            try await service.unstarSongs(songIds)
-            
-            favoriteSongs.removeAll()
-            favoriteSongIds.removeAll()
-            
-        } catch {
-            AppLogger.general.info("Failed to clear favorites: \(error)")
-            errorMessage = error.localizedDescription
-        }
-        
-        isLoading = false
+    // MARK: - Actions
+    
+    func isFavorite(songId: String) -> Bool {
+        favoriteSongs.contains(songId)
     }
     
-    // MARK: - Network State Handling
-    
-    func handleNetworkChange(isOnline: Bool) async {
-        guard isOnline, !isDataFresh else { return }
+    func toggleFavorite(song: Song) async {
+        guard let service = service else { return }
         
-        AppLogger.general.info("Network restored - refreshing favorites")
-        await loadFavoriteSongs(forceRefresh: true)
-    }
-    
-    // MARK: - Stats & Info
-    
-    var favoriteCount: Int {
-        return favoriteSongs.count
-    }
-    
-    var isDataFresh: Bool {
-        guard let lastRefresh = lastRefresh else { return false }
-        return Date().timeIntervalSince(lastRefresh) < refreshInterval
-    }
-    
-    private var shouldRefresh: Bool {
-        return !isDataFresh
-    }
-    
-    func getFavoriteStats() -> FavoriteStats {
-        let totalDuration = favoriteSongs.reduce(0) { $0 + ($1.duration ?? 0) }
-        let uniqueArtists = Set(favoriteSongs.compactMap { $0.artist }).count
-        let uniqueAlbums = Set(favoriteSongs.compactMap { $0.album }).count
+        let isCurrentlyFavorite = favoriteSongs.contains(song.id)
         
-        return FavoriteStats(
-            songCount: favoriteSongs.count,
-            totalDuration: totalDuration,
-            uniqueArtists: uniqueArtists,
-            uniqueAlbums: uniqueAlbums,
-            lastRefresh: lastRefresh
-        )
-    }
-    
-    // MARK: - Private Methods
-    
-    private func updateUIOptimistically(song: Song, isFavorite: Bool) {
-        if isFavorite {
-            if !favoriteSongIds.contains(song.id) {
-                favoriteSongs.append(song)
-                favoriteSongIds.insert(song.id)
+        // 1. Optimistic Update (Instant UI feedback)
+        if isCurrentlyFavorite {
+            favoriteSongs.remove(song.id)
+            if let index = starredSongsList.firstIndex(where: { $0.id == song.id }) {
+                starredSongsList.remove(at: index)
             }
         } else {
-            favoriteSongs.removeAll { $0.id == song.id }
-            favoriteSongIds.remove(song.id)
+            favoriteSongs.insert(song.id)
+            starredSongsList.append(song)
         }
         
-        objectWillChange.send()
-    }
-    
-    // MARK: - Reset
-    
-    func reset() {
-        favoriteSongs.removeAll()
-        favoriteSongIds.removeAll()
-        isLoading = false
-        lastRefresh = nil
-        errorMessage = nil
-        service = nil
-        
-        AppLogger.general.info("FavoritesManager reset completed")
-    }
-}
-
-// MARK: - Supporting Types
-
-struct FavoriteStats {
-    let songCount: Int
-    let totalDuration: Int
-    let uniqueArtists: Int
-    let uniqueAlbums: Int
-    let lastRefresh: Date?
-    
-    var formattedDuration: String {
-        let hours = totalDuration / 3600
-        let minutes = (totalDuration % 3600) / 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes) minutes"
+        // 2. Server Sync
+        do {
+            if isCurrentlyFavorite {
+                try await service.unstarSong(song.id)
+            } else {
+                try await service.starSong(song.id)
+            }
+        } catch {
+            // Revert on failure
+            AppLogger.general.error("Failed to toggle favorite: \(error)")
+            
+            if isCurrentlyFavorite {
+                favoriteSongs.insert(song.id)
+                starredSongsList.append(song) // Add back
+            } else {
+                favoriteSongs.remove(song.id)
+                starredSongsList.removeAll(where: { $0.id == song.id })
+            }
         }
-    }
-    
-    var summary: String {
-        return "\(songCount) songs, \(uniqueArtists) artists, \(uniqueAlbums) albums"
     }
 }

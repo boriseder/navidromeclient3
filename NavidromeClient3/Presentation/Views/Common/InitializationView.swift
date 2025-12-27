@@ -2,13 +2,14 @@
 //  InitializationView.swift
 //  NavidromeClient
 //
-//  UI for displaying app initialization state and errors.
+//  Swift 6: Updated for @Observable
 //
 
 import SwiftUI
 
 struct InitializationView: View {
-    @ObservedObject var initializer: AppInitializer
+    // FIX: Just use 'let'. The view will update automatically when 'initializer' properties change.
+    let initializer: AppInitializer
     
     var body: some View {
         ZStack {
@@ -20,13 +21,13 @@ struct InitializationView: View {
                     .scaleEffect(1.5)
                 
                 Text("Initializing...")
-                    .font(.headline)
-                    .foregroundColor(.white)
+                    .font(DSText.headline) // Use DesignSystem
+                    .foregroundColor(DSColor.onDark)
                 
                 if case .inProgress = initializer.state {
                     Text("Loading your music library")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .font(DSText.body)
+                        .foregroundColor(DSColor.onDarkSecondary)
                 }
             }
         }
@@ -41,23 +42,22 @@ struct InitializationErrorView: View {
         VStack(spacing: DSLayout.elementGap) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 60))
-                .foregroundColor(.red)
+                .foregroundColor(DSColor.error)
             
             Text("Initialization Failed")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(DSText.title2)
             
             Text(error)
-                .font(.body)
-                .foregroundColor(.secondary)
+                .font(DSText.body)
+                .foregroundColor(DSColor.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal)
+                .padding(.horizontal, DSLayout.contentPadding)
             
             Button("Retry") {
                 retry()
             }
             .buttonStyle(.borderedProminent)
         }
-        .padding()
+        .padding(DSLayout.screenPadding)
     }
 }

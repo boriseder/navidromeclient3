@@ -2,8 +2,8 @@ import Foundation
 import SwiftUI
 
 // MARK: - Album Metadata Cache
-@MainActor
-class AlbumMetadataCache: ObservableObject {
+// FIX: Converted to Actor to move File I/O off the Main Thread
+actor AlbumMetadataCache {
     static let shared = AlbumMetadataCache()
     
     private let cacheFile: URL
@@ -12,7 +12,11 @@ class AlbumMetadataCache: ObservableObject {
     private init() {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         cacheFile = documentsPath.appendingPathComponent("album_metadata_cache.json")
-        loadCache()
+        
+        // We cannot await in init, so we start a detached task to load
+        Task {
+            await loadCache()
+        }
     }
     
     func cacheAlbum(_ album: Album) {
@@ -44,6 +48,8 @@ class AlbumMetadataCache: ObservableObject {
         try? FileManager.default.removeItem(at: cacheFile)
         AppLogger.general.info("📦 AlbumMetadataCache: Cache cleared")
     }
+    
+    // MARK: - Private I/O (Async internal handling)
     
     private func loadCache() {
         guard FileManager.default.fileExists(atPath: cacheFile.path),

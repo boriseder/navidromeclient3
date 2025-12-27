@@ -1,46 +1,25 @@
-//
-//  MediaService.swift
-//  NavidromeClient
-//
-//  Created by Boris Eder on 16.09.25.
-//
-
-
-//
-//  MediaService.swift - Media URLs & Cover Art
-//  NavidromeClient
-//
-//   FOCUSED: Cover art, streaming URLs, downloads
-//
-
 import Foundation
 import UIKit
 
-@MainActor
-class MediaService {
+// FIX: Converted to Actor
+actor MediaService {
     private let connectionService: ConnectionService
     private let session: URLSession
-    
-    // Request deduplication for cover art
-    // The property 'activeRequests' was removed as deduplication logic is centralized in CoverArtManager.
     
     init(connectionService: ConnectionService) {
         self.connectionService = connectionService
         
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
-        config.timeoutIntervalForResource = 120 // Longer for media downloads
+        config.timeoutIntervalForResource = 120
         self.session = URLSession(configuration: config)
     }
     
     // MARK: -  COVER ART API
     
     func getCoverArt(for coverId: String, size: Int = 300) async -> UIImage? {
-        // All request deduplication and concurrency management is now handled exclusively
-        // by the calling layer (CoverArtManager). This function is now a simple, non-blocking fetcher.
-        
-        // Load from server
-        guard let url = connectionService.buildURL(
+        // FIX: await connectionService
+        guard let url = await connectionService.buildURL(
             endpoint: "getCoverArt",
             params: ["id": coverId, "size": "\(size)"]
         ) else {
@@ -56,8 +35,8 @@ class MediaService {
                 return nil
             }
             
-            // Cache the image
-            PersistentImageCache.shared.store(image, for: coverId, size: size)
+            // FIX: await PersistentImageCache (it is an actor)
+            await PersistentImageCache.shared.store(image, for: coverId, size: size)
             return image
             
         } catch {
@@ -67,7 +46,7 @@ class MediaService {
     }
     
     func preloadCoverArt(for albums: [Album], size: Int = 200) async {
-        let albumsToPreload = albums.prefix(5) // Limit concurrent requests
+        let albumsToPreload = albums.prefix(5)
         
         await withTaskGroup(of: Void.self) { group in
             for album in albumsToPreload {
@@ -82,12 +61,14 @@ class MediaService {
     
     // MARK: -  STREAMING URLS
     
-    func streamURL(for songId: String) -> URL? {
+    // FIX: Must be async because buildURL is async
+    func streamURL(for songId: String) async -> URL? {
         guard !songId.isEmpty else { return nil }
-        return connectionService.buildURL(endpoint: "stream", params: ["id": songId])
+        return await connectionService.buildURL(endpoint: "stream", params: ["id": songId])
     }
     
-    func downloadURL(for songId: String, maxBitRate: Int? = nil) -> URL? {
+    // FIX: Must be async
+    func downloadURL(for songId: String, maxBitRate: Int? = nil) async -> URL? {
         guard !songId.isEmpty else { return nil }
         
         var params = ["id": songId]
@@ -95,16 +76,13 @@ class MediaService {
             params["maxBitRate"] = "\(bitRate)"
         }
         
-        return connectionService.buildURL(endpoint: "download", params: params)
+        return await connectionService.buildURL(endpoint: "download", params: params)
     }
     
     // MARK: -  MEDIA METADATA
     
     func getMediaInfo(for songId: String) async throws -> MediaInfo? {
         guard !songId.isEmpty else { return nil }
-        
-        // This would call a hypothetical getMediaInfo endpoint
-        // For now, we'll extract from song data
         return nil
     }
     
@@ -121,7 +99,6 @@ class MediaService {
             var pendingItems = items
             
             while !pendingItems.isEmpty || activeCount > 0 {
-                // Start new tasks up to limit
                 while activeCount < maxConcurrent && !pendingItems.isEmpty {
                     let item = pendingItems.removeFirst()
                     activeCount += 1
@@ -132,7 +109,6 @@ class MediaService {
                     }
                 }
                 
-                // Wait for at least one task to complete
                 if let (id, image) = await group.next() {
                     activeCount -= 1
                     if let image = image {
@@ -147,33 +123,32 @@ class MediaService {
     
     // MARK: -  CACHE MANAGEMENT
     
-    func clearCoverArtCache() {
-        PersistentImageCache.shared.clearCache()
-        // activeRequests.removeAll() was removed with deduplication logic
+    func clearCoverArtCache() async {
+        // FIX: await PersistentImageCache
+        await PersistentImageCache.shared.clearCache()
         AppLogger.general.info("🧹 Cleared media cache")
     }
     
-    func getCacheStats() -> MediaCacheStats {
-        let cacheStats = PersistentImageCache.shared.getCacheStats()
+    func getCacheStats() async -> MediaCacheStats {
+        // FIX: await PersistentImageCache
+        let cacheStats = await PersistentImageCache.shared.getCacheStats()
         
         return MediaCacheStats(
             imageCount: cacheStats.diskCount,
             cacheSize: cacheStats.diskSize,
-            activeRequests: 0 // activeRequests removed from MediaService
+            activeRequests: 0
         )
     }
 }
 
-// MARK: -  SUPPORTING TYPES
-
-struct MediaInfo {
+struct MediaInfo: Sendable {
     let bitRate: Int?
     let format: String?
     let duration: TimeInterval?
     let fileSize: Int64?
 }
 
-struct MediaCacheStats {
+struct MediaCacheStats: Sendable {
     let imageCount: Int
     let cacheSize: Int64
     let activeRequests: Int

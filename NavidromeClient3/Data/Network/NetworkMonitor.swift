@@ -1,3 +1,11 @@
+//
+//  NetworkMonitor.swift
+//  NavidromeClient
+//
+//  Swift 6: @Observable & Actor Integration
+//  State of the Art Concurrency
+//
+
 import Foundation
 import Network
 import SwiftUI
@@ -24,11 +32,13 @@ final class NetworkMonitor {
     static let shared = NetworkMonitor()
     
     // MARK: - State
+    // @Observable automatically tracks changes to these properties
     var state: NetworkState
     var connectionType: NetworkConnectionType = .unknown
     
     // Internal Infrastructure
     private let monitor = NWPathMonitor()
+    // NWPathMonitor requires a specific queue, we create one.
     private let queue = DispatchQueue(label: "NetworkMonitor")
     
     // Reference to the service actor
@@ -39,6 +49,10 @@ final class NetworkMonitor {
     private var isServerReachable = true
     private var manualOfflineMode = false
     
+    // Rate limiting
+    private var lastInternetCheck: Date?
+    private let minimumCheckInterval: TimeInterval = 3.0
+    
     // MARK: - Initialization
     private init() {
         self.state = NetworkState(
@@ -47,12 +61,15 @@ final class NetworkMonitor {
             isConfigured: false,
             manualOfflineMode: false
         )
+        
+        AppLogger.network.info("[NetworkMonitor] Initializing (Swift 6)...")
         startNetworkMonitoring()
     }
     
     // MARK: - Configuration
     func configureService(_ service: UnifiedSubsonicService?) {
         self.subsonicService = service
+        // Trigger recheck when service changes
         Task { await recheckConnection() }
     }
     
@@ -61,8 +78,19 @@ final class NetworkMonitor {
     }
     
     func setManualOfflineMode(_ enabled: Bool) {
-        self.manualOfflineMode = enabled
-        updateState()
+        if !enabled {
+            // User wants to go online: Verify connectivity first
+             Task {
+                 await recheckConnection()
+                 if state.hasInternet && isServerReachable {
+                     self.manualOfflineMode = false
+                     self.updateState()
+                 }
+             }
+        } else {
+            self.manualOfflineMode = enabled
+            updateState()
+        }
     }
     
     // MARK: - Observation Helpers
@@ -72,6 +100,7 @@ final class NetworkMonitor {
     // MARK: - Monitoring
     func startNetworkMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
+            // Dispatch to MainActor to update our @Observable state
             Task { @MainActor in
                 self?.handlePathUpdate(path)
             }
@@ -85,6 +114,7 @@ final class NetworkMonitor {
         else if path.usesInterfaceType(.wiredEthernet) { connectionType = .ethernet }
         else { connectionType = .unknown }
         
+        // When physical path changes, recheck logical connectivity
         Task { await recheckConnection() }
     }
     
@@ -94,27 +124,40 @@ final class NetworkMonitor {
         
         // 2. Check Server (Actor Call)
         var serverAvailable = false
-        if internetAvailable, let service = subsonicService {
-            serverAvailable = await service.ping()
-        } else if internetAvailable && subsonicService == nil {
-            // If we have internet but no service configured, we assume the "server" (auth) is reachable conceptually
+        
+        // We capture the optional service reference safely on MainActor
+        if let service = subsonicService {
+            if internetAvailable {
+                // AWAIT the actor.
+                // Since UnifiedSubsonicService is now an Actor, this must be awaited.
+                serverAvailable = await service.ping()
+            }
+        } else {
+            // No service configured (setup mode) - assume server "logic" is available locally
             serverAvailable = true
         }
         
-        // 3. Update State
+        // 3. Update State (we are on MainActor)
         self.hasInternet = internetAvailable
         self.isServerReachable = serverAvailable
         updateState()
     }
     
-    private func checkInternetReachable() async -> Bool {
-        guard let url = URL(string: "https://www.google.com") else { return false }
+    private func checkInternetReachable(force: Bool = false) async -> Bool {
+        if !force, let lastCheck = lastInternetCheck, Date().timeIntervalSince(lastCheck) < minimumCheckInterval {
+            return hasInternet
+        }
+        lastInternetCheck = Date()
+        
+        guard let url = URL(string: "https://www.google.com/generate_204") else { return false }
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         
         do {
+            // Use shared session (non-actor) for simple connectivity check
             let (_, response) = try await URLSession.shared.data(for: request)
-            return (response as? HTTPURLResponse)?.statusCode == 200
+            return (response as? HTTPURLResponse)?.statusCode == 204
         } catch {
             return false
         }
@@ -130,8 +173,11 @@ final class NetworkMonitor {
         
         if newState != state {
             let oldStrategy = state.contentLoadingStrategy
+            
+            // @Observable triggers UI updates here
             state = newState
             
+            // Legacy support: Post notification for managers not yet fully migrated
             if oldStrategy != state.contentLoadingStrategy {
                  NotificationCenter.default.post(
                     name: .contentLoadingStrategyChanged,
@@ -140,4 +186,16 @@ final class NetworkMonitor {
             }
         }
     }
+    
+    // MARK: - Reset
+    func reset() {
+        isServerReachable = true
+        manualOfflineMode = false
+        updateState()
+    }
+}
+
+// MARK: - Notification Names
+extension Notification.Name {
+    static let contentLoadingStrategyChanged = Notification.Name("contentLoadingStrategyChanged")
 }

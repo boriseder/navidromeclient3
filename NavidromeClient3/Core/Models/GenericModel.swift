@@ -1,7 +1,6 @@
 import Foundation
 
 // MARK: - Generic Subsonic Response Wrapper
-// Fix: Added Sendable requirement to T
 struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     let subsonicResponse: T
     
@@ -10,7 +9,7 @@ struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
-// FIX: Added 'Sendable' conformance here
+// FIX: Added Sendable conformance
 struct PingInfo: Codable, Sendable {
     let status: String
     let version: String
