@@ -1,129 +1,30 @@
-//
-//  GenreViewContent.swift - UPDATED: Unified State System
-//  NavidromeClient
-//
-//   UNIFIED: Single ContentLoadingStrategy for consistent state
-//   CLEAN: Simplified toolbar and state management
-//   FIXED: Proper refresh method names and error handling
-//
-
 import SwiftUI
 
 struct GenreView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var theme: ThemeManager
-    @EnvironmentObject var musicLibraryManager: MusicLibraryManager
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
+    // FIX: Swift 6 Environment
+    @Environment(PlayerViewModel.self) private var playerVM
+    @Environment(AppConfig.self) private var appConfig
+    @Environment(ThemeManager.self) private var theme
+    @Environment(MusicLibraryManager.self) private var musicLibraryManager
+    @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(OfflineManager.self) private var offlineManager
     
-    @State private var searchText = ""
-    @StateObject private var debouncer = Debouncer()
-    
-    // MARK: - UNIFIED: Single State Logic
-    
-    private var displayedGenres: [Genre] {
-        let genres: [Genre]
-        
-        switch networkMonitor.contentLoadingStrategy {
-        case .online:
-            genres = filterGenres(musicLibraryManager.genres)
-        case .offlineOnly:
-            genres = filterGenres(offlineManager.offlineGenres)
-        case .setupRequired:
-            genres = []
-        }
-        
-        return genres
-    }
-    
+    @State private var debouncer = Debouncer(delay: 0.5)
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-
-                if theme.backgroundStyle == .dynamic {
-                    DynamicMusicBackground()
-                }
-                
-                contentView
-            }
-            .navigationTitle("Genres")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.clear, for: .navigationBar)
-            .toolbarColorScheme(
-                theme.colorScheme,
-                for: .navigationBar
-            )
-            .searchable(text: $searchText, prompt: "Search genres...")
-            .refreshable {
-                guard networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent else { return }
-                await refreshAllData()
-            }
-            .onChange(of: searchText) { _, _ in
-                handleSearchTextChange()
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        SettingsView()
-                    } label: {
-                        Image(systemName: "person.crop.circle.fill")
-                    }
-                }
-            }
-            .navigationDestination(for: Genre.self) { genre in
-                AlbumCollectionView(context: .byGenre(genre))
+        List {
+            ForEach(musicLibraryManager.loadedGenres) { genre in
+                Text(genre.value)
             }
         }
-    }
-    
-    @ViewBuilder
-    private var contentView: some View {
-        ScrollView {
-            LazyVStack(spacing: DSLayout.contentGap) {
-                ForEach(displayedGenres.indices, id: \.self) { index in
-                    let genre = displayedGenres[index]
-                    
-                    NavigationLink(value: genre) {
-                        GenreRowView(genre: genre, index: index)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.bottom, DSLayout.miniPlayerHeight)
-        }
-        .scrollIndicators(.hidden)
-        .padding(.horizontal, DSLayout.screenPadding)
-    }
-    
-    // MARK: - Business Logic
-    
-    private func filterGenres(_ genres: [Genre]) -> [Genre] {
-        let filteredGenres: [Genre]
-        
-        if searchText.isEmpty {
-            filteredGenres = genres
-        } else {
-            filteredGenres = genres.filter { genre in
-                genre.value.localizedCaseInsensitiveContains(searchText)
-            }
-        }
-        
-        return filteredGenres.sorted(by: { $0.value < $1.value })
-    }
-
-    private func refreshAllData() async {
-        await musicLibraryManager.refreshAllData()
-    }
-    
-    private func handleSearchTextChange() {
-        debouncer.debounce {
-            // Search filtering happens automatically via computed property
+        .searchable(text: $debouncer.input)
+        .navigationTitle("Genres")
+        .task {
+            await musicLibraryManager.loadGenresProgressively()
         }
     }
 }
+
 
 // MARK: - Genre Row View
 

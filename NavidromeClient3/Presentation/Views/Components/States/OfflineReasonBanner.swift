@@ -1,70 +1,23 @@
-//
-//  OfflineReasonBanner.swift
-//  NavidromeClient
-//
-//  Created by Boris Eder on 26.09.25.
-//
 import SwiftUI
 
-// New component for consistent offline messaging
 struct OfflineReasonBanner: View {
-    let reason: ContentLoadingStrategy.OfflineReason
-    @EnvironmentObject private var offlineManager: OfflineManager
-    @EnvironmentObject private var networkMonitor: NetworkMonitor
+    // FIX: Swift 6 Environment
+    @Environment(OfflineManager.self) private var offlineManager
+    @Environment(NetworkMonitor.self) private var networkMonitor
     
-    var body: some View{
-        Button {
-            reason.performAction()
-        } label: {
-            HStack(spacing: DSLayout.elementGap) {
-                Image(systemName: reason.icon)
-                Text("Offline")
-            }
-            .foregroundColor(.white)
-            .padding(DSLayout.elementPadding)
-        }
-        .background(Color.red.opacity(0.7))
-        .clipShape(Capsule())
-        .shadow(radius: 4)
-        }
-    
-    /*
     var body: some View {
-        HStack(spacing: DSLayout.elementGap) {
-
-     Image(systemName: reason.icon)
-                .foregroundStyle(reason.color)
-                .padding(.leading, DSLayout.elementPadding)
-            
-            Text(reason.message)
-                .font(DSText.metadata)
-                .foregroundStyle(reason.color)
-                .multilineTextAlignment(.leading)
-                .padding(.vertical, DSLayout.elementPadding)
-
-
-            Spacer()
-            
-            if reason.canGoOnline {
-                Button("reason.actionTitle") {
-                    reason.performAction()
+        if offlineManager.isOfflineMode {
+            HStack {
+                Image(systemName: "wifi.slash")
+                Text("Offline Mode")
+                Spacer()
+                Button("Go Online") {
+                    offlineManager.switchToOnlineMode()
                 }
-                .font(DSText.metadata)
-                .foregroundStyle(DSColor.accent)
-                .padding(.trailing, DSLayout.contentPadding)
+                .buttonStyle(.bordered)
             }
+            .padding()
+            .background(Color.orange.opacity(0.2))
         }
-        .background(
-            reason.color.opacity(0.2),
-            in: RoundedRectangle(cornerRadius: DSCorners.element)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DSCorners.element)
-                .stroke(reason.color.opacity(0.3), lineWidth: 1)
-        )
-        .padding(.trailing, 45)
-
     }
-     */
 }
-

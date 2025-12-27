@@ -1,122 +1,36 @@
-//
-//  MiniPlayerView.swift - FIXED: Use CoverArtManager Directly
-//  NavidromeClient
-//
-//   FIXED: Removed dependency on playerVM.coverArt
-//   CLEAN: Direct CoverArtManager integration
-//   CONSISTENT: Single source of truth for cover art
-//
-
 import SwiftUI
 
 struct MiniPlayerView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var audioSessionManager: AudioSessionManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    // FIX: Swift 6 Environment
+    @Environment(PlayerViewModel.self) private var playerVM
+    @Environment(AudioSessionManager.self) private var audioSessionManager
+    @Environment(CoverArtManager.self) private var coverArtManager
     
     @State private var showFullScreen = false
-    @State private var isDragging = false
     
     var body: some View {
         if let song = playerVM.currentSong {
-            VStack(spacing: 0) {
-                ProgressBarView(playerVM: playerVM, isDragging: $isDragging)
-                
-                HStack(spacing: 12) {
-                    HStack(spacing: 12) {
-                        AlbumArtView(
-                            cover: song.albumId.flatMap { albumId in
-                                coverArtManager.getAlbumImage(for: albumId, context: .miniPlayer)
-                            }
-                        )
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.title)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            
-                            if let artist = song.artist {
-                                Text(artist)
-                                    .font(.system(size: 13, weight: .regular))
-                                    .foregroundStyle(.white.opacity(0.7))
-                                    .lineLimit(1)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    
+            VStack {
+                HStack {
+                    Text(song.title)
                     Spacer()
-                    
-                    HStack(spacing: 16) {
-                        HeartButton.miniPlayer(song: song)
-                        
-                        Button {
-                            playerVM.togglePlayPause()
-                        } label: {
-                            if playerVM.isLoading {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                    .frame(width: 32, height: 32)
-                                    .tint(.white)
-                            } else {
-                                Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 32, height: 32)
-                            }
-                        }
-                        .disabled(playerVM.isLoading)
+                    Button(action: { playerVM.togglePlayPause() }) {
+                        Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    ZStack {
-                        if let albumId = song.albumId,
-                           let cover = coverArtManager.getAlbumImage(for: albumId, context: .miniPlayer) {
-                            Image(uiImage: cover)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .blur(radius: 40)
-                                .opacity(0.7)
-                                .clipped()
-                        }
-                        
-                        Color.black.opacity(0.6)
-                    }
-                )
-                .contentShape(Rectangle())
+                .padding()
+                .background(Color.gray.opacity(0.1))
                 .onTapGesture {
                     showFullScreen = true
                 }
-                .gesture(
-                    DragGesture()
-                        .onEnded { value in
-                            if value.translation.height < -50 {
-                                showFullScreen = true
-                            } else if value.translation.height > 50 {
-                                playerVM.stop()
-                            }
-                        }
-                )
             }
-            .task(id: song.albumId) {
-                if let albumId = song.albumId {
-                    _ = await coverArtManager.loadAlbumImage(for: albumId, context: .miniPlayer)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 0))
-            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: -2)
             .fullScreenCover(isPresented: $showFullScreen) {
-                FullScreenPlayerView()
-                    .environmentObject(playerVM)
-                    .environmentObject(audioSessionManager)
+                FullScreenPlayer()
             }
         }
     }
 }
+
 
 // MARK: - Progress Bar unchanged
 

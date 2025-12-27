@@ -1,14 +1,8 @@
-
 //
 //  AppDependencies.swift
 //  NavidromeClient3
 //
 //  Swift 6: Centralized Dependency Injection Container
-//  Analyzed Dependency Graph:
-//  - PlayerViewModel -> needs CoverArtManager (Init Injection)
-//  - AudioSessionManager (Singleton) -> needs PlayerViewModel (Property Injection)
-//  - DownloadManager (Singleton) -> needs CoverArtManager (Method Injection)
-//  - AppInitializer -> Orchestrates Service Injection dynamically
 //
 
 import Foundation
@@ -20,44 +14,56 @@ import Observation
 final class AppDependencies {
     
     // MARK: - Infrastructure Singletons
-    // We hold references here to expose them to the Environment cleanly
+    // Use .shared for managers that enforce singleton pattern via private init
     let appConfig = AppConfig.shared
     let networkMonitor = NetworkMonitor.shared
     let audioSessionManager = AudioSessionManager.shared
     let downloadManager = DownloadManager.shared
     let offlineManager = OfflineManager.shared
+    let coverArtManager = CoverArtManager.shared // FIX: Use shared instance
     
-    // MARK: - Managers (Scoped to App Lifecycle)
+    // MARK: - Managers (Scoped/New Instances)
     let themeManager = ThemeManager()
     let connectionViewModel = ConnectionViewModel()
     
     // Data Managers
-    let coverArtManager = CoverArtManager()
     let songManager = SongManager()
     let exploreManager = ExploreManager()
     let favoritesManager = FavoritesManager()
+    let playlistManager = PlaylistManager()
     
     // Core Logic
     let musicLibraryManager = MusicLibraryManager()
-    let appInitializer = AppInitializer()
+    let appInitializer = AppInitializer() // Assumed to accept dependencies via init or config
     
     // Complex Dependencies
     let playerViewModel: PlayerViewModel
     
+    // Core Services (Actors)
+    let unifiedService: UnifiedSubsonicService
+    
     init() {
-        AppLogger.general.info("[AppDependencies] 🏗️ Building dependency graph...")
+        // 1. Initialize Core Services
+        // Placeholder credentials; real ones loaded by AppConfig/ConnectionViewModel later
+        self.unifiedService = UnifiedSubsonicService(
+            baseURL: URL(string: "http://localhost")!,
+            username: "",
+            password: ""
+        )
         
-        // 1. Resolve Init-Dependency: Player needs CoverArt
-        self.playerViewModel = PlayerViewModel(coverArtManager: coverArtManager)
+        // 2. Resolve Init-Dependency: Player needs CoverArt
+        self.playerViewModel = PlayerViewModel(coverArtManager: CoverArtManager.shared)
         
-        // 2. Resolve Cyclic/Property Dependency: AudioSession needs Player
-        self.audioSessionManager.playerViewModel = self.playerViewModel
+        // 3. Resolve Cyclic/Property Dependency: AudioSession needs Player
+        // Note: AudioSessionManager is a singleton, so we assign the property
+        AudioSessionManager.shared.playerViewModel = self.playerViewModel
         
-        // 3. Resolve Singleton Dependency: DownloadManager needs CoverArt
-        // Note: DownloadManager is a singleton, but CoverArtManager is scoped. 
-        // We configure the singleton with our scoped instance.
-        self.downloadManager.configure(coverArtManager: coverArtManager)
+        // 4. Resolve Singleton Dependency: DownloadManager needs CoverArt
+        DownloadManager.shared.configure(coverArtManager: CoverArtManager.shared)
         
-        AppLogger.general.info("[AppDependencies] ✅ Graph constructed successfully")
+        // 5. Configure AppInitializer
+        // Assuming AppInitializer has a configure method or public properties,
+        // otherwise we'd inject in its init.
+        // self.appInitializer.configure(...)
     }
 }
