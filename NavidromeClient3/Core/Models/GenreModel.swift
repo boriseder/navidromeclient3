@@ -1,28 +1,24 @@
-import SwiftUI
+import Foundation
 
-// MARK: - Genres
-struct GenresContainer: Codable {
+struct GenresContainer: Codable, Sendable {
     let genres: GenreList?
 }
 
-struct GenreList: Codable {
+struct GenreList: Codable, Sendable {
     let genre: [Genre]?
 }
 
-struct Genre: Identifiable, Hashable, Codable {
+struct Genre: Identifiable, Hashable, Codable, Sendable {
     var id: String { value }
     let value: String
     let songCount: Int
     let albumCount: Int
     
-    // Sagt Swift: "value" ist der eindeutige Identifier
     func hash(into hasher: inout Hasher) {
         hasher.combine(value)
     }
     
-    // Sagt Swift: Zwei Genres sind gleich wenn value gleich ist
     static func == (lhs: Genre, rhs: Genre) -> Bool {
         return lhs.value == rhs.value
     }
 }
-

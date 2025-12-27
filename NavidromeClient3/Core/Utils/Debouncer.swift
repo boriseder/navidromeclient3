@@ -1,24 +1,21 @@
-//
-//  Debouncer.swift
-//  NavidromeClient
-//
-//  Created by Boris Eder on 04.09.25.
-//
 import Foundation
-import SwiftUI
 
-@MainActor
-final class Debouncer: ObservableObject {
-    private var timer: Timer?
-    
-    func debounce(interval: TimeInterval = 0.5, action: @escaping () -> Void) {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { _ in
-            action()
-        }
+// A thread-safe Debouncer using an Actor
+actor Debouncer {
+    private let delay: TimeInterval
+    private var task: Task<Void, Never>?
+
+    init(delay: TimeInterval) {
+        self.delay = delay
     }
-    
-    deinit {
-        timer?.invalidate()
+
+    func debounce(action: @escaping @Sendable () async -> Void) {
+        task?.cancel()
+        task = Task {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            if !Task.isCancelled {
+                await action()
+            }
+        }
     }
 }

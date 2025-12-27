@@ -1,7 +1,8 @@
 import Foundation
 
 // MARK: - Generic Subsonic Response Wrapper
-struct SubsonicResponse<T: Codable>: Codable {
+// Fix: Added Sendable requirement to T
+struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     let subsonicResponse: T
     
     private enum CodingKeys: String, CodingKey {
@@ -9,7 +10,8 @@ struct SubsonicResponse<T: Codable>: Codable {
     }
 }
 
-struct PingInfo: Codable {
+// FIX: Added 'Sendable' conformance here
+struct PingInfo: Codable, Sendable {
     let status: String
     let version: String
     let type: String
@@ -18,17 +20,15 @@ struct PingInfo: Codable {
 }
 
 // MARK: - Error Response
-struct SubsonicErrorDetail: Codable {
+struct SubsonicErrorDetail: Codable, Sendable {
     let code: Int
     let message: String
 }
 
-// MARK: - Response Content mit Error Support
-struct SubsonicResponseContent: Codable {
+struct SubsonicResponseContent: Codable, Sendable {
     let status: String
     let version: String?
     let error: SubsonicErrorDetail?
 }
 
-// MARK: - Empty Response DTO (für Ping)
-struct EmptyResponse: Codable {}
+struct EmptyResponse: Codable, Sendable {}

@@ -1,17 +1,13 @@
-//
-//  Song+Extensions.swift - Simple Initializer for Downloaded Songs
-//
-
 import Foundation
 
-struct Song: Codable, Identifiable {
+struct Song: Codable, Identifiable, Sendable {
     let id: String
     let title: String
     let duration: Int?
     let coverArt: String?
     let artist: String?
     let album: String?
-    let albumId: String?     // <- hinzufügen
+    let albumId: String?
     let track: Int?
     let year: Int?
     let genre: String?
@@ -22,10 +18,47 @@ struct Song: Codable, Identifiable {
     let path: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, title, duration, coverArt, artist, album,albumId, track, year, genre, artistId, isVideo, contentType, suffix, path
+        case id, title, duration, coverArt, artist, album, albumId, track, year, genre, artistId, isVideo, contentType, suffix, path
     }
     
-    // Custom initializer für flexible Dekodierung
+    // MARK: - Initializers
+    
+    // 1. Manual Memberwise Init (Restored because custom decoder hid it)
+    init(
+        id: String,
+        title: String,
+        duration: Int? = nil,
+        coverArt: String? = nil,
+        artist: String? = nil,
+        album: String? = nil,
+        albumId: String? = nil,
+        track: Int? = nil,
+        year: Int? = nil,
+        genre: String? = nil,
+        artistId: String? = nil,
+        isVideo: Bool? = nil,
+        contentType: String? = nil,
+        suffix: String? = nil,
+        path: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.duration = duration
+        self.coverArt = coverArt
+        self.artist = artist
+        self.album = album
+        self.albumId = albumId
+        self.track = track
+        self.year = year
+        self.genre = genre
+        self.artistId = artistId
+        self.isVideo = isVideo
+        self.contentType = contentType
+        self.suffix = suffix
+        self.path = path
+    }
+    
+    // 2. Custom Decoder
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
@@ -47,10 +80,10 @@ struct Song: Codable, Identifiable {
     }
 }
 
-
 extension Song {
+    // MARK: - Factory Methods
     
-    //  NEW: Simple initializer for downloaded songs (bypasses complex decoder)
+    // OPTIMIZED: Uses direct initialization instead of expensive JSONSerialization
     static func createFromDownload(
         id: String,
         title: String,
@@ -64,35 +97,22 @@ extension Song {
         genre: String? = nil,
         contentType: String? = nil
     ) -> Song {
-        
-        // Create a dictionary with all required fields
-        let songData: [String: Any?] = [
-            "id": id,
-            "title": title,
-            "duration": duration,
-            "coverArt": coverArt,
-            "artist": artist,
-            "album": album,
-            "albumId": albumId,
-            "track": track,
-            "year": year,
-            "genre": genre,
-            "artistId": nil,
-            "isVideo": false,
-            "contentType": contentType ?? "audio/mpeg",
-            "suffix": "mp3",
-            "path": nil
-        ]
-        
-        // Convert to JSON and back to create proper Song object
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: songData.compactMapValues { $0 })
-            let song = try JSONDecoder().decode(Song.self, from: jsonData)
-            return song
-        } catch {
-            AppLogger.ui.error("❌ Failed to create Song from download data: \(error)")
-            // Fallback - this should not happen, but just in case
-            fatalError("Could not create Song object")
-        }
+        return Song(
+            id: id,
+            title: title,
+            duration: duration,
+            coverArt: coverArt,
+            artist: artist,
+            album: album,
+            albumId: albumId,
+            track: track,
+            year: year,
+            genre: genre,
+            artistId: nil,
+            isVideo: false,
+            contentType: contentType ?? "audio/mpeg",
+            suffix: "mp3",
+            path: nil
+        )
     }
 }

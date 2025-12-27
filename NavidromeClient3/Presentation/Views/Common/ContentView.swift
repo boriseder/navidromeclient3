@@ -1,126 +1,80 @@
-// ContentView.swift - Navigation direkt zu MainTabView
+//
+//  ContentView.swift
+//  NavidromeClient3
+//
+//  Swift 6: @Observable Consumption
+//
+
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var appInitializer: AppInitializer  // ✅ Added
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var downloadManager: DownloadManager
-    @EnvironmentObject var theme: ThemeManager
+    // 1. New Environment Syntax
+    @Environment(PlayerViewModel.self) private var playerVM
+    @Environment(MusicLibraryManager.self) private var library
+    @Environment(OfflineManager.self) private var offlineManager
+    @Environment(NetworkMonitor.self) private var networkMonitor
+
+    // Local state remains @State
+    @State private var selectedTab: TabIdentifier = .library
     
-    @State private var showingSettings = false
-    @State private var isInitialSetup = false
-    @State private var serviceInitError: String?
-    
-    var body: some View {
-        Group {
-            switch networkMonitor.contentLoadingStrategy {
-            case .setupRequired:
-                WelcomeView {
-                    isInitialSetup = true
-                    showingSettings = true
-                }
-            case .online, .offlineOnly:
-                TabView {
-                    ExploreView()
-                        .tabItem {
-                            Image(systemName: "music.note.house")
-                            Text("Explore")
-                        }
-                        .tag(0)
-                    
-                    AlbumsView()
-                        .tabItem {
-                            Image(systemName: "record.circle")
-                            Text("Albums")
-                        }
-                        .tag(1)
-                    
-                    ArtistsView()
-                        .tabItem {
-                            Image(systemName: "person.2")
-                            Text("Artists")
-                        }
-                        .tag(2)
-                    
-                    GenreView()
-                        .tabItem {
-                            Image(systemName: "music.note.list")
-                            Text("Genres")
-                        }
-                        .tag(3)
-                    
-                    FavoritesView()
-                        .tabItem {
-                            Image(systemName: "heart")
-                            Text("Favorites")
-                        }
-                        .tag(4)
-                }
-                .accentColor(theme.accent)
-                .id(theme.accent) // zwingt SwiftUI, die TabView neu zu rendern, wenn sich die Farbe ändert
-                .overlay(networkStatusOverlay, alignment: .top)
-                .overlay(alignment: .bottom) {
-                    MiniPlayerView()
-                        .environmentObject(playerVM)
-                        .padding(.bottom, DSLayout.miniPlayerHeight) // Standard tab bar height
-                }
-            }
-        }
-        .sheet(isPresented: $showingSettings) {
-            NavigationView {
-                ServerEditView(dismissParent: {
-                    if isInitialSetup {
-                        showingSettings = false
-                        isInitialSetup = false
-                    }
-                })
-                .navigationTitle("Server Setup")
-                .navigationBarTitleDisplayMode(.inline)
-            }
-        }
+    enum TabIdentifier: Hashable {
+        case library, search, downloads, settings
     }
 
-    
-    private func retryServiceInitialization() async {
-        guard let credentials = appConfig.getCredentials() else {
-            serviceInitError = "No credentials available"
-            return
-        }
-        
-        serviceInitError = nil
-        
-        // ✅ Updated: No longer posts notification - AppInitializer handles this automatically
-        // Just trigger reinit directly
-        try? await appInitializer.reinitializeAfterConfiguration()
-        
-        // Wait for initialization with timeout
-        for attempt in 0..<10 {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            if appInitializer.areServicesReady {  // ✅ Changed from appConfig to appInitializer
-                AppLogger.ui.info("Service initialization retry succeeded")
-                return
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            TabView(selection: $selectedTab) {
+                // Tab 1: Library
+                NavigationStack {
+                    ExploreView() // Internal views now use Environment internally
+                }
+                .tabItem {
+                    Label("Library", systemImage: "music.note.house")
+                }
+                .tag(TabIdentifier.library)
+
+                // Tab 2: Favorites (Example replacement for Search for now)
+                NavigationStack {
+                    FavoritesView()
+                }
+                .tabItem {
+                    Label("Favorites", systemImage: "heart")
+                }
+                .tag(TabIdentifier.search)
+                
+                // Tab 3: Downloads
+                NavigationStack {
+                    // DownloadsView() - Assuming existence
+                    Text("Downloads Placeholder")
+                }
+                .tabItem {
+                    Label("Downloads", systemImage: "arrow.down.circle")
+                }
+                .tag(TabIdentifier.downloads)
+
+                // Tab 4: Settings
+                NavigationStack {
+                    SettingsView()
+                }
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .tag(TabIdentifier.settings)
+            }
+            .tint(Color.accentColor)
+            
+            // Player Overlay
+            if playerVM.currentSong != nil {
+                MiniPlayerView()
+                    .padding(.bottom, 49) // Approximate tab bar height
+                    .transition(.move(edge: .bottom))
             }
         }
-        
-        serviceInitError = "Retry failed - check your connection"
-    }
-    
-    // MARK: - Network Status Overlay
-    @ViewBuilder
-    private var networkStatusOverlay: some View {
-        // DISTINGUISH between different offline reasons
-        switch networkMonitor.contentLoadingStrategy {
-            case .offlineOnly(let reason):
-                OfflineReasonBanner(reason: reason)
-                    .padding(.horizontal, DSLayout.screenPadding)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .animation(DSAnimations.ease, value: networkMonitor.canLoadOnlineContent)
-                
-            case .online, .setupRequired:
-                EmptyView()
+        // Swift 6: Task modifier replaces .onAppear for async work
+        .task {
+             if networkMonitor.shouldLoadOnlineContent {
+                 await library.loadInitialDataIfNeeded()
+             }
         }
     }
 }

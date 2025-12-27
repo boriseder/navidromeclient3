@@ -1,15 +1,15 @@
 import SwiftUI
 
 // MARK: - Albums
-struct AlbumListContainer: Codable {
+struct AlbumListContainer: Codable, Sendable {
     let albumList2: AlbumList
 }
 
-struct AlbumList: Codable {
+struct AlbumList: Codable, Sendable {
     let album: [Album]
 }
 
-struct Album: Codable, Identifiable, Hashable {
+struct Album: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let artist: String
@@ -30,21 +30,20 @@ struct Album: Codable, Identifiable, Hashable {
         case coverArtId = "albumArt"
     }
     
-    // Custom Decoder um flexibel name/title zu handhaben
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         id = try container.decode(String.self, forKey: .id)
         artist = try container.decode(String.self, forKey: .artist)
         
-        // Flexibles Decoding: Versuche zuerst "title", dann "name"
+        // Flexible Decoding
         if let title = try container.decodeIfPresent(String.self, forKey: .title) {
             name = title
         } else {
             name = try container.decode(String.self, forKey: .name)
         }
         
-        // Flexible coverArt Behandlung
+        // Flexible coverArt
         if let coverArt = try container.decodeIfPresent(String.self, forKey: .coverArt) {
             self.coverArt = coverArt
             self.coverArtId = nil
@@ -53,7 +52,6 @@ struct Album: Codable, Identifiable, Hashable {
             self.coverArtId = self.coverArt
         }
         
-        // Alle anderen optionalen Felder
         year = try container.decodeIfPresent(Int.self, forKey: .year)
         genre = try container.decodeIfPresent(String.self, forKey: .genre)
         duration = try container.decodeIfPresent(Int.self, forKey: .duration)
@@ -62,10 +60,8 @@ struct Album: Codable, Identifiable, Hashable {
         displayArtist = try container.decodeIfPresent(String.self, forKey: .displayArtist)
     }
     
-    // Custom Encoder falls nötig
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(artist, forKey: .artist)
@@ -80,11 +76,11 @@ struct Album: Codable, Identifiable, Hashable {
 }
 
 // MARK: - Album with Songs
-struct AlbumWithSongsContainer: Codable {
+struct AlbumWithSongsContainer: Codable, Sendable {
     let album: AlbumWithSongs
 }
 
-struct AlbumWithSongs: Codable {
+struct AlbumWithSongs: Codable, Sendable {
     let id: String
     let name: String
     let song: [Song]?

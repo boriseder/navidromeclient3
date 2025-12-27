@@ -1,36 +1,41 @@
 //
-//  MusicLibraryManager.swift - CLEANED UP
+//  MusicLibraryManager.swift - SWIFT 6 & OBSERVATION MIGRATED
 //  NavidromeClient
 //
 //  CHANGES:
-//  - Removed debug code
-//  - Fixed canLoadMore logic
-//  - Simplified network strategy handling
-//  - Better guard clauses
+//  - Converted to @Observable (Observation Framework)
+//  - Removed Combine/@Published
+//  - Implemented Structured Concurrency (withDiscardingTaskGroup)
+//  - Removed artificial delays (Task.sleep)
+//  - DataLoadingState marked Sendable
 //
 
 import Foundation
 import SwiftUI
+import Observation
 
 @MainActor
-class MusicLibraryManager: ObservableObject {
+@Observable
+final class MusicLibraryManager {
     
     // MARK: - Progressive Library Data
-    @Published private(set) var loadedAlbums: [Album] = []
-    @Published private(set) var totalAlbumCount: Int = 0
-    @Published private(set) var albumLoadingState: DataLoadingState = .idle
+    // Note: No @Published needed. Observation handles tracking automatically.
     
-    @Published private(set) var loadedArtists: [Artist] = []
-    @Published private(set) var totalArtistCount: Int = 0
-    @Published private(set) var artistLoadingState: DataLoadingState = .idle
+    var loadedAlbums: [Album] = []
+    var totalAlbumCount: Int = 0
+    var albumLoadingState: DataLoadingState = .idle
     
-    @Published private(set) var loadedGenres: [Genre] = []
-    @Published private(set) var genreLoadingState: DataLoadingState = .idle
+    var loadedArtists: [Artist] = []
+    var totalArtistCount: Int = 0
+    var artistLoadingState: DataLoadingState = .idle
+    
+    var loadedGenres: [Genre] = []
+    var genreLoadingState: DataLoadingState = .idle
     
     // MARK: - State Management
-    @Published private(set) var hasLoadedInitialData = false
-    @Published private(set) var lastRefreshDate: Date?
-    @Published private(set) var backgroundLoadingProgress: String = ""
+    var hasLoadedInitialData = false
+    var lastRefreshDate: Date?
+    var backgroundLoadingProgress: String = ""
     
     // MARK: - Loading Coordination
     private var isCurrentlyLoading = false
@@ -42,7 +47,7 @@ class MusicLibraryManager: ObservableObject {
         static let albumBatchSize = 20
         static let artistBatchSize = 25
         static let genreBatchSize = 30
-        static let batchDelay: UInt64 = 200_000_000
+        // Removed artificial batchDelay
     }
     
     init() {
@@ -92,40 +97,27 @@ class MusicLibraryManager: ObservableObject {
             return
         }
         
-        // REMOVED GUARD: The App-Lifecycle is now waiting for a stable network state,
-            // so we should proceed and let internal checks handle connectivity issues later.
-            /*
-            guard NetworkMonitor.shared.shouldLoadOnlineContent else {
-                AppLogger.general.info("📚 Network offline - skipping initial load")
-                return
-            }
-            */
-        
         isCurrentlyLoading = true
         defer { isCurrentlyLoading = false }
         
         AppLogger.general.info("📚 Starting coordinated initial data load...")
         
-        await withTaskGroup(of: Void.self) { group in
+        // SWIFT 6: Structured Concurrency
+        // Using withDiscardingTaskGroup for efficient parallel execution without result collection
+        await withDiscardingTaskGroup { group in
             group.addTask {
                 await self.loadAlbumsProgressively(reset: true)
             }
             
             group.addTask {
-                try? await Task.sleep(nanoseconds: 100_000_000)
                 await self.loadArtistsProgressively(reset: true)
             }
             
             group.addTask {
-                try? await Task.sleep(nanoseconds: 200_000_000)
                 await self.loadGenresProgressively(reset: true)
             }
         }
         
-        // NEW: Centralized setting of the overall library's freshness timestamp.
-        // This resolves the race condition by marking the state as fresh *after*
-        // the coordinated load completes, ensuring subsequent network change checks
-        // (from handleNetworkStrategyChange) skip the redundant refresh.
         if hasLoadedInitialData {
             lastRefreshDate = Date()
         }
@@ -149,7 +141,7 @@ class MusicLibraryManager: ObservableObject {
         
         AppLogger.general.info("[MusicLibraryManager] Starting coordinated data refresh...")
         
-        await withTaskGroup(of: Void.self) { group in
+        await withDiscardingTaskGroup { group in
             group.addTask {
                 await self.loadAlbumsProgressively(reset: true)
             }
@@ -167,6 +159,8 @@ class MusicLibraryManager: ObservableObject {
     // MARK: - Network State Handling
     
     private func setupNetworkStateObserver() {
+        // Note: NotificationCenter is legacy but acceptable for now.
+        // In Phase 5 we can move to AsyncStream.
         NotificationCenter.default.addObserver(
             forName: .contentLoadingStrategyChanged,
             object: nil,
@@ -197,7 +191,6 @@ class MusicLibraryManager: ObservableObject {
     }
     
     private func handleNetworkStrategyChange(_ newStrategy: ContentLoadingStrategy) async {
-        // ✅ Queue if currently loading
         if isCurrentlyLoading {
             pendingNetworkStrategyChange = newStrategy
             AppLogger.general.info("Network strategy change queued: \(newStrategy.displayName)")
@@ -206,7 +199,6 @@ class MusicLibraryManager: ObservableObject {
         
         pendingNetworkStrategyChange = nil
         
-        // ✅ CLEANED UP: Simple, clear logic
         switch newStrategy {
         case .online:
             if !isDataFresh, service != nil {
@@ -222,7 +214,6 @@ class MusicLibraryManager: ObservableObject {
             AppLogger.general.info("Network offline - using cached data")
         }
         
-        // ✅ Process queued changes
         if let pendingStrategy = pendingNetworkStrategyChange {
             await handleNetworkStrategyChange(pendingStrategy)
         }
@@ -259,9 +250,7 @@ class MusicLibraryManager: ObservableObject {
         backgroundLoadingProgress = "Loading albums \(offset + 1)-\(offset + batchSize)..."
         
         do {
-            if offset > 0 {
-                try await Task.sleep(nanoseconds: LoadingConfig.batchDelay)
-            }
+            // Removed artificial delay
             
             let newAlbums = try await service.getAllAlbums(
                 sortBy: sortBy,
@@ -288,7 +277,6 @@ class MusicLibraryManager: ObservableObject {
             
             if !hasLoadedInitialData && loadedAlbums.count >= LoadingConfig.albumBatchSize {
                 hasLoadedInitialData = true
-                //lastRefreshDate = Date()
             }
             
             backgroundLoadingProgress = ""
@@ -464,7 +452,7 @@ class MusicLibraryManager: ObservableObject {
 
 // MARK: - DATA LOADING STATE
 
-enum DataLoadingState: Equatable {
+enum DataLoadingState: Equatable, Sendable { // Marked Sendable
     case idle
     case loading
     case loadingMore
@@ -478,7 +466,6 @@ enum DataLoadingState: Equatable {
         }
     }
     
-    // ✅ FIXED: Allow retry on error
     var canLoadMore: Bool {
         switch self {
         case .idle, .error: return true

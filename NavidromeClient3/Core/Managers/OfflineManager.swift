@@ -1,39 +1,35 @@
 //
-//  OfflineManager.swift - REFACTORED: Simplified to Data Coordinator
+//  OfflineManager.swift - SWIFT 6 & OBSERVATION MIGRATED
 //  NavidromeClient
 //
-//   SIMPLIFIED: No longer manages content loading strategy
-//   DELEGATES: All strategy decisions to NetworkMonitor
-//   FOCUSED: Pure offline data management and UI state tracking
-//   CLEANUP: Removed redundant internal caching state.
+//  CHANGES:
+//  - Converted to @Observable
+//  - Removed Combine (AnyCancellable)
+//  - Removed ObservableObject/@Published
 //
 
 import Foundation
 import SwiftUI
-import Combine
+import Observation
 
 @MainActor
-class OfflineManager: ObservableObject {
+@Observable
+final class OfflineManager {
     static let shared = OfflineManager()
     
-    // MARK: - Offline Data Management (Core Responsibility)
+    // MARK: - Offline Data Management
+    // Computed properties are automatically tracked by Observation
     
-    // The list of offline albums is now a computed property, eliminating the need
-    // for manual internal caching and invalidation logic (cacheNeedsRefresh).
     var offlineAlbums: [Album] {
-        // Access the source of truth directly. This ensures the list is always up-to-date
-        // based on DownloadManager and AlbumMetadataCache without manual syncing.
         let downloadedAlbumIds = Set(downloadManager.downloadedAlbums.map { $0.albumId })
         return AlbumMetadataCache.shared.getAlbums(ids: downloadedAlbumIds)
     }
     
     var offlineArtists: [Artist] {
-        // Recalculates from the current set of offlineAlbums
         extractUniqueArtists(from: offlineAlbums)
     }
     
     var offlineGenres: [Genre] {
-        // Recalculates from the current set of offlineAlbums
         extractUniqueGenres(from: offlineAlbums)
     }
     
@@ -44,11 +40,9 @@ class OfflineManager: ObservableObject {
     
     private init() {
         setupFactoryResetObserver()
-        // Removed explicit observeDownloadChanges as views now observe DownloadManager directly,
-        // and data access is via a computed property.
     }
     
-    // MARK: - Public API (Delegates to NetworkMonitor)
+    // MARK: - Public API
     
     func switchToOnlineMode() {
         networkMonitor.setManualOfflineMode(false)
@@ -78,29 +72,23 @@ class OfflineManager: ObservableObject {
         }
     }
     
-    // MARK: - UI State Properties (Read-Only)
+    // MARK: - UI State Properties
     
-    
-    /// Legacy compatibility: check if app is in offline mode
     var isOfflineMode: Bool {
         return !networkMonitor.shouldLoadOnlineContent
     }
     
-    // MARK: - Network Change Handling (Simplified)
+    // MARK: - Network Change Handling
     
     func handleNetworkLoss() {
-        // NetworkMonitor handles the strategy change
-        // OfflineManager just logs for UI feedback
         AppLogger.general.info("📵 Network lost - NetworkMonitor will handle strategy")
     }
     
     func handleNetworkRestored() {
-        // NetworkMonitor handles the strategy change
-        // OfflineManager just logs for UI feedback
         AppLogger.general.info("📶 Network restored - NetworkMonitor will handle strategy")
     }
     
-    // MARK: - Album/Artist/Genre Queries (Unchanged)
+    // MARK: - Album/Artist/Genre Queries
     
     func getOfflineAlbums(for artist: Artist) -> [Album] {
         return offlineAlbums.filter { $0.artist == artist.name }
@@ -122,7 +110,7 @@ class OfflineManager: ObservableObject {
         return offlineAlbums.contains { $0.genre == genreName }
     }
     
-    // MARK: - Statistics (Unchanged)
+    // MARK: - Statistics
     
     var offlineStats: OfflineStats {
         return OfflineStats(
@@ -136,12 +124,6 @@ class OfflineManager: ObservableObject {
     // MARK: - Reset
     
     func performCompleteReset() {
-        // Removed internal cache clearing as it no longer holds internal state.
-        
-        // Clear subscriptions
-        cancellables.removeAll()
-        
-        // Data is owned by DownloadManager and AlbumMetadataCache
         AppLogger.general.info("🔄 OfflineManager: Reset completed")
     }
     
@@ -157,7 +139,7 @@ class OfflineManager: ObservableObject {
         }
     }
     
-    // MARK: - Private Implementation (Unchanged)
+    // MARK: - Private Implementation
     
     private func extractUniqueArtists(from albums: [Album]) -> [Artist] {
         let uniqueArtists = Set(albums.map { $0.artist })
@@ -183,33 +165,5 @@ class OfflineManager: ObservableObject {
                 albumCount: albumsInGenre.count
             )
         }.sorted { $0.value < $1.value }
-    }
-    
-    private var cancellables = Set<AnyCancellable>()
-}
-
-// MARK: - Supporting Types (Unchanged)
-
-struct OfflineStats {
-    let albumCount: Int
-    let artistCount: Int
-    let genreCount: Int
-    let totalSongs: Int
-    
-    var isEmpty: Bool {
-        return albumCount == 0
-    }
-    
-    var summary: String {
-        if isEmpty {
-            return "No offline content"
-        }
-        
-        var parts: [String] = []
-        if albumCount > 0 { parts.append("\(albumCount) albums") }
-        if artistCount > 0 { parts.append("\(artistCount) artists") }
-        if genreCount > 0 { parts.append("\(genreCount) genres") }
-        
-        return parts.joined(separator: ", ")
     }
 }
