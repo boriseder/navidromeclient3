@@ -1,14 +1,23 @@
+//
+//  ThemeManager.swift
+//  NavidromeClient
+//
+//  Swift 6: @Observable Migration
+//
+
 import SwiftUI
+import Observation
 
 @MainActor
-final class ThemeManager: ObservableObject {
-    @Published var backgroundStyle: UserBackgroundStyle {
+@Observable
+final class ThemeManager {
+    var backgroundStyle: UserBackgroundStyle {
         didSet {
             UserDefaults.standard.set(backgroundStyle.rawValue, forKey: "userBackgroundStyle")
         }
     }
 
-    @Published var accentColor: UserAccentColor {
+    var accentColor: UserAccentColor {
         didSet {
             UserDefaults.standard.set(accentColor.rawValue, forKey: "userAccentColor")
         }
@@ -16,10 +25,10 @@ final class ThemeManager: ObservableObject {
 
     init() {
         let bgRaw = UserDefaults.standard.string(forKey: "userBackgroundStyle")
-        backgroundStyle = UserBackgroundStyle(rawValue: bgRaw ?? "") ?? .dynamic
+        self.backgroundStyle = UserBackgroundStyle(rawValue: bgRaw ?? "") ?? .dynamic
 
         let accentRaw = UserDefaults.standard.string(forKey: "userAccentColor")
-        accentColor = UserAccentColor(rawValue: accentRaw ?? "") ?? .blue
+        self.accentColor = UserAccentColor(rawValue: accentRaw ?? "") ?? .blue
     }
 
     var textColor: Color {
@@ -36,9 +45,9 @@ final class ThemeManager: ObservableObject {
 
     var colorScheme: ColorScheme {
         switch backgroundStyle {
-        case .light: .light
-        case .dark: .dark
-        case .dynamic: .dark
+        case .light: return .light
+        case .dark: return .dark
+        case .dynamic: return .dark // Default preference
         }
     }
 
@@ -47,14 +56,13 @@ final class ThemeManager: ObservableObject {
     }
 }
 
-enum UserBackgroundStyle: String, CaseIterable {
+enum UserBackgroundStyle: String, CaseIterable, Sendable {
     case dynamic
     case light
     case dark
-    
 }
 
-enum UserAccentColor: String, CaseIterable, Identifiable {
+enum UserAccentColor: String, CaseIterable, Identifiable, Sendable {
     case red, orange, green, blue, purple, pink
     
     var id: String { rawValue }

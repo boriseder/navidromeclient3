@@ -1,7 +1,15 @@
+//
+//  DynamicMusicBackground.swift
+//  NavidromeClient
+//
+//  Swift 6: @Environment Migration
+//
+
 import SwiftUI
 
 struct DynamicMusicBackground: View {
-    @EnvironmentObject var theme: ThemeManager
+    // FIX: Use Swift 6 Environment syntax
+    @Environment(ThemeManager.self) private var theme
 
     var body: some View {
         ZStack {

@@ -7,18 +7,17 @@
 
 import SwiftUI
 
-// Less intrusive
-import SwiftUI
-
 struct WelcomeHeader: View {
     let username: String
     let nowPlaying: Song?
-    @EnvironmentObject var offlineManager: OfflineManager
+    
+    // FIX: Swift 6 Environment Syntax
+    @Environment(OfflineManager.self) private var offlineManager
     
     @State private var showingNetworkTestView = false
     @State private var showingCoverArtDebugView = false
     
-    // MARK: - Mehrsprachige Grüße nach Tageszeit
+    // MARK: - Greetings
     private let greetingsByTime: [String: [String]] = [
         "morning": ["Good morning", "Bonjour", "Guten Morgen", "おはようございます", "Buongiorno"],
         "afternoon": ["Good afternoon", "Bon après-midi", "Guten Tag", "Buenas tardes", "Buon pomeriggio"],
@@ -26,11 +25,9 @@ struct WelcomeHeader: View {
         "night": ["Good night", "Bonne nuit", "Gute Nacht", "おやすみなさい", "Buonanotte"]
     ]
 
-
     // MARK: - Body
     var body: some View {
         ZStack(alignment: .leading) {
-            // Hintergrundgradient
             LinearGradient(
                 colors: gradientColors(),
                 startPoint: .topLeading,
@@ -41,7 +38,6 @@ struct WelcomeHeader: View {
             .clipShape(RoundedRectangle(cornerRadius: DSCorners.element, style: .continuous))
             .shadow(radius: 8, y: 4)
 
-            // Inhalt
             HStack {
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                     Text("\(timeBasedGreeting()), \(username)")
@@ -90,4 +86,3 @@ struct WelcomeHeader: View {
         return greetingsByTime[timeKey]?.randomElement() ?? "Hello"
     }
 }
-

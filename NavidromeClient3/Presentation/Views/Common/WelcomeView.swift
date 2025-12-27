@@ -1,31 +1,51 @@
+//
+//  WelcomeView.swift - Enhanced with Design System
+//  NavidromeClient
+//
+//   ENHANCED: Vollständige Anwendung des Design Systems
+//
+
 import SwiftUI
 
 struct WelcomeView: View {
-    // FIX: Swift 6 Observable Syntax
-    @Environment(ThemeManager.self) private var themeManager
+    // FIX: Made optional so WelcomeView() calls compile
+    var onGetStarted: (() -> Void)? = nil
     
     var body: some View {
-        VStack(spacing: DSLayout.sectionGap) {
-            Spacer()
+        ZStack {
+            // Uses ThemeManager from Environment
+            DynamicMusicBackground()
+
+            VStack(spacing: DSLayout.screenGap) {
+                Image(systemName: "music.note.house")
+                    .font(.system(size: 80))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [DSColor.accent, DSColor.secondary],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
             
-            WelcomeHeader()
-            
-            VStack(spacing: DSLayout.contentGap) {
-                Text("Welcome to Navidrome")
-                    .font(DSText.largeTitle)
-                    .foregroundColor(DSColor.primary)
+                VStack(spacing: DSLayout.contentGap) {
+                    Text("Welcome to Navidrome Client")
+                        .font(DSText.pageTitle)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("Connect to your Navidrome server to start listening to your music library")
+                        .font(DSText.body)
+                        .foregroundStyle(DSColor.secondary)
+                        .multilineTextAlignment(.center)
+                }
                 
-                Text("Your personal music streamer")
-                    .font(DSText.body)
-                    .foregroundColor(DSColor.secondary)
+                Button("Get Started") {
+                    onGetStarted?()
+                }
+                .font(DSText.largeButton)
+                .buttonStyle(.borderedProminent)
             }
-            
-            Spacer()
-            
-            // Example usage of themeManager if needed, or just context
-            // Button(...)
+            .padding(DSLayout.screenPadding)
         }
-        .padding(DSLayout.screenPadding)
-        .background(DSColor.background)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

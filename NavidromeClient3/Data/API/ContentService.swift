@@ -1,10 +1,3 @@
-//
-//  ContentService.swift
-//  NavidromeClient
-//
-//  Swift 6: Actor Migration
-//
-
 import Foundation
 
 // Enum is Global and Sendable
@@ -57,8 +50,6 @@ actor ContentService {
         self.session = URLSession(configuration: config)
     }
     
-    // MARK: -  ALBUMS API
-    
     func getAllAlbums(
         sortBy: AlbumSortType = .alphabetical,
         size: Int = 500,
@@ -70,6 +61,7 @@ actor ContentService {
             "offset": "\(offset)"
         ]
         
+        // Generic T must be Sendable (AlbumListContainer is now Sendable)
         let decoded: SubsonicResponse<AlbumListContainer> = try await fetchData(
             endpoint: "getAlbumList2",
             params: params
@@ -92,26 +84,17 @@ actor ContentService {
         
         let params = ["size": "\(size)", "type": "byGenre", "genre": genre]
         
-        do {
-            let decoded: SubsonicResponse<AlbumListContainer> = try await fetchData(
-                endpoint: "getAlbumList2",
-                params: params
-            )
-            return decoded.subsonicResponse.albumList2.album
-        } catch {
-            // Fallback logic omitted for brevity, keeping strict async structure
-            throw error
-        }
+        let decoded: SubsonicResponse<AlbumListContainer> = try await fetchData(
+            endpoint: "getAlbumList2",
+            params: params
+        )
+        return decoded.subsonicResponse.albumList2.album
     }
-    
-    // MARK: -  ARTISTS API
     
     func getArtists() async throws -> [Artist] {
         let decoded: SubsonicResponse<ArtistsContainer> = try await fetchData(endpoint: "getArtists")
         return decoded.subsonicResponse.artists?.index?.flatMap { $0.artist ?? [] } ?? []
     }
-    
-    // MARK: -  SONGS API
     
     func getSongs(for albumId: String) async throws -> [Song] {
         guard !albumId.isEmpty else { return [] }
@@ -123,27 +106,20 @@ actor ContentService {
         return decoded.subsonicResponse.album.song ?? []
     }
     
-    // MARK: -  GENRES API
-    
     func getGenres() async throws -> [Genre] {
         let decoded: SubsonicResponse<GenresContainer> = try await fetchData(endpoint: "getGenres")
         return decoded.subsonicResponse.genres?.genre ?? []
     }
     
-    // MARK: -  CORE FETCH IMPLEMENTATION
-    
-    // FIX: T must be Sendable
     private func fetchData<T: Decodable & Sendable>(
         endpoint: String,
         params: [String: String] = [:]
     ) async throws -> T {
         
-        // FIX: await connectionService
         guard let url = await connectionService.buildURL(endpoint: endpoint, params: params) else {
             throw SubsonicError.badURL
         }
         
-        // Use internal session (safe)
         let (data, response) = try await session.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse else {
