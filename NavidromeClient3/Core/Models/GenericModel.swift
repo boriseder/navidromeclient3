@@ -1,3 +1,10 @@
+//
+//  GenericModel.swift
+//  NavidromeClient3
+//
+//  Swift 6: Pure Data Model (Sendable, No UI)
+//
+
 import Foundation
 
 // MARK: - Generic Subsonic Response Wrapper
@@ -9,13 +16,13 @@ struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
-// FIX: Added Sendable conformance explicitly
+// MARK: - Ping Info
 struct PingInfo: Codable, Sendable {
     let status: String
     let version: String
     let type: String
-    let serverVersion: String
-    let openSubsonic: Bool
+    let serverVersion: String?
+    let openSubsonic: Bool?
 }
 
 // MARK: - Error Response
@@ -30,4 +37,5 @@ struct SubsonicResponseContent: Codable, Sendable {
     let error: SubsonicErrorDetail?
 }
 
+// MARK: - Empty Response
 struct EmptyResponse: Codable, Sendable {}

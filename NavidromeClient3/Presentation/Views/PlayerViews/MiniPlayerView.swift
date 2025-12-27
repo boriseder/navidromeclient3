@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct MiniPlayerView: View {
-    // FIX: Swift 6 Environment
     @Environment(PlayerViewModel.self) private var playerVM
     @Environment(AudioSessionManager.self) private var audioSessionManager
     @Environment(CoverArtManager.self) private var coverArtManager
@@ -10,16 +9,35 @@ struct MiniPlayerView: View {
     
     var body: some View {
         if let song = playerVM.currentSong {
-            VStack {
+            VStack(spacing: 0) {
+                // Progress Bar (Custom)
+                ProgressBarView(playerVM: playerVM, isDragging: .constant(false))
+                
                 HStack {
-                    Text(song.title)
+                    AlbumImageView(albumId: song.albumId ?? "", size: 50)
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    
+                    VStack(alignment: .leading) {
+                        Text(song.title)
+                            .lineLimit(1)
+                            .font(.subheadline)
+                        Text(song.artist ?? "")
+                            .lineLimit(1)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
                     Spacer()
+                    
                     Button(action: { playerVM.togglePlayPause() }) {
                         Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.title2)
                     }
+                    .padding(.trailing)
                 }
-                .padding()
-                .background(Color.gray.opacity(0.1))
+                .padding(8)
+                .background(DSColor.surfaceLight)
                 .onTapGesture {
                     showFullScreen = true
                 }
@@ -31,11 +49,11 @@ struct MiniPlayerView: View {
     }
 }
 
-
-// MARK: - Progress Bar unchanged
+// MARK: - Progress Bar
 
 struct ProgressBarView: View {
-    @ObservedObject var playerVM: PlayerViewModel
+    // FIX: Using Observable directly, not ObservedObject
+    let playerVM: PlayerViewModel
     @Binding var isDragging: Bool
     
     var body: some View {
@@ -72,31 +90,5 @@ struct ProgressBarView: View {
     private var progressPercentage: Double {
         guard playerVM.duration > 0 else { return 0 }
         return playerVM.currentTime / playerVM.duration
-    }
-}
-
-// MARK: - Album Art unchanged
-
-struct AlbumArtView: View {
-    let cover: UIImage?
-    
-    var body: some View {
-        Group {
-            if let cover = cover {
-                Image(uiImage: cover)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.gray)
-                    )
-            }
-        }
-        .frame(width: 48, height: 48)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

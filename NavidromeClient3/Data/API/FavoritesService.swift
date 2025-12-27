@@ -1,6 +1,12 @@
+//
+//  FavoritesService.swift
+//  NavidromeClient
+//
+//  Fixed: Ensures all return types are Sendable
+//
+
 import Foundation
 
-// FIX: Converted to Actor for consistency with UnifiedService
 actor FavoritesService {
     private let connectionService: ConnectionService
     private let session: URLSession
@@ -14,8 +20,6 @@ actor FavoritesService {
         self.session = URLSession(configuration: config)
     }
     
-    // MARK: - Star/Unstar API
-    
     func starSong(_ songId: String) async throws {
         guard !songId.isEmpty else { throw FavoritesError.invalidInput }
         
@@ -23,18 +27,13 @@ actor FavoritesService {
             throw SubsonicError.badURL
         }
         
-        do {
-            let (data, response) = try await session.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse else { throw SubsonicError.unknown }
-            
-            if httpResponse.statusCode != 200 {
-                throw SubsonicError.server(statusCode: httpResponse.statusCode)
-            }
-            // Verify success by decoding
-            _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
-        } catch {
-            throw SubsonicError.from(error)
+        let (data, response) = try await session.data(from: url)
+        
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw SubsonicError.server(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 500)
         }
+        
+        _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
     }
     
     func unstarSong(_ songId: String) async throws {
@@ -44,17 +43,13 @@ actor FavoritesService {
             throw SubsonicError.badURL
         }
         
-        do {
-            let (data, response) = try await session.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse else { throw SubsonicError.unknown }
-            
-            if httpResponse.statusCode != 200 {
-                throw SubsonicError.server(statusCode: httpResponse.statusCode)
-            }
-            _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
-        } catch {
-            throw SubsonicError.from(error)
+        let (data, response) = try await session.data(from: url)
+        
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw SubsonicError.server(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 500)
         }
+        
+        _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
     }
     
     func getStarredSongs() async throws -> [Song] {
@@ -62,25 +57,17 @@ actor FavoritesService {
             throw SubsonicError.badURL
         }
         
-        do {
-            let (data, response) = try await session.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse else { throw SubsonicError.unknown }
-            
-            if httpResponse.statusCode == 200 {
-                let decoded = try JSONDecoder().decode(SubsonicResponse<StarredContainer>.self, from: data)
-                return decoded.subsonicResponse.starred2?.song ?? []
-            } else if httpResponse.statusCode == 401 {
-                throw SubsonicError.unauthorized
-            } else {
-                throw SubsonicError.server(statusCode: httpResponse.statusCode)
-            }
-        } catch {
-            throw SubsonicError.from(error)
+        let (data, response) = try await session.data(from: url)
+        
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw SubsonicError.server(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 500)
         }
+        
+        let decoded = try JSONDecoder().decode(SubsonicResponse<StarredContainer>.self, from: data)
+        return decoded.subsonicResponse.starred2?.song ?? []
     }
     
     func starSongs(_ songIds: [String]) async throws {
-        guard !songIds.isEmpty else { return }
         for songId in songIds {
             try await starSong(songId)
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -88,7 +75,6 @@ actor FavoritesService {
     }
     
     func unstarSongs(_ songIds: [String]) async throws {
-        guard !songIds.isEmpty else { return }
         for songId in songIds {
             try await unstarSong(songId)
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -97,8 +83,7 @@ actor FavoritesService {
 }
 
 // MARK: - Supporting Types
-
-// FIX: Added Sendable
+// These MUST be Sendable for Actor return types
 struct StarredContainer: Codable, Sendable {
     let starred2: StarredContent?
 }
@@ -109,7 +94,6 @@ struct StarredContent: Codable, Sendable {
     let artist: [Artist]?
 }
 
-// FIX: Added Sendable
 enum FavoritesError: LocalizedError, Sendable {
     case invalidInput
     case songNotFound

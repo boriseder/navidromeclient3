@@ -1,3 +1,10 @@
+//
+//  GenreModel.swift
+//  NavidromeClient3
+//
+//  Swift 6: Pure Data Model (Sendable, No UI)
+//
+
 import Foundation
 
 struct GenresContainer: Codable, Sendable {
@@ -11,14 +18,10 @@ struct GenreList: Codable, Sendable {
 struct Genre: Identifiable, Hashable, Codable, Sendable {
     var id: String { value }
     let value: String
-    let songCount: Int
+    let songCount: Int?
     let albumCount: Int
     
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(value)
-    }
-    
-    static func == (lhs: Genre, rhs: Genre) -> Bool {
-        return lhs.value == rhs.value
+    enum CodingKeys: String, CodingKey {
+        case value, songCount, albumCount
     }
 }

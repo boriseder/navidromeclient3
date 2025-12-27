@@ -2,7 +2,7 @@
 //  ArtistsView.swift
 //  NavidromeClient
 //
-//  Swift 6: @Environment Migration
+//  Fixed: Correct property access 'loadedArtists'
 //
 
 import SwiftUI
@@ -12,13 +12,14 @@ struct ArtistsView: View {
     
     var body: some View {
         Group {
-            if library.isLoading && library.artists.isEmpty {
+            if library.artistLoadingState.isLoading && library.loadedArtists.isEmpty {
                 ProgressView("Loading Artists...")
-            } else if library.artists.isEmpty {
+            } else if library.loadedArtists.isEmpty {
                 ContentUnavailableView("No Artists", systemImage: "music.mic")
             } else {
                 List {
-                    ForEach(library.artists) { artist in
+                    // FIX: library.loadedArtists, NOT library.artists
+                    ForEach(library.loadedArtists) { artist in
                         NavigationLink(value: artist) {
                             HStack(spacing: DSLayout.elementGap) {
                                 ArtistImageView(artist: artist, size: 40)
@@ -46,8 +47,7 @@ struct ArtistsView: View {
         }
         .navigationTitle("Artists")
         .navigationDestination(for: Artist.self) { artist in
-            // Assuming ArtistDetailView exists, conceptually similar to AlbumDetailView
-            Text("Artist Detail: \(artist.name)")
+            AlbumCollectionView(context: .byArtist(artist))
         }
         .refreshable {
             await library.loadArtistsProgressively(reset: true)

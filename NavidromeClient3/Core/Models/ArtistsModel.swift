@@ -1,3 +1,10 @@
+//
+//  ArtistsModel.swift
+//  NavidromeClient3
+//
+//  Swift 6: Pure Data Model (Sendable, No UI)
+//
+
 import Foundation
 
 // MARK: - Artists

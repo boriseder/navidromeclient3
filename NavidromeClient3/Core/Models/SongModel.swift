@@ -1,6 +1,13 @@
+//
+//  SongModel.swift
+//  NavidromeClient3
+//
+//  Swift 6: Pure Data Model (Sendable, No UI)
+//
+
 import Foundation
 
-struct Song: Codable, Identifiable, Sendable {
+struct Song: Codable, Identifiable, Sendable, Hashable {
     let id: String
     let title: String
     let duration: Int?
@@ -23,7 +30,6 @@ struct Song: Codable, Identifiable, Sendable {
     
     // MARK: - Initializers
     
-    // 1. Manual Memberwise Init (Restored because custom decoder hid it)
     init(
         id: String,
         title: String,
@@ -58,7 +64,6 @@ struct Song: Codable, Identifiable, Sendable {
         self.path = path
     }
     
-    // 2. Custom Decoder
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
@@ -81,9 +86,6 @@ struct Song: Codable, Identifiable, Sendable {
 }
 
 extension Song {
-    // MARK: - Factory Methods
-    
-    // OPTIMIZED: Uses direct initialization instead of expensive JSONSerialization
     static func createFromDownload(
         id: String,
         title: String,

@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct GenreView: View {
-    // FIX: Swift 6 Environment
     @Environment(PlayerViewModel.self) private var playerVM
     @Environment(AppConfig.self) private var appConfig
     @Environment(ThemeManager.self) private var theme
@@ -14,7 +13,8 @@ struct GenreView: View {
     var body: some View {
         List {
             ForEach(musicLibraryManager.loadedGenres) { genre in
-                Text(genre.value)
+                // Fix: Pass theme implicit or explicitly via environment
+                GenreRowView(genre: genre, index: 0)
             }
         }
         .searchable(text: $debouncer.input)
@@ -25,14 +25,12 @@ struct GenreView: View {
     }
 }
 
-
-// MARK: - Genre Row View
-
 struct GenreRowView: View {
     let genre: Genre
     let index: Int
    
-    @EnvironmentObject var theme: ThemeManager
+    // FIX: Swift 6 Environment
+    @Environment(ThemeManager.self) private var theme
 
     var body: some View {
         HStack(spacing: DSLayout.elementGap) {
@@ -82,6 +80,4 @@ struct GenreRowView: View {
         }
         .background(theme.backgroundContrastColor.opacity(0.12))
     }
-    
 }
-

@@ -1,3 +1,10 @@
+//
+//  AlbumModel.swift
+//  NavidromeClient3
+//
+//  Swift 6: Pure Data Model (Sendable, No UI)
+//
+
 import Foundation
 
 // MARK: - Albums
@@ -36,14 +43,12 @@ struct Album: Codable, Identifiable, Hashable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         artist = try container.decode(String.self, forKey: .artist)
         
-        // Flexible Decoding
         if let title = try container.decodeIfPresent(String.self, forKey: .title) {
             name = title
         } else {
             name = try container.decode(String.self, forKey: .name)
         }
         
-        // Flexible coverArt
         if let coverArt = try container.decodeIfPresent(String.self, forKey: .coverArt) {
             self.coverArt = coverArt
             self.coverArtId = nil

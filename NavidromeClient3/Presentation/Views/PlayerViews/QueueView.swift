@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct QueueView: View {
-    // FIX: Swift 6 Environment
     @Environment(PlayerViewModel.self) private var playerVM
     @Environment(CoverArtManager.self) private var coverArtManager
     @Environment(\.dismiss) private var dismiss
@@ -9,8 +8,24 @@ struct QueueView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(playerVM.queue) { song in
-                    Text(song.title)
+                // Currently Playing
+                if let current = playerVM.currentSong {
+                    Section("Now Playing") {
+                        CurrentlyPlayingRow(song: current)
+                    }
+                }
+                
+                // Queue
+                Section("Up Next") {
+                    ForEach(Array(playerVM.queue.enumerated()), id: \.element.id) { index, song in
+                        QueueSongRow(
+                            song: song,
+                            queuePosition: index + 1,
+                            onTap: {
+                                Task { await playerVM.play(song: song, context: playerVM.queue) }
+                            }
+                        )
+                    }
                 }
             }
             .navigationTitle("Queue")
@@ -21,22 +36,22 @@ struct QueueView: View {
     }
 }
 
-
 // MARK: - Currently Playing Row
 
 struct CurrentlyPlayingRow: View {
     let song: Song
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var playerVM: PlayerViewModel
+    // FIX: Swift 6 Environment
+    @Environment(CoverArtManager.self) private var coverArtManager
+    @Environment(PlayerViewModel.self) private var playerVM
     
     private var coverArt: UIImage? {
         guard let albumId = song.albumId else { return nil }
-        return coverArtManager.getAlbumImage(for: albumId, context: .list)
+        // FIX: Explicit ImageContext.list
+        return coverArtManager.getAlbumImage(for: albumId, context: ImageContext.list)
     }
     
     var body: some View {
         HStack(spacing: DSLayout.contentGap) {
-            // Album Art with playing indicator
             ZStack {
                 if let coverArt = coverArt {
                     Image(uiImage: coverArt)
@@ -54,7 +69,6 @@ struct CurrentlyPlayingRow: View {
                         )
                 }
                 
-                // Playing indicator overlay
                 if playerVM.isPlaying {
                     RoundedRectangle(cornerRadius: DSCorners.element)
                         .fill(.black.opacity(0.4))
@@ -66,31 +80,18 @@ struct CurrentlyPlayingRow: View {
                 }
             }
             
-            // Song Info
             VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                 Text(song.title)
                     .font(DSText.emphasized)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .lineLimit(1)
                 
                 Text(song.artist ?? "Unknown Artist")
                     .font(DSText.metadata)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.secondary)
                     .lineLimit(1)
             }
-            
             Spacer()
-            
-            // Current playing indicator
-            VStack(spacing: DSLayout.tightGap) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .foregroundColor(.green)
-                    .font(DSText.metadata)
-                
-                Text("Now Playing")
-                    .font(.caption2)
-                    .foregroundColor(.green)
-            }
         }
         .padding(.vertical, DSLayout.tightGap)
     }
@@ -103,23 +104,23 @@ struct QueueSongRow: View {
     let queuePosition: Int
     let onTap: () -> Void
     
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    // FIX: Swift 6 Environment
+    @Environment(CoverArtManager.self) private var coverArtManager
     
     private var coverArt: UIImage? {
         guard let albumId = song.albumId else { return nil }
-        return coverArtManager.getAlbumImage(for: albumId, context: .list)
+        // FIX: Explicit ImageContext.list
+        return coverArtManager.getAlbumImage(for: albumId, context: ImageContext.list)
     }
     
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: DSLayout.contentGap) {
-                // Queue position number
                 Text("\(queuePosition)")
                     .font(DSText.metadata.monospacedDigit())
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(.secondary)
                     .frame(width: 20, alignment: .center)
                 
-                // Album Art
                 if let coverArt = coverArt {
                     Image(uiImage: coverArt)
                         .resizable()
@@ -133,43 +134,28 @@ struct QueueSongRow: View {
                         .overlay(
                             Image(systemName: "music.note")
                                 .font(.caption)
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(.secondary)
                         )
                 }
                 
-                // Song Info
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                     Text(song.title)
                         .font(DSText.emphasized)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     
                     Text(song.artist ?? "Unknown Artist")
                         .font(DSText.metadata)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                
-                // Duration
-                if let duration = song.duration {
-                    Text(formatDuration(duration))
-                        .font(DSText.metadata.monospacedDigit())
-                        .foregroundColor(.white.opacity(0.6))
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
-    
-    private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
-    }
 }
+
 
 // MARK: - Queue Info View
 

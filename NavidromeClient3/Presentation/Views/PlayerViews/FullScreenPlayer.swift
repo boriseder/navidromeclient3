@@ -8,12 +8,10 @@
 import SwiftUI
 
 struct FullScreenPlayer: View {
-    // 1. Inject Player
     @Environment(PlayerViewModel.self) private var player
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        // 2. Bindable for sliders
         @Bindable var bPlayer = player
         
         GeometryReader { geometry in
@@ -49,7 +47,6 @@ struct FullScreenPlayer: View {
                 
                 // Scrubber
                 VStack(spacing: 8) {
-                    // Binding to duration property
                     Slider(value: $bPlayer.currentTime, in: 0...(player.duration)) { editing in
                         if editing { player.isScrubbing = true }
                         else { player.seek(to: player.currentTime) }
@@ -94,7 +91,8 @@ struct FullScreenPlayer: View {
                 .padding(.bottom, 40)
             }
         }
-        .background(DynamicMusicBackground(image: nil)) // Ideally pass image here
+        // FIX: Removed argument 'image: nil'
+        .background(DynamicMusicBackground())
     }
     
     private func formatTime(_ time: TimeInterval) -> String {
