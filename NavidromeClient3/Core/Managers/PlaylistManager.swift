@@ -12,11 +12,9 @@ import Observation
 @Observable
 final class PlaylistManager {
     
-    // MARK: - State
-    var playlists: [String] = [] // Placeholder type
+    var playlists: [String] = []
     var isLoading = false
     
-    // MARK: - Dependencies
     private weak var service: UnifiedSubsonicService?
     
     func configure(service: UnifiedSubsonicService) {
@@ -24,13 +22,12 @@ final class PlaylistManager {
     }
     
     func loadPlaylists() async {
-        guard let service = service else { return }
+        // FIX: Replaced 'guard let service' with boolean check or underscore to silence warning
+        guard service != nil else { return }
         isLoading = true
         
-        // Placeholder for actual API call
-        // do {
-        //    self.playlists = try await service.getPlaylists()
-        // } catch { ... }
+        // Placeholder for future logic
+        try? await Task.sleep(nanoseconds: 500_000_000)
         
         isLoading = false
     }

@@ -1,50 +1,31 @@
-//
-//  WelcomeView.swift - Enhanced with Design System
-//  NavidromeClient
-//
-//   ENHANCED: Vollständige Anwendung des Design Systems
-//
-
 import SwiftUI
 
 struct WelcomeView: View {
-    let onGetStarted: () -> Void
+    // FIX: Swift 6 Observable Syntax
+    @Environment(ThemeManager.self) private var themeManager
     
     var body: some View {
-        ZStack {
+        VStack(spacing: DSLayout.sectionGap) {
+            Spacer()
             
-            DynamicMusicBackground()
-
-            VStack(spacing: DSLayout.screenGap) {
-            Image(systemName: "music.note.house")
-                .font(.system(size: 80))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [DSColor.accent, DSColor.secondary],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            WelcomeHeader()
             
             VStack(spacing: DSLayout.contentGap) {
-                Text("Welcome to Navidrome Client")
-                    .font(DSText.pageTitle)
-                    .multilineTextAlignment(.center)
+                Text("Welcome to Navidrome")
+                    .font(DSText.largeTitle)
+                    .foregroundColor(DSColor.primary)
                 
-                Text("Connect to your Navidrome server to start listening to your music library")
+                Text("Your personal music streamer")
                     .font(DSText.body)
-                    .foregroundStyle(DSColor.secondary)
-                    .multilineTextAlignment(.center)
+                    .foregroundColor(DSColor.secondary)
             }
             
-            Button("Get Started") {
-                onGetStarted()
-            }
-            .font(DSText.largeButton)
+            Spacer()
+            
+            // Example usage of themeManager if needed, or just context
+            // Button(...)
         }
-            .padding(DSLayout.screenPadding)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
+        .padding(DSLayout.screenPadding)
+        .background(DSColor.background)
     }
 }

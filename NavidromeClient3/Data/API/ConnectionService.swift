@@ -58,6 +58,15 @@ actor ConnectionService {
             }
         }
     }
+    
+    // FIX: Define local DTO to ensure strict Sendable conformance and avoid conflicts
+    private struct ServicePingInfo: Codable, Sendable {
+        let status: String
+        let version: String
+        let type: String
+        let serverVersion: String?
+        let openSubsonic: Bool?
+    }
 
     init(baseURL: URL, username: String, password: String) {
         self.baseURL = baseURL
@@ -85,16 +94,16 @@ actor ConnectionService {
                 return .failure(.serverUnreachable)
             }
             
-            // PingInfo is now Sendable (from GenericModel.swift), so this works
-            let decoded = try JSONDecoder().decode(SubsonicResponse<PingInfo>.self, from: data)
+            // FIX: Use local ServicePingInfo
+            let decoded = try JSONDecoder().decode(SubsonicResponse<ServicePingInfo>.self, from: data)
             
             updateConnectionState(success: true)
             
             return .success(ConnectionInfo(
                 version: decoded.subsonicResponse.version,
                 type: decoded.subsonicResponse.type,
-                serverVersion: decoded.subsonicResponse.serverVersion,
-                openSubsonic: decoded.subsonicResponse.openSubsonic
+                serverVersion: decoded.subsonicResponse.serverVersion ?? "Unknown",
+                openSubsonic: decoded.subsonicResponse.openSubsonic ?? false
             ))
             
         } catch {
@@ -121,7 +130,7 @@ actor ConnectionService {
         guard var components = URLComponents(string: baseURL.absoluteString) else { return nil }
         components.path = "/rest/\(endpoint).view"
         
-        // FIX: Now calls the nonisolated extensions safely
+        // Use nonisolated extension
         let salt = String.randomAlphaNumeric(length: 12)
         let token = (password + salt).md5()
         
@@ -152,16 +161,14 @@ actor ConnectionService {
     }
 }
 
-// MARK: - Extensions (FIX: nonisolated)
+// MARK: - Extensions
 
 extension String {
-    // FIX: Marked nonisolated so the Actor can call it synchronously
     nonisolated func md5() -> String {
         let digest = Insecure.MD5.hash(data: Data(self.utf8))
         return digest.map { String(format: "%02hhx", $0) }.joined()
     }
     
-    // FIX: Marked nonisolated
     nonisolated static func randomAlphaNumeric(length: Int) -> String {
         let chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).compactMap { _ in chars.randomElement() })

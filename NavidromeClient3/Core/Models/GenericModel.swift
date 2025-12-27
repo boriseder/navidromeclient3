@@ -9,7 +9,7 @@ struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
-// FIX: Added Sendable conformance
+// FIX: Added Sendable conformance explicitly
 struct PingInfo: Codable, Sendable {
     let status: String
     let version: String

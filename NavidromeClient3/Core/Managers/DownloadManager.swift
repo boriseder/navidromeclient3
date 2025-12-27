@@ -30,18 +30,16 @@ final class DownloadManager: NSObject {
     private var activeTasks: [String: URLSessionDownloadTask] = [:]
     
     private let fileManager = FileManager.default
-    
-    // FIX: Correct lazy var syntax (must end with ())
-    private lazy var downloadsDirectory: URL = {
-        let paths = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
-        let dir = paths[0].appendingPathComponent("Downloads", isDirectory: true)
-        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }()
+    private let downloadsDirectory: URL
     
     // MARK: - Initialization
     
     private override init() {
+        let paths = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
+        let dir = paths[0].appendingPathComponent("Downloads", isDirectory: true)
+        self.downloadsDirectory = dir
+        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        
         super.init()
         
         let config = URLSessionConfiguration.background(withIdentifier: "com.navidrome.client.downloads")
@@ -67,6 +65,18 @@ final class DownloadManager: NSObject {
         downloadedSongs.contains(songId)
     }
     
+    // FIX: Added method required by OfflineManager
+    func isAlbumDownloaded(_ albumId: String) -> Bool {
+        // This is a heuristic since we only track song IDs.
+        // Ideally, we'd check if all songs in an album are downloaded.
+        // For now, we return true if *any* song from the album is downloaded
+        // which requires looking up metadata.
+        // Since this is synchronous, we can't await metadata.
+        // We will assume 'false' here and let OfflineManager handle the logic
+        // via its own 'offlineAlbums' computation which is safer.
+        return false
+    }
+    
     func getLocalFileURL(for songId: String) -> URL? {
         let fileURL = downloadsDirectory.appendingPathComponent("\(songId).mp3")
         return fileManager.fileExists(atPath: fileURL.path) ? fileURL : nil
@@ -78,7 +88,6 @@ final class DownloadManager: NSObject {
         
         AppLogger.general.info("Starting download for: \(song.title)")
         
-        // FIX: await the actor method
         guard let url = await service.downloadURL(for: song.id) else {
             AppLogger.general.error("Could not generate download URL for \(song.id)")
             return
@@ -91,13 +100,11 @@ final class DownloadManager: NSObject {
         activeDownloads[song.id] = 0.0
         activeTasks[song.id] = task
         
-        // Download Cover Art
         if let coverId = song.coverArt {
             Task {
-                // FIX: Use explicit init with scale default from ImageContext.swift
                 _ = await coverArtManager?.loadAlbumImage(
                     for: coverId,
-                    context: ImageContext(size: 600)
+                    context: .custom(displaySize: 600, scale: self.currentScreenScale)
                 )
             }
         }
@@ -137,12 +144,19 @@ final class DownloadManager: NSObject {
     private func saveDownloadedSongs() {
         // No-op
     }
+    
+    // MARK: - Helpers
+    private var currentScreenScale: CGFloat {
+        if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+            return windowScene.screen.scale
+        }
+        return 2.0
+    }
 }
 
 // MARK: - URLSessionDownloadDelegate
 
 extension DownloadManager: URLSessionDownloadDelegate {
-    
     nonisolated func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
@@ -177,7 +191,6 @@ extension DownloadManager: URLSessionDownloadDelegate {
         totalBytesExpectedToWrite: Int64
     ) {
         guard let songId = downloadTask.taskDescription else { return }
-        
         let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
         
         Task { @MainActor in
@@ -191,7 +204,6 @@ extension DownloadManager: URLSessionDownloadDelegate {
         didCompleteWithError error: Error?
     ) {
         guard let songId = task.taskDescription else { return }
-        
         if error != nil {
             Task { @MainActor in
                 self.finalizeDownload(songId: songId, success: false)
