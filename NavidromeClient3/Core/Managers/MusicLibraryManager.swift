@@ -2,7 +2,7 @@
 //  MusicLibraryManager.swift
 //  NavidromeClient
 //
-//  Swift 6: Fixed Type References
+//  Swift 6: Fixed Type References & Missing Methods
 //
 
 import Foundation
@@ -38,7 +38,6 @@ final class MusicLibraryManager {
         setupFactoryResetObserver()
     }
     
-    // ... [Properties isLoading, etc. remain the same] ...
     var isLoading: Bool {
         albumLoadingState.isLoading || artistLoadingState.isLoading || genreLoadingState.isLoading
     }
@@ -82,6 +81,18 @@ final class MusicLibraryManager {
         lastRefreshDate = Date()
     }
     
+    // MARK: - Specific Loading Methods (Fixes AlbumCollectionView)
+    
+    func loadAlbums(for artist: Artist) async throws -> [Album] {
+        guard let service = service else { return [] }
+        return try await service.getAlbumsByArtist(artistId: artist.id)
+    }
+    
+    func loadAlbums(for genre: Genre) async throws -> [Album] {
+        guard let service = service else { return [] }
+        return try await service.getAlbumsByGenre(size: 500, genre: genre.value)
+    }
+    
     // MARK: - Network
     
     private func setupNetworkStateObserver() {
@@ -99,7 +110,6 @@ final class MusicLibraryManager {
     }
     
     func handleNetworkChange(isOnline: Bool) async {
-        // FIX: Access property directly
         await handleNetworkStrategyChange(NetworkMonitor.shared.contentLoadingStrategy)
     }
     
@@ -122,9 +132,8 @@ final class MusicLibraryManager {
         }
     }
     
-    // MARK: - Loading Methods
+    // MARK: - Progressive Loading
     
-    // FIX: Use global AlbumSortType
     func loadAlbumsProgressively(
         sortBy: AlbumSortType = .alphabetical,
         reset: Bool = false
@@ -146,7 +155,6 @@ final class MusicLibraryManager {
             if newAlbums.isEmpty {
                 albumLoadingState = .completed
             } else {
-                // cache logic...
                 loadedAlbums.append(contentsOf: newAlbums)
                 albumLoadingState = newAlbums.count < 20 ? .completed : .idle
             }
@@ -198,7 +206,6 @@ final class MusicLibraryManager {
     
     private func handleLoadingError(_ error: Error, for type: String) async {
         AppLogger.general.error("Failed to load \(type): \(error)")
-        // Simple error state for now
         switch type {
         case "albums": albumLoadingState = .error(error.localizedDescription)
         case "artists": artistLoadingState = .error(error.localizedDescription)
@@ -220,7 +227,6 @@ final class MusicLibraryManager {
     }
 }
 
-// Re-defining DataLoadingState if needed here or in separate file
 enum DataLoadingState: Equatable, Sendable {
     case idle, loading, loadingMore, completed
     case error(String)

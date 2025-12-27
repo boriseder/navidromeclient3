@@ -2,13 +2,11 @@
 //  ImageContext.swift
 //  NavidromeClient
 //
-//  Swift 6: Full Concurrency Support with Sendable-safe design
+//  Swift 6: Full Concurrency Support
 //
 
 import Foundation
-#if canImport(UIKit)
-import UIKit
-#endif
+import SwiftUI
 
 enum ImageContext: Sendable {
     // Album Display Contexts
@@ -55,19 +53,13 @@ enum ImageContext: Sendable {
     }
     
     /// Actual pixel size requested from server (baseSize × scale)
-    /// Considers Retina displays (2x, 3x)
     @MainActor
     var size: Int {
         let scale = self.scale
         let pixelSize = Int(CGFloat(baseSize) * scale)
-        
-        // Hard cap to prevent unnecessary large requests
         let maxServerCap = 1600
-        
-        // Round up to common server sizes for better caching
         let commonSizes = [100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
         
-        // Find next larger common size for better quality, but enforce max cap
         if let nextSize = commonSizes.first(where: { $0 >= pixelSize }) {
             return min(nextSize, maxServerCap)
         }
@@ -75,18 +67,15 @@ enum ImageContext: Sendable {
         return min(pixelSize, maxServerCap)
     }
     
-    /// Display scale factor (1x, 2x, 3x for Retina)
+    /// Display scale factor
     @MainActor
     var scale: CGFloat {
         switch self {
         case .custom(_, let scale):
             return scale
         default:
-            #if canImport(UIKit)
-            return UIScreen.main.scale
-            #else
-            return 2.0 // Default for non-UIKit platforms
-            #endif
+            // FIX: Replaced deprecated UIScreen.main.scale with modern trait access
+            return UITraitCollection.current.displayScale
         }
     }
     
@@ -102,7 +91,7 @@ enum ImageContext: Sendable {
         case .artistList, .artistCard, .artistHero:
             return false
         case .custom:
-            return true // Assume album by default
+            return true
         }
     }
     
@@ -114,37 +103,21 @@ enum ImageContext: Sendable {
     
     static func withScale(_ context: ImageContext, scale: CGFloat) -> ImageContext {
         switch context {
-        case .list:
-            return .custom(displaySize: 80, scale: scale)
-        case .card:
-            return .custom(displaySize: DSLayout.cardCoverNoPadding, scale: scale)
-        case .grid:
-            return .custom(displaySize: 200, scale: scale)
-        case .artistList:
-            return .custom(displaySize: 50, scale: scale)
-        case .artistCard:
-            return .custom(displaySize: 150, scale: scale)
-        case .artistHero:
-            return .custom(displaySize: 240, scale: scale)
-        case .detail:
-            return .custom(displaySize: 360, scale: scale)
-        case .hero:
-            return .custom(displaySize: 600, scale: scale)
-        case .fullscreen:
-            return .custom(displaySize: 1000, scale: scale)
-        case .miniPlayer:
-            return .custom(displaySize: DSLayout.cardCoverNoPadding, scale: scale)
-        case .custom(let size, _):
-            return .custom(displaySize: size, scale: scale)
+        case .list: return .custom(displaySize: 80, scale: scale)
+        case .card: return .custom(displaySize: DSLayout.cardCoverNoPadding, scale: scale)
+        case .grid: return .custom(displaySize: 200, scale: scale)
+        case .artistList: return .custom(displaySize: 50, scale: scale)
+        case .artistCard: return .custom(displaySize: 150, scale: scale)
+        case .artistHero: return .custom(displaySize: 240, scale: scale)
+        case .detail: return .custom(displaySize: 360, scale: scale)
+        case .hero: return .custom(displaySize: 600, scale: scale)
+        case .fullscreen: return .custom(displaySize: 1000, scale: scale)
+        case .miniPlayer: return .custom(displaySize: DSLayout.cardCoverNoPadding, scale: scale)
+        case .custom(let size, _): return .custom(displaySize: size, scale: scale)
         }
     }
     
     var debugDescription: String {
-        "ImageContext: \(self)"
+         return "ImageContext: \(self)"
     }
-}
-
-// Placeholder for DSLayout - define this in your actual codebase
-enum DSLayout {
-    static let cardCoverNoPadding: CGFloat = 160
 }

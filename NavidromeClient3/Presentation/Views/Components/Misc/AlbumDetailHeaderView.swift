@@ -1,25 +1,25 @@
 import SwiftUI
 
 struct AlbumDetailHeaderView: View {
-    let album: Album
+    // FIX: Disambiguate Album
+    let album: NavidromeClient3.Album
     
     var body: some View {
         VStack(spacing: DSLayout.contentGap) {
-            // FIX: Correct initializer usage matching AlbumImageView
+            // FIX: Using correct initializer labels now that ambiguity is resolved
             AlbumImageView(album: album, context: .detail)
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: DSCorners.content))
                 .shadow(radius: 10)
             
-            // Metadata
             VStack(spacing: DSLayout.tightGap) {
                 Text(album.name)
-                    .font(DSText.detail)
+                    .font(DSText.title2)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 
                 Text(album.artist)
-                    .font(DSText.detail)
+                    .font(DSText.headline)
                     .foregroundColor(DSColor.secondary)
                 
                 HStack(spacing: DSLayout.elementGap) {

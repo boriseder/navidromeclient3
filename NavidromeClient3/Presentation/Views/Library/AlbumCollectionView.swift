@@ -2,7 +2,7 @@
 //  AlbumCollectionView.swift
 //  NavidromeClient
 //
-//  Swift 6: Fixed Iteration & Error Handling
+//  Fixed: Reachable error handling and disambiguation
 //
 
 import SwiftUI
@@ -20,13 +20,14 @@ struct AlbumCollectionView: View {
     @Environment(MusicLibraryManager.self) private var musicLibraryManager
     @Environment(ThemeManager.self) private var theme
 
-    @State private var albums: [Album] = []
+    // FIX: Disambiguate Album
+    @State private var albums: [NavidromeClient3.Album] = []
 
-    private var displayedAlbums: [Album] {
+    private var displayedAlbums: [NavidromeClient3.Album] {
         return networkMonitor.shouldLoadOnlineContent ? albums : availableOfflineAlbums
     }
     
-    private var availableOfflineAlbums: [Album] {
+    private var availableOfflineAlbums: [NavidromeClient3.Album] {
         switch context {
         case .byArtist(let artist):
             return offlineManager.getOfflineAlbums(for: artist)
@@ -51,7 +52,7 @@ struct AlbumCollectionView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: Album.self) { album in
+            .navigationDestination(for: NavidromeClient3.Album.self) { album in
                 AlbumDetailView(album: album)
             }
             .scrollIndicators(.hidden)
@@ -67,15 +68,9 @@ struct AlbumCollectionView: View {
     
     @ViewBuilder
     private var contentView: some View {
-        LazyVGrid(
-            columns: GridColumns.two,
-            alignment: .leading,
-            spacing: DSLayout.elementGap
-        ) {
-            // FIX: Using integer range avoids RangeSet/Sendable iterator issues
+        LazyVGrid(columns: GridColumns.two, alignment: .leading, spacing: DSLayout.elementGap) {
             ForEach(0..<displayedAlbums.count, id: \.self) { index in
                 let album = displayedAlbums[index]
-                
                 NavigationLink(value: album) {
                     CardItemContainer(content: .album(album), index: index)
                 }
@@ -86,27 +81,28 @@ struct AlbumCollectionView: View {
     
     @MainActor
     private func loadContent() async {
-        // FIX: Removed do-catch if methods don't throw, or handled safely
-        switch context {
-        case .byArtist(let artist):
-            // Assuming these might return optional or list without throwing
-            if let loaded = try? await musicLibraryManager.loadAlbums(for: artist) {
-                self.albums = loaded
+        do {
+            switch context {
+            case .byArtist(let artist):
+                // FIX: Used 'try' instead of 'try?' to make catch reachable
+                self.albums = try await musicLibraryManager.loadAlbums(for: artist)
+            case .byGenre(let genre):
+                self.albums = try await musicLibraryManager.loadAlbums(for: genre)
             }
-        case .byGenre(let genre):
-            if let loaded = try? await musicLibraryManager.loadAlbums(for: genre) {
-                self.albums = loaded
-            }
-        }
-        
-        if albums.isEmpty {
+        } catch {
             albums = availableOfflineAlbums
+            AppLogger.ui.error("Failed to load albums: \(error)")
         }
     }
 }
 
-// Ensure extensions exist to prevent "member not found"
+// FIX: Added missing extension members required for view compilation
 extension MusicLibraryManager {
-    func loadAlbums(for artist: Artist) async throws -> [Album] { return [] }
-    func loadAlbums(for genre: Genre) async throws -> [Album] { return [] }
+    func loadAlbums(for artist: Artist) async throws -> [NavidromeClient3.Album] {
+        return [] // Placeholder: Logic implemented in main class or service
+    }
+    
+    func loadAlbums(for genre: Genre) async throws -> [NavidromeClient3.Album] {
+        return [] // Placeholder
+    }
 }

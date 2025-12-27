@@ -10,18 +10,23 @@ struct AlbumImageView: View {
         self.size = size
     }
     
-    // Convenience
-    init(album: Album, context: ImageContext) {
+    // FIX: Using NavidromeClient3.Album to resolve ambiguity
+    init(album: NavidromeClient3.Album, context: ImageContext) {
         self.albumId = album.id
-        self.size = context.size // @MainActor safe access in View init? No, computed property.
-                                 // Better to pass context or use task.
+        self.size = context.size
     }
     
     var body: some View {
-        // Implementation
-        Rectangle().fill(Color.gray)
-            .task {
-                // await coverArtManager.load...
-            }
+        ZStack {
+            Rectangle()
+                .fill(DSColor.surfaceLight)
+                .overlay {
+                    Image(systemName: "music.note")
+                        .foregroundStyle(.secondary)
+                }
+        }
+        .task {
+            // await coverArtManager.loadAlbumImage(for: albumId, context: .custom(displaySize: CGFloat(size), scale: 2.0))
+        }
     }
 }
