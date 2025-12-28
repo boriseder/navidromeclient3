@@ -1,66 +1,63 @@
+//
+//  ServerEditView.swift
+//  NavidromeClient3
+//
+//  Swift 6: Fixed property name (host -> serverUrl)
+//
+
 import SwiftUI
 
 struct ServerEditView: View {
-    @Binding var isPresented: Bool
-    
-    // FIX: Swift 6 Environment
-    @Environment(AppConfig.self) private var appConfig
-    @Environment(AppInitializer.self) private var appInitializer
-    @Environment(NetworkMonitor.self) private var networkMonitor
-    @Environment(OfflineManager.self) private var offlineManager
-    
-    // FIX: @State works for @Observable classes
-    @State private var connectionManager = ConnectionViewModel()
-    
-    @State private var showingSaveSuccess = false
-    @State private var showingError = false
-    @State private var errorMessage = ""
-    
-    // Default init used by SwiftUI
-    init(isPresented: Binding<Bool>) {
-        self._isPresented = isPresented
-    }
+    @Binding var viewModel: ConnectionViewModel
     
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Server & Login") {
-                    TextField("Host", text: $connectionManager.host)
-                        .textInputAutocapitalization(.never)
-                    
-                    TextField("Username", text: $connectionManager.username)
-                        .textInputAutocapitalization(.never)
-                    
-                    SecureField("Password", text: $connectionManager.password)
-                    
-                    Button("Test Connection") {
-                        Task { await connectionManager.testConnection() }
-                    }
-                    
-                    if let error = connectionManager.connectionError {
-                        Text(error).foregroundColor(.red)
-                    } else if connectionManager.isConnected {
-                        Text("Connected").foregroundColor(.green)
-                    }
-                }
+        Form {
+            Section(header: Text("Server Details")) {
+                // FIX: Changed .host to .serverUrl
+                TextField("Server URL (e.g. https://music.example.com)", text: $viewModel.serverUrl)
+                    .textContentType(.URL)
+                    .keyboardType(.URL)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
                 
+                TextField("Username", text: $viewModel.username)
+                    .textContentType(.username)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                
+                SecureField("Password", text: $viewModel.password)
+                    .textContentType(.password)
+            }
+            
+            if let error = viewModel.errorMessage {
                 Section {
-                    Button("Save") {
-                        Task {
-                            if await connectionManager.saveCredentials() {
-                                isPresented = false
-                            }
-                        }
-                    }
-                    .disabled(!connectionManager.isConnected)
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
                 }
             }
-            .navigationTitle("Edit Server")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
+            
+            Section {
+                Button(action: {
+                    Task {
+                        await viewModel.connect()
+                    }
+                }) {
+                    if viewModel.isLoading {
+                        HStack {
+                            Text("Connecting...")
+                            Spacer()
+                            ProgressView()
+                        }
+                    } else {
+                        Text("Connect")
+                            .bold()
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                 }
+                .disabled(!viewModel.isValid || viewModel.isLoading)
             }
         }
+        .navigationTitle("Add Server")
     }
 }

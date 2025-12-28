@@ -2,7 +2,7 @@
 //  AppInitializer.swift
 //  NavidromeClient3
 //
-//  Swift 6: Migrated to @Observable & Actor-ready
+//  Swift 6: Fixed Data Race & Unused Variable
 //
 
 import Foundation
@@ -12,7 +12,6 @@ import Observation
 @Observable
 final class AppInitializer {
     
-    // MARK: - Initialization State
     enum InitializationState: Equatable, Sendable {
         case notStarted
         case inProgress
@@ -20,11 +19,8 @@ final class AppInitializer {
         case failed(String)
     }
 
-    // Observation tracks these automatically
     var state: InitializationState = .notStarted
     var isConfigured: Bool = false
-
-    // This will eventually become an Actor in Phase 5
     private(set) var unifiedService: UnifiedSubsonicService?
     
     var areServicesReady: Bool {
@@ -36,13 +32,15 @@ final class AppInitializer {
     }
     
     private func setupNotificationObservers() {
+        // FIX: Replaced 'notification' with '_'
+        // This solves both the "unused variable" warning AND the "data race" error
+        // because we are no longer capturing the non-Sendable 'Notification' object.
         NotificationCenter.default.addObserver(
             forName: .credentialsUpdated,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
+        ) { [weak self] _ in
             Task { @MainActor in
-                guard let credentials = notification.object as? ServerCredentials else { return }
                 try? await self?.reinitializeAfterConfiguration()
             }
         }
@@ -71,10 +69,7 @@ final class AppInitializer {
         try await initialize()
     }
 
-    // MARK: - Service Creation
     private func createUnifiedService(with creds: ServerCredentials) throws {
-        // Phase 5 Warning: When UnifiedSubsonicService becomes an Actor,
-        // this assignment remains fine, but usages will need 'await'.
         unifiedService = UnifiedSubsonicService(
             baseURL: creds.baseURL,
             username: creds.username,
@@ -87,8 +82,6 @@ final class AppInitializer {
         AppLogger.general.info("[AppInitializer] Service created")
     }
 
-    // MARK: - Dependency Wiring
-    // This injects the "Dynamic" Service into the "Static" Managers
     func configureManagers(
         coverArtManager: CoverArtManager,
         songManager: SongManager,
@@ -108,8 +101,6 @@ final class AppInitializer {
         coverArtManager.configure(service: service)
         songManager.configure(service: service)
         downloadManager.configure(service: service)
-        // Note: downloadManager.configure(coverArtManager:) is already done in AppDependencies
-        
         favoritesManager.configure(service: service)
         exploreManager.configure(service: service)
         musicLibraryManager.configure(service: service)
@@ -118,7 +109,6 @@ final class AppInitializer {
         AppLogger.general.info("[AppInitializer] ✅ Managers configured")
     }
 
-    // MARK: - Data Loading
     func loadInitialData(
         exploreManager: ExploreManager,
         favoritesManager: FavoritesManager,
@@ -128,7 +118,6 @@ final class AppInitializer {
 
         AppLogger.general.info("[AppInitializer] Loading initial data...")
 
-        // Swift 6: Structured Concurrency
         await withDiscardingTaskGroup { group in
             group.addTask { await exploreManager.loadExploreData() }
             group.addTask { await favoritesManager.loadFavoriteSongs() }
@@ -136,7 +125,6 @@ final class AppInitializer {
         }
     }
     
-    // MARK: - Reset Logic
     func performFactoryReset() async {
         AppLogger.general.info("[AppInitializer] === Factory Reset Start ===")
         AppConfig.shared.clearCredentials()

@@ -5,7 +5,10 @@
 //  Swift 6: Full Concurrency Support
 //
 
-struct Song: Codable, Identifiable, Sendable, Hashable {
+import Foundation
+
+// FIX: Mark struct as 'nonisolated' to decouple it from MainActor
+nonisolated struct Song: Codable, Identifiable, Sendable, Hashable {
     let id: String
     let title: String
     let duration: Int?
@@ -63,7 +66,8 @@ struct Song: Codable, Identifiable, Sendable, Hashable {
         self.path = path
     }
     
-    init(from decoder: Decoder) throws {
+    // FIX: Explicitly mark init as nonisolated
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         id = try container.decode(String.self, forKey: .id)

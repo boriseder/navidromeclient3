@@ -1,58 +1,39 @@
 //
 //  CoverArtManager+ScenePhase.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Detects app backgrounding and triggers cache check on activation
+//  Swift 6: Fixed Concurrency in Notification Handler
 //
 
 import SwiftUI
+import UIKit
 
 extension CoverArtManager {
     
     func setupScenePhaseObserver() {
-        // Will resign active (backgrounding)
-        let resignObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
+        let observer = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            // FIX: The closure is @Sendable (non-isolated).
+            // We must explicitly enter a MainActor Task to access 'self' safely.
             Task { @MainActor in
-                AppLogger.cache.debug("[CoverArtManager] App will resign active")
-                // Could save state here if needed
+                guard let self = self else { return }
+                
+                self.incrementCacheGeneration()
+                
+                AppLogger.cache.debug("CoverArtManager: App entered foreground, cache generation incremented")
             }
         }
         
-        // Did become active (foregrounding)
-        let activeObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                await self?.handleAppActivation()
-            }
-        }
-        
-        // CRITICAL: Store observers for cleanup
-        sceneObservers.append(resignObserver)
-        sceneObservers.append(activeObserver)
-    }
-    
-    func handleAppActivation() async {
-        AppLogger.cache.info("[CoverArtManager] App became active - refreshing cache state")
-        
-        // Single action: Increment generation to trigger view reloads
-        // Views will check disk cache automatically via loadCoverArt()
-        incrementCacheGeneration()
-        
-        AppLogger.cache.info("[CoverArtManager] Cache generation incremented - views will reload")
+        sceneObservers.append(observer)
     }
     
     func cleanupObservers() {
-        sceneObservers.forEach { observer in
-            NotificationCenter.default.removeObserver(observer)
+        sceneObservers.forEach {
+            NotificationCenter.default.removeObserver($0)
         }
         sceneObservers.removeAll()
-        AppLogger.cache.debug("[CoverArtManager] Scene observers cleaned up")
     }
 }

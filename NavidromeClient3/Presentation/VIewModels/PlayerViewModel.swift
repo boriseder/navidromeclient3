@@ -1,6 +1,6 @@
 //
 //  PlayerViewModel.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
 //  Swift 6: Fully functional Player logic with Actor integration
 //
@@ -27,7 +27,7 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     // Dependencies
     private var service: UnifiedSubsonicService?
     private let coverArtManager: CoverArtManager
-    private let engine = PlaybackEngine()
+    private let engine = PlaybackEngine.shared // Use shared instance or inject it
     
     init(coverArtManager: CoverArtManager) {
         self.coverArtManager = coverArtManager
@@ -41,14 +41,12 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     // MARK: - Intentions (Public API)
     
     func play(song: Song, context: [Song]) async {
-        // Optimistic UI update
         self.currentSong = song
         self.queue = context
         
         if let index = context.firstIndex(where: { $0.id == song.id }) {
             self.currentIndex = index
         } else {
-            // Fallback if song not in context (shouldn't happen usually)
             self.currentIndex = 0
             self.queue = [song] + context
         }
@@ -76,7 +74,6 @@ final class PlayerViewModel: PlaybackEngineDelegate {
             currentIndex += 1
             Task { await loadAndPlayCurrentSong() }
         } else {
-            // End of queue behavior
             engine.stop()
             isPlaying = false
         }
@@ -85,14 +82,13 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     func previousTrack() {
         guard !queue.isEmpty else { return }
         
-        // If we are more than 3 seconds in, restart the song
         if currentTime > 3 {
             engine.seek(to: 0)
         } else if currentIndex > 0 {
             currentIndex -= 1
             Task { await loadAndPlayCurrentSong() }
         } else {
-            engine.seek(to: 0) // First song, just restart
+            engine.seek(to: 0)
         }
     }
     
@@ -102,15 +98,13 @@ final class PlayerViewModel: PlaybackEngineDelegate {
         guard let service = service, currentIndex >= 0, currentIndex < queue.count else { return }
         
         let song = queue[currentIndex]
-        self.currentSong = song // Update UI immediately
+        self.currentSong = song
         
-        // 1. Get Stream URL (Async Actor Call)
         guard let streamURL = await service.streamURL(for: song.id) else {
             AppLogger.general.error("Failed to get stream URL for \(song.title)")
             return
         }
         
-        // 2. Prepare Next URL for Gapless/Preloading
         var upcoming: [(String, URL)] = []
         if currentIndex + 1 < queue.count {
             let nextSong = queue[currentIndex + 1]
@@ -119,8 +113,7 @@ final class PlayerViewModel: PlaybackEngineDelegate {
             }
         }
         
-        // 3. Hand off to Engine
-        await engine.setQueue(
+        engine.setQueue(
             primaryURL: streamURL,
             primaryId: song.id,
             upcomingURLs: upcoming
@@ -130,7 +123,6 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     // MARK: - PlaybackEngineDelegate
     
     func playbackEngine(_ engine: PlaybackEngine, didUpdateTime time: TimeInterval) {
-        // Don't update time while user is dragging the slider
         if !isScrubbing {
             self.currentTime = time
         }
@@ -155,10 +147,5 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     func playbackEngine(_ engine: PlaybackEngine, didEncounterError error: String) {
         AppLogger.general.error("Playback error: \(error)")
         isPlaying = false
-    }
-    
-    func playbackEngineNeedsMoreItems(_ engine: PlaybackEngine) async {
-        // Logic to fetch more items if we are near the end of a dynamic queue (e.g. radio)
-        // For now, standard playlists are static queues.
     }
 }

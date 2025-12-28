@@ -7,15 +7,15 @@
 
 import Foundation
 
-struct GenresContainer: Codable, Sendable {
+nonisolated struct GenresContainer: Codable, Sendable {
     let genres: GenreList?
 }
 
-struct GenreList: Codable, Sendable {
+nonisolated struct GenreList: Codable, Sendable {
     let genre: [Genre]?
 }
 
-struct Genre: Identifiable, Hashable, Codable, Sendable {
+nonisolated struct Genre: Identifiable, Hashable, Codable, Sendable {
     var id: String { value }
     let value: String
     let songCount: Int?

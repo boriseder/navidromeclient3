@@ -1,8 +1,13 @@
+//
+//  AlbumMetadataCache.swift
+//  NavidromeClient3
+//
+//  Swift 6: Fixed Actor Isolation Access
+//
+
 import Foundation
-import SwiftUI
 
 // MARK: - Album Metadata Cache
-// FIX: Converted to Actor to move File I/O off the Main Thread
 actor AlbumMetadataCache {
     static let shared = AlbumMetadataCache()
     
@@ -13,7 +18,6 @@ actor AlbumMetadataCache {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         cacheFile = documentsPath.appendingPathComponent("album_metadata_cache.json")
         
-        // We cannot await in init, so we start a detached task to load
         Task {
             await loadCache()
         }
@@ -46,10 +50,14 @@ actor AlbumMetadataCache {
     func clearCache() {
         cachedAlbums.removeAll()
         try? FileManager.default.removeItem(at: cacheFile)
-        AppLogger.general.info("📦 AlbumMetadataCache: Cache cleared")
+        
+        // Safe: No actor state accessed inside the closure
+        Task { @MainActor in
+            AppLogger.general.info("📦 AlbumMetadataCache: Cache cleared")
+        }
     }
     
-    // MARK: - Private I/O (Async internal handling)
+    // MARK: - Private I/O
     
     private func loadCache() {
         guard FileManager.default.fileExists(atPath: cacheFile.path),
@@ -58,7 +66,15 @@ actor AlbumMetadataCache {
             return
         }
         cachedAlbums = albums
-        AppLogger.general.info("📦 Loaded \(cachedAlbums.count) albums from metadata cache")
+        
+        // FIX: Capture the count locally.
+        // We cannot access 'cachedAlbums.count' inside the Task because the Task
+        // runs on the MainActor, while 'cachedAlbums' belongs to this actor.
+        let count = albums.count
+        
+        Task { @MainActor in
+            AppLogger.general.info("📦 Loaded \(count) albums from metadata cache")
+        }
     }
     
     private func saveCache() {

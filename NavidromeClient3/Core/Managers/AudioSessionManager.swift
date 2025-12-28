@@ -1,103 +1,135 @@
 //
 //  AudioSessionManager.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Swift 6: @Observable Migration
+//  Swift 6: Restored Missing Properties & Fixed Concurrency
 //
 
-import Foundation
 import AVFoundation
 import MediaPlayer
 import Observation
 
 @MainActor
 @Observable
-final class AudioSessionManager: NSObject {
+final class AudioSessionManager {
     static let shared = AudioSessionManager()
     
-    // Properties are now tracked by @Observable
-    var isAudioSessionActive = false
-    var isHeadphonesConnected = false
+    // MARK: - State
+    var isAudioSessionActive: Bool = false
+    var isHeadphonesConnected: Bool = false
     var audioRoute: String = ""
     
-    // Queue for internal non-UI operations if needed,
-    // but @MainActor class usually implies logic runs on main.
-    
+    // FIX: Restored missing property required by AppDependencies
     weak var playerViewModel: PlayerViewModel?
     
-    private override init() {
-        super.init()
+    // MARK: - Initialization
+    private init() {
         setupAudioSession()
         setupNotifications()
-        setupRemoteCommandCenter()
         checkAudioRoute()
     }
-        
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-
-    // MARK: - Audio Session Setup
     
-    func setupAudioSession() {
-        let session = AVAudioSession.sharedInstance()
+    private func setupAudioSession() {
         do {
-            try session.setCategory(.playback, mode: .default, options: [])
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay])
             try session.setActive(true)
             isAudioSessionActive = true
+            AppLogger.audio.info("✅ Audio Session configured & active")
         } catch {
-            isAudioSessionActive = false
-            print("❌ Audio Session setup failed: \(error)")
+            AppLogger.audio.error("❌ Failed to setup audio session: \(error.localizedDescription)")
         }
     }
     
-    // MARK: - Notifications Setup
+    // MARK: - Notifications
     
     private func setupNotifications() {
         let center = NotificationCenter.default
-        let session = AVAudioSession.sharedInstance()
         
+        // Interruption (e.g. Phone call)
         center.addObserver(
             forName: AVAudioSession.interruptionNotification,
-            object: session,
+            object: nil,
             queue: .main
-        ) { [weak self] n in self?.handleInterruptionNotification(n) }
+        ) { [weak self] n in
+            guard let userInfo = n.userInfo,
+                  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+                return
+            }
+            
+            let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            
+            Task { @MainActor in
+                self?.handleInterruption(type: type, options: options)
+            }
+        }
         
+        // Route Change (e.g. Headphones unplugged)
         center.addObserver(
             forName: AVAudioSession.routeChangeNotification,
-            object: session,
+            object: nil,
             queue: .main
-        ) { [weak self] n in self?.handleRouteChangeNotification(n) }
+        ) { [weak self] n in
+            guard let userInfo = n.userInfo,
+                  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+                return
+            }
+            
+            Task { @MainActor in
+                self?.handleRouteChange(reason: reason)
+            }
+        }
     }
     
-    // MARK: - Remote Command Center (Placeholder)
-    func setupRemoteCommandCenter() {
-        // Implementation kept brief for compilation fix; assumes standard MPRemoteCommandCenter logic
-    }
+    // MARK: - Helpers
     
-    // MARK: - Audio Route
     private func checkAudioRoute() {
         let route = AVAudioSession.sharedInstance().currentRoute
         audioRoute = route.outputs.first?.portName ?? "Unknown"
         isHeadphonesConnected = route.outputs.contains {
             $0.portType == .headphones || $0.portType == .bluetoothA2DP
         }
+        AppLogger.audio.debug("🎧 Route: \(audioRoute), Headphones: \(isHeadphonesConnected)")
     }
     
     // MARK: - Handlers
-    private func handleInterruptionNotification(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+    
+    private func handleInterruption(type: AVAudioSession.InterruptionType, options: AVAudioSession.InterruptionOptions) {
+        AppLogger.audio.debug("🎧 Audio Interruption: \(type.rawValue)")
         
-        if type == .began {
-            isAudioSessionActive = false
-        } else if type == .ended {
-            isAudioSessionActive = true
+        switch type {
+        case .began:
+            NotificationCenter.default.post(name: .audioInterruptionBegan, object: nil)
+            
+        case .ended:
+            if options.contains(.shouldResume) {
+                NotificationCenter.default.post(name: .audioInterruptionEnded, object: nil)
+            }
+            
+        @unknown default:
+            break
         }
     }
     
-    private func handleRouteChangeNotification(_ notification: Notification) {
+    private func handleRouteChange(reason: AVAudioSession.RouteChangeReason) {
+        AppLogger.audio.debug("🎧 Audio Route Changed: \(reason.rawValue)")
+        
+        // Always refresh route info
         checkAudioRoute()
+        
+        switch reason {
+        case .oldDeviceUnavailable:
+            AppLogger.audio.info("🔌 Old device unavailable - requesting pause")
+            NotificationCenter.default.post(name: .audioRouteChangedOldDeviceUnavailable, object: nil)
+            
+        case .newDeviceAvailable:
+            AppLogger.audio.info("🎧 New device available")
+            
+        default:
+            break
+        }
     }
 }

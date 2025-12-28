@@ -8,7 +8,7 @@
 import Foundation
 
 // MARK: - Generic Subsonic Response Wrapper
-struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
+nonisolated struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     let subsonicResponse: T
     
     private enum CodingKeys: String, CodingKey {
@@ -16,7 +16,7 @@ struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
-struct PingInfo: Codable, Sendable {
+nonisolated struct PingInfo: Codable, Sendable {
     let status: String
     let version: String
     let type: String
@@ -25,16 +25,20 @@ struct PingInfo: Codable, Sendable {
 }
 
 // MARK: - Error Response
-struct SubsonicErrorDetail: Codable, Sendable {
+nonisolated struct SubsonicErrorDetail: Codable, Sendable {
     let code: Int
     let message: String
 }
 
-struct SubsonicResponseContent: Codable, Sendable {
+nonisolated struct SubsonicResponseContent: Codable, Sendable {
     let status: String
     let version: String?
     let error: SubsonicErrorDetail?
 }
 
 // MARK: - Empty Response
-struct EmptyResponse: Codable, Sendable {}
+nonisolated struct EmptyResponse: Codable, Sendable {
+    nonisolated init() {}
+    nonisolated init(from decoder: Decoder) throws {}
+    nonisolated func encode(to encoder: Encoder) throws {}
+}

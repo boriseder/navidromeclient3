@@ -2,7 +2,7 @@
 //  AppLogger.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed for global concurrency (Struct = Sendable)
+//  Swift 6: Fixed - Explicit nonisolated init to satisfy global static requirements
 //
 
 import os
@@ -41,15 +41,14 @@ actor FileLogHandler {
 
 enum AppLogger {
     // MARK: - Logger Wrapper (Struct)
-    // Being a struct makes this implicitly Sendable because Logger is Sendable.
-    // This allows static let properties to be accessed from any actor.
     struct LogWrapper: Sendable {
         let logger: Logger
         let category: String
 
-        init(category: String) {
+        // FIX: Explicitly mark init as 'nonisolated' so it can be used
+        // in the static properties below without Actor isolation issues.
+        nonisolated init(category: String) {
             self.category = category
-            // Initialize Logger directly to avoid static dependency issues
             self.logger = Logger(subsystem: "at.amtabor.NavidromeClient", category: category)
         }
 
@@ -71,13 +70,15 @@ enum AppLogger {
     }
 
     // MARK: - Categories
-    static let general = LogWrapper(category: "General")
-    static let ui      = LogWrapper(category: "UI")
-    static let network = LogWrapper(category: "Network")
-    static let audio   = LogWrapper(category: "Audio")
-    static let cache   = LogWrapper(category: "Cache")
+    // These are now valid because LogWrapper.init is explicitly nonisolated
+    nonisolated static let general = LogWrapper(category: "General")
+    nonisolated static let ui      = LogWrapper(category: "UI")
+    nonisolated static let network = LogWrapper(category: "Network")
+    nonisolated static let audio   = LogWrapper(category: "Audio")
+    nonisolated static let cache   = LogWrapper(category: "Cache")
 
-    static func logFilePath() -> URL {
+    // FIX: Mark this as nonisolated too, so background services can ask for the path
+    nonisolated static func logFilePath() -> URL {
         FileLogHandler.shared.getLogFilePath()
     }
 }

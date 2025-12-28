@@ -37,7 +37,10 @@ struct NavidromeClientApp: App {
                     
                 case .failed(let error):
                     InitializationErrorView(error: error) {
-                        Task { try? await dependencies.appInitializer.initialize() }
+                        Task {
+                            // FIX: Added 'try?' to handle the throwing async function in the retry action
+                            try? await dependencies.appInitializer.initialize()
+                        }
                     }
                 }
             }
@@ -63,7 +66,12 @@ struct NavidromeClientApp: App {
             
             // 5. Lifecycle Hooks
             .task {
-                await dependencies.appInitializer.initialize()
+                // FIX: Wrapped throwing call in do-catch
+                do {
+                    try await dependencies.appInitializer.initialize()
+                } catch {
+                    AppLogger.general.error("App initialization failed: \(error)")
+                }
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .background {

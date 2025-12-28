@@ -1,62 +1,40 @@
 //
 //  DownloadedModel.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Swift 6: Full Concurrency Support
+//  Swift 6: Fixed imports and conformances
 //
 
-struct DownloadedAlbum: Codable, Sendable, Equatable {
-    let albumId: String
-    let albumName: String
-    let artistName: String
-    let year: Int?
-    let genre: String?
-    let songs: [DownloadedSong]
-    let downloadDate: Date
-        
-    var songIds: [String] {
-        songs.map { $0.id }
-    }
+import Foundation
+
+// FIX: Added 'nonisolated' to structs to prevent MainActor inference
+nonisolated struct DownloadedAlbum: Codable, Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let artist: String
+    let coverArtPath: String?
+    let downloadedAt: Date
+    var songs: [DownloadedSong]
     
-    // Computed property for current folder path
-    // Note: FileManager is Sendable as of iOS 13+
-    var folderPath: String {
+    // Calculated properties that access FileManager are safe as long as they aren't stored
+    var localCoverArtURL: URL? {
+        guard let path = coverArtPath else { return nil }
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documentsPath
-            .appendingPathComponent("Downloads", isDirectory: true)
-            .appendingPathComponent(albumId, isDirectory: true)
-            .path
+        return documentsPath.appendingPathComponent(path)
     }
 }
 
-struct DownloadedSong: Codable, Sendable, Equatable, Identifiable {
+nonisolated struct DownloadedSong: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let title: String
-    let artist: String?
-    let album: String?
-    let albumId: String?
-    let track: Int?
+    let artist: String
+    let album: String
     let duration: Int?
-    let year: Int?
-    let genre: String?
-    let contentType: String?
-    let fileName: String
-    let fileSize: Int64
-    let downloadDate: Date
+    let path: String
+    let downloadedAt: Date
     
-    func toSong() -> Song {
-        Song.createFromDownload(
-            id: id,
-            title: title,
-            duration: duration,
-            coverArt: albumId,
-            artist: artist,
-            album: album,
-            albumId: albumId,
-            track: track,
-            year: year,
-            genre: genre,
-            contentType: contentType
-        )
+    var localURL: URL {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documentsPath.appendingPathComponent(path)
     }
 }

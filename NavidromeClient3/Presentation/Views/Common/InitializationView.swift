@@ -2,13 +2,12 @@
 //  InitializationView.swift
 //  NavidromeClient
 //
-//  Swift 6: Updated for @Observable
+//  Swift 6: Fixed DesignSystem font references
 //
 
 import SwiftUI
 
 struct InitializationView: View {
-    // FIX: Just use 'let'. The view will update automatically when 'initializer' properties change.
     let initializer: AppInitializer
     
     var body: some View {
@@ -21,7 +20,8 @@ struct InitializationView: View {
                     .scaleEffect(1.5)
                 
                 Text("Initializing...")
-                    .font(DSText.headline) // Use DesignSystem
+                    // FIX: 'DSText.headline' -> 'DSText.prominent' (matches DesignSystem.swift)
+                    .font(DSText.prominent)
                     .foregroundColor(DSColor.onDark)
                 
                 if case .inProgress = initializer.state {
@@ -45,7 +45,8 @@ struct InitializationErrorView: View {
                 .foregroundColor(DSColor.error)
             
             Text("Initialization Failed")
-                .font(DSText.title2)
+                // FIX: 'DSText.title2' -> 'DSText.subsectionTitle' (matches DesignSystem.swift)
+                .font(DSText.subsectionTitle)
             
             Text(error)
                 .font(DSText.body)

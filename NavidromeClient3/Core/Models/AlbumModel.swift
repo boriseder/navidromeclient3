@@ -8,15 +8,15 @@
 import Foundation
 
 // MARK: - Albums
-struct AlbumListContainer: Codable, Sendable {
+nonisolated struct AlbumListContainer: Codable, Sendable {
     let albumList2: AlbumList
 }
 
-struct AlbumList: Codable, Sendable {
+nonisolated struct AlbumList: Codable, Sendable {
     let album: [Album]
 }
 
-struct Album: Codable, Identifiable, Hashable, Sendable {
+nonisolated struct Album: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let artist: String
@@ -37,7 +37,7 @@ struct Album: Codable, Identifiable, Hashable, Sendable {
         case coverArtId = "albumArt"
     }
     
-    init(from decoder: Decoder) throws {
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         id = try container.decode(String.self, forKey: .id)
@@ -81,11 +81,11 @@ struct Album: Codable, Identifiable, Hashable, Sendable {
 }
 
 // MARK: - Album with Songs
-struct AlbumWithSongsContainer: Codable, Sendable {
+nonisolated struct AlbumWithSongsContainer: Codable, Sendable {
     let album: AlbumWithSongs
 }
 
-struct AlbumWithSongs: Codable, Sendable {
+nonisolated struct AlbumWithSongs: Codable, Sendable {
     let id: String
     let name: String
     let song: [Song]?

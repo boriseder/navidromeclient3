@@ -2,7 +2,7 @@
 //  MusicLibraryManager.swift
 //  NavidromeClient
 //
-//  Swift 6: Fixed Type References & Missing Methods
+//  Swift 6: Fixed Method Calls
 //
 
 import Foundation
@@ -81,7 +81,7 @@ final class MusicLibraryManager {
         lastRefreshDate = Date()
     }
     
-    // MARK: - Specific Loading Methods (Fixes AlbumCollectionView)
+    // MARK: - Specific Loading Methods
     
     func loadAlbums(for artist: Artist) async throws -> [Album] {
         guard let service = service else { return [] }
@@ -90,7 +90,8 @@ final class MusicLibraryManager {
     
     func loadAlbums(for genre: Genre) async throws -> [Album] {
         guard let service = service else { return [] }
-        return try await service.getAlbumsByGenre(size: 500, genre: genre.value)
+        // FIX: Removed 'size' argument to match UnifiedSubsonicService signature
+        return try await service.getAlbumsByGenre(genre: genre.value)
     }
     
     // MARK: - Network

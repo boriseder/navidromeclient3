@@ -1,6 +1,6 @@
 //
 //  FavoritesService.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
 //  Fixed: Uses clean shared models
 //
@@ -83,13 +83,12 @@ actor FavoritesService {
 }
 
 // MARK: - Supporting Types
-// Needed here if not defined in GenericModel.swift.
-// (Based on your uploads, StarredContainer was likely missing or in FavoritesService)
-struct StarredContainer: Codable, Sendable {
+// FIX: Mark these as nonisolated to prevent MainActor inference
+nonisolated struct StarredContainer: Codable, Sendable {
     let starred2: StarredContent?
 }
 
-struct StarredContent: Codable, Sendable {
+nonisolated struct StarredContent: Codable, Sendable {
     let song: [Song]?
     let album: [Album]?
     let artist: [Artist]?

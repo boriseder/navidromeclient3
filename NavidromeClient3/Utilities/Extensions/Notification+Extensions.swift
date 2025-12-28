@@ -1,25 +1,21 @@
 //
 //  Notification+Extensions.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Centralized notification names
+//  Swift 6: Added Audio Session Notifications
 //
 
 import Foundation
 
-// MARK: - Notification Names
-
 extension Notification.Name {
     // MARK: - App Lifecycle
-    
-    /// Posted when factory reset is requested
-    /// Observers: All managers that need to clear state
     static let factoryResetRequested = Notification.Name("factoryResetRequested")
     
     // MARK: - Credentials
-    
-    /// Posted when credentials are updated/saved
-    /// Object: ServerCredentials
-    /// Observers: AppInitializer (for reinitialization)
     static let credentialsUpdated = Notification.Name("credentialsUpdated")
+    
+    // MARK: - Audio Session
+    static let audioInterruptionBegan = Notification.Name("audioInterruptionBegan")
+    static let audioInterruptionEnded = Notification.Name("audioInterruptionEnded")
+    static let audioRouteChangedOldDeviceUnavailable = Notification.Name("audioRouteChangedOldDeviceUnavailable")
 }

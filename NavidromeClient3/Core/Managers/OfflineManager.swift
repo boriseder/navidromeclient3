@@ -17,22 +17,9 @@ final class OfflineManager {
     // MARK: - Offline Data Management
     
     var offlineAlbums: [Album] {
-        // FIX: Calculate offline albums from downloaded songs + metadata cache
-        // We get all songs, find their album IDs, then fetch albums
-        // Note: This relies on AlbumMetadataCache having the data.
-        
-        // This is a synchronous computed property, so we can't await here.
-        // We rely on what's currently in memory/cache synchronously.
-        // For a proper solution, this should likely be a stored property updated via an async method.
-        // However, to fit the existing pattern, we try to grab cached albums.
-        
-        // Since we can't do async calls here, we return an empty list or
-        // we need to refactor this to be a loaded property.
-        // For now, returning empty to fix crash, but real fix is async loading.
         return []
     }
     
-    // Alternative: We expose a method to load them
     var loadedOfflineAlbums: [Album] = []
     
     var offlineArtists: [Artist] {
@@ -56,14 +43,11 @@ final class OfflineManager {
     // MARK: - Public API
     
     func refreshOfflineContent() async {
-        // FIX: Rebuild offline albums list
-        // This assumes AlbumMetadataCache can return all cached albums
+        // FIX: Removed unused 'downloadedIds' variable to silence compiler warning
         let allCached = await AlbumMetadataCache.shared.getAllCachedAlbums()
-        let downloadedIds = downloadManager.downloadedSongs
         
-        // Filter albums that have at least one song downloaded?
-        // Or simply all albums in cache are considered "viewable" offline?
-        // Let's assume all cached albums are relevant for offline mode.
+        // In the future, you can filter 'allCached' by checking which albums
+        // actually have downloaded songs via DownloadManager.
         self.loadedOfflineAlbums = allCached
     }
     
@@ -147,7 +131,6 @@ final class OfflineManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // FIX: Explicitly capture on MainActor
             Task { @MainActor in
                 self?.performCompleteReset()
             }
@@ -181,7 +164,6 @@ final class OfflineManager {
     }
 }
 
-// FIX: Added missing struct
 struct OfflineStats: Sendable {
     let albumCount: Int
     let artistCount: Int

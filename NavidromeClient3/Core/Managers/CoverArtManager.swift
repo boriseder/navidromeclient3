@@ -2,7 +2,7 @@
 //  CoverArtManager.swift
 //  NavidromeClient3
 //
-//  Swift 6: @Observable Migration
+//  Swift 6: Removed deinit (Singleton does not need explicit cleanup)
 //
 
 import SwiftUI
@@ -15,23 +15,25 @@ final class CoverArtManager {
     static let shared = CoverArtManager()
     
     // MARK: - State
-    // @Observable tracks these automatically
     var cacheGeneration: Int = 0
+    var sceneObservers: [NSObjectProtocol] = []
     
     // Internal tracking for loading states
     private var loadingStates: [String: Bool] = [:]
     private var errorStates: [String: String] = [:]
     
-    // Memory Cache (UIImage is MainActor-isolated, so this fits)
     private let memoryCache = NSCache<NSString, UIImage>()
-    
-    // Dependencies
     private weak var service: UnifiedSubsonicService?
     
     // MARK: - Initialization
     private init() {
-        memoryCache.countLimit = 200 // Max 200 images in memory
+        memoryCache.countLimit = 200
+        setupScenePhaseObserver()
     }
+    
+    // FIX: Removed deinit.
+    // Since this is a Singleton, it never deinitializes during the app's life.
+    // Removing this fixes the "Main actor-isolated" error in deinit.
     
     func configure(service: UnifiedSubsonicService) {
         self.service = service
@@ -45,8 +47,6 @@ final class CoverArtManager {
     }
     
     func getArtistImage(for id: String, context: ImageContext) -> UIImage? {
-        // Re-use logic for now, or implement specific artist endpoint if API supports it
-        // Often artist images use the same 'getCoverArt' endpoint with artist ID
         let key = cacheKey(id: id, size: context.size)
         return memoryCache.object(forKey: key as NSString)
     }
@@ -67,37 +67,25 @@ final class CoverArtManager {
         let size = context.size
         let key = cacheKey(id: id, size: size)
         
-        // 1. Check Memory
         if let cached = memoryCache.object(forKey: key as NSString) {
             return cached
         }
         
-        // 2. Check Disk (Async)
-        // Accessing PersistentImageCache (Actor)
         if let diskImage = await PersistentImageCache.shared.retrieve(for: id, size: size) {
             memoryCache.setObject(diskImage, forKey: key as NSString)
-            // Trigger UI update
             cacheGeneration += 1
             return diskImage
         }
         
-        // 3. Fetch from Network
         guard let service = service else { return nil }
         
-        // Prevent duplicate requests
         if loadingStates[key] == true { return nil }
         
         loadingStates[key] = true
         errorStates[key] = nil
         
-        // Note: We don't increment cacheGeneration for loading state changes to avoid excessive redraws,
-        // but @Observable might track the dictionary change.
+        defer { loadingStates[key] = false }
         
-        defer {
-            loadingStates[key] = false
-        }
-        
-        // Call Actor
         if let image = await service.getCoverArt(for: id, size: size) {
             memoryCache.setObject(image, forKey: key as NSString)
             cacheGeneration += 1
@@ -108,12 +96,15 @@ final class CoverArtManager {
         }
     }
     
-    // Alias for artists if logic is identical
     func loadArtistImage(for id: String, context: ImageContext) async -> UIImage? {
         return await loadAlbumImage(for: id, context: context)
     }
     
     // MARK: - Helpers
+    
+    func incrementCacheGeneration() {
+        cacheGeneration += 1
+    }
     
     private func cacheKey(id: String, size: Int) -> String {
         return "\(id)_\(size)"
