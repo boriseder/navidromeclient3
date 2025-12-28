@@ -2,12 +2,11 @@
 //  CoverArtManager.swift
 //  NavidromeClient3
 //
-//  Swift 6: Removed deinit (Singleton does not need explicit cleanup)
+//  Swift 6: Cleaned - Removed unnecessary Combine import
 //
 
 import SwiftUI
 import Observation
-import Combine
 
 @MainActor
 @Observable
@@ -18,22 +17,16 @@ final class CoverArtManager {
     var cacheGeneration: Int = 0
     var sceneObservers: [NSObjectProtocol] = []
     
-    // Internal tracking for loading states
     private var loadingStates: [String: Bool] = [:]
     private var errorStates: [String: String] = [:]
     
     private let memoryCache = NSCache<NSString, UIImage>()
     private weak var service: UnifiedSubsonicService?
     
-    // MARK: - Initialization
     private init() {
         memoryCache.countLimit = 200
         setupScenePhaseObserver()
     }
-    
-    // FIX: Removed deinit.
-    // Since this is a Singleton, it never deinitializes during the app's life.
-    // Removing this fixes the "Main actor-isolated" error in deinit.
     
     func configure(service: UnifiedSubsonicService) {
         self.service = service

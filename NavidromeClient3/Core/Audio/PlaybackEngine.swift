@@ -2,11 +2,10 @@
 //  PlaybackEngine.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed Data Races & Observer Storage
+//  Swift 6: Cleaned - Removed unnecessary Combine import
 //
 
 @preconcurrency import AVFoundation
-import Combine
 import MediaPlayer
 
 // MARK: - Delegate Protocol
@@ -26,7 +25,6 @@ final class PlaybackEngine: NSObject {
     // MARK: - Properties
     private var player: AVPlayer
     private var timeObserver: Any?
-    // FIX: itemObservers holds all observers (NotificationCenter tokens AND KVO observers)
     private var itemObservers: [NSObjectProtocol] = []
     
     // Track current item ID manually
@@ -55,10 +53,6 @@ final class PlaybackEngine: NSObject {
         setupTimeObserver()
     }
     
-    // FIX: Removed deinit.
-    // Swift 6 prevents access to MainActor properties (player, itemObservers) from deinit.
-    // Since this is a Singleton, it lives for the app's lifetime.
-    // If you need to stop it manually, call this cleanup function.
     func cleanup() {
         if let timeObserver = timeObserver {
             player.removeTimeObserver(timeObserver)
@@ -80,14 +74,11 @@ final class PlaybackEngine: NSObject {
     private func setupTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         
-        // FIX: The closure is @Sendable (non-isolated).
-        // We must hop back to MainActor to access 'delegate'.
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self = self else { return }
                 self.delegate?.playbackEngine(self, didUpdateTime: time.seconds)
                 
-                // Also update duration if available and valid
                 if let duration = self.player.currentItem?.duration.seconds, duration.isFinite, duration > 0 {
                     self.delegate?.playbackEngine(self, didUpdateDuration: duration)
                 }
@@ -105,35 +96,31 @@ final class PlaybackEngine: NSObject {
         // Reset previous observers
         itemObservers.forEach { NotificationCenter.default.removeObserver($0) }
         itemObservers.removeAll()
-        itemToSongId.removeAll() // Clear old mapping
+        itemToSongId.removeAll()
         
         let item = AVPlayerItem(url: primaryURL)
         self.currentSongId = primaryId
         self.itemToSongId[item] = primaryId
         
-        // FIX: Handle Notification Data Race
+        // Notification Observer (Foundation)
         let observer = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
         ) { [weak self] notification in
-            // 1. Extract the Sendable item here (synchronously)
             guard let object = notification.object as? AVPlayerItem else { return }
-            
-            // 2. Pass the ITEM, not the NOTIFICATION, into the Task
             Task { @MainActor in
                 self?.handleItemDidFinishPlaying(item: object)
             }
         }
         itemObservers.append(observer)
         
-        // FIX: Handle "statusObserver was never used"
+        // KVO Observer (Foundation)
         let statusObserver = item.observe(\.status) { [weak self] item, _ in
             Task { @MainActor in
                 self?.handleItemStatusChange(item)
             }
         }
-        // Store it so it isn't deallocated immediately
         itemObservers.append(statusObserver)
         
         player.replaceCurrentItem(with: item)
@@ -165,7 +152,6 @@ final class PlaybackEngine: NSObject {
     
     // MARK: - Private Handlers
     
-    // FIX: Changed signature to take AVPlayerItem directly instead of Notification
     private func handleItemDidFinishPlaying(item: AVPlayerItem) {
         delegate?.playbackEngine(self, didFinishPlaying: true)
     }
@@ -179,9 +165,5 @@ final class PlaybackEngine: NSObject {
         default:
             break
         }
-    }
-    
-    private func setupNowPlaying(songId: String) {
-        // Placeholder for MPNowPlayingInfoCenter logic
     }
 }

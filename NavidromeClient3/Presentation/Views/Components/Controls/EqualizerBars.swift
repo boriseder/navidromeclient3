@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Combine
 
 struct EqualizerBars: View {
     // FIX: Added public properties to match call site in QueueView
