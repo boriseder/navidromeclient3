@@ -14,12 +14,12 @@ struct AlbumDetailHeaderView: View {
             
             VStack(spacing: DSLayout.tightGap) {
                 Text(album.name)
-                    .font(DSText.title2)
+                    .font(DSText.fine)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 
                 Text(album.artist)
-                    .font(DSText.headline)
+                    .font(DSText.detail)
                     .foregroundColor(DSColor.secondary)
                 
                 HStack(spacing: DSLayout.elementGap) {

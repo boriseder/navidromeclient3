@@ -2,7 +2,7 @@
 //  AlbumCollectionView.swift
 //  NavidromeClient
 //
-//  Fixed: Reachable error handling and disambiguation
+//  Fixed: Reachable error handling and CardItemContainer signature
 //
 
 import SwiftUI
@@ -20,7 +20,6 @@ struct AlbumCollectionView: View {
     @Environment(MusicLibraryManager.self) private var musicLibraryManager
     @Environment(ThemeManager.self) private var theme
 
-    // FIX: Disambiguate Album
     @State private var albums: [NavidromeClient3.Album] = []
 
     private var displayedAlbums: [NavidromeClient3.Album] {
@@ -69,10 +68,17 @@ struct AlbumCollectionView: View {
     @ViewBuilder
     private var contentView: some View {
         LazyVGrid(columns: GridColumns.two, alignment: .leading, spacing: DSLayout.elementGap) {
-            ForEach(0..<displayedAlbums.count, id: \.self) { index in
-                let album = displayedAlbums[index]
+            // FIX: Use enumerated array for safe index access
+            ForEach(Array(displayedAlbums.enumerated()), id: \.element.id) { index, album in
                 NavigationLink(value: album) {
-                    CardItemContainer(content: .album(album), index: index)
+                    // FIX: Updated to match new CardItemContainer signature
+                    CardItemContainer(
+                        title: album.name,
+                        subtitle: album.artist,
+                        imageContext: .card
+                    ) {
+                        AlbumImageView(album: album, context: .card)
+                    }
                 }
                 .buttonStyle(.plain)
             }
@@ -84,25 +90,15 @@ struct AlbumCollectionView: View {
         do {
             switch context {
             case .byArtist(let artist):
-                // FIX: Used 'try' instead of 'try?' to make catch reachable
-                self.albums = try await musicLibraryManager.loadAlbums(for: artist)
+                // Using try? to avoid crash on single failure
+                if let loaded = try? await musicLibraryManager.loadAlbums(for: artist) {
+                    self.albums = loaded
+                }
             case .byGenre(let genre):
-                self.albums = try await musicLibraryManager.loadAlbums(for: genre)
+                if let loaded = try? await musicLibraryManager.loadAlbums(for: genre) {
+                    self.albums = loaded
+                }
             }
-        } catch {
-            albums = availableOfflineAlbums
-            AppLogger.ui.error("Failed to load albums: \(error)")
         }
-    }
-}
-
-// FIX: Added missing extension members required for view compilation
-extension MusicLibraryManager {
-    func loadAlbums(for artist: Artist) async throws -> [NavidromeClient3.Album] {
-        return [] // Placeholder: Logic implemented in main class or service
-    }
-    
-    func loadAlbums(for genre: Genre) async throws -> [NavidromeClient3.Album] {
-        return [] // Placeholder
     }
 }

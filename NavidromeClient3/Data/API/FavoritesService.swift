@@ -2,7 +2,7 @@
 //  FavoritesService.swift
 //  NavidromeClient
 //
-//  Fixed: Ensures all return types are Sendable
+//  Fixed: Uses clean shared models
 //
 
 import Foundation
@@ -83,7 +83,8 @@ actor FavoritesService {
 }
 
 // MARK: - Supporting Types
-// These MUST be Sendable for Actor return types
+// Needed here if not defined in GenericModel.swift.
+// (Based on your uploads, StarredContainer was likely missing or in FavoritesService)
 struct StarredContainer: Codable, Sendable {
     let starred2: StarredContent?
 }

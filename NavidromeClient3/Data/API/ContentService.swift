@@ -61,7 +61,6 @@ actor ContentService {
             "offset": "\(offset)"
         ]
         
-        // Generic T must be Sendable (AlbumListContainer is now Sendable)
         let decoded: SubsonicResponse<AlbumListContainer> = try await fetchData(
             endpoint: "getAlbumList2",
             params: params

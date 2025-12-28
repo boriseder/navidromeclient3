@@ -5,6 +5,8 @@
 //  Swift 6: Full Concurrency Support
 //
 
+import Foundation
+
 // MARK: - Generic Subsonic Response Wrapper
 struct SubsonicResponse<T: Codable & Sendable>: Codable, Sendable {
     let subsonicResponse: T
@@ -36,4 +38,3 @@ struct SubsonicResponseContent: Codable, Sendable {
 
 // MARK: - Empty Response
 struct EmptyResponse: Codable, Sendable {}
-

@@ -5,6 +5,8 @@
 //  Swift 6: Full Concurrency Support
 //
 
+import Foundation
+
 struct GenresContainer: Codable, Sendable {
     let genres: GenreList?
 }

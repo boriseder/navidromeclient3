@@ -15,7 +15,6 @@ actor UnifiedSubsonicService {
     private let mediaService: MediaService
     private let discoveryService: DiscoveryService
     private let favoritesService: FavoritesService
-    private let searchService: SearchService
 
     init(baseURL: URL, username: String, password: String) {
         let conn = ConnectionService(baseURL: baseURL, username: username, password: password)
@@ -25,7 +24,6 @@ actor UnifiedSubsonicService {
         self.mediaService = MediaService(connectionService: conn)
         self.discoveryService = DiscoveryService(connectionService: conn)
         self.favoritesService = FavoritesService(connectionService: conn)
-        self.searchService = SearchService(connectionService: conn)
         
         // Log removed or wrapped if AppLogger is MainActor isolated.
         // Assuming we can skip log in init or use print for safety in this strict context.

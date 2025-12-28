@@ -2,7 +2,7 @@
 //  DiscoveryService.swift
 //  NavidromeClient
 //
-//  Swift 6: Actor Migration
+//  Swift 6: Actor Migration using Clean Models
 //
 
 import Foundation
@@ -70,12 +70,11 @@ actor DiscoveryService {
         endpoint: String,
         params: [String: String] = [:]
     ) async throws -> T {
-        // FIX: await connectionService
         guard let url = await connectionService.buildURL(endpoint: endpoint, params: params) else {
             throw SubsonicError.badURL
         }
         
-        // Use connectionService to fetch data
+        // Using connectionService to fetch data
         let (data, response) = try await connectionService.getData(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
