@@ -2,7 +2,7 @@
 //  NavidromeClientApp.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed 'MainActor isolated' errors in Observer
+//  Swift 6: Watches for Login & Injects Service
 //
 
 import SwiftUI
@@ -27,8 +27,10 @@ struct NavidromeClientApp: App {
                 switch dependencies.appInitializer.state {
                 case .notStarted, .inProgress:
                     InitializationView(initializer: dependencies.appInitializer)
+                    
                 case .completed:
-                    if dependencies.appInitializer.isConfigured {
+                    // Check AppConfig directly for immediate UI update on login
+                    if dependencies.appConfig.getCredentials() != nil {
                         ContentView()
                     } else {
                         NavigationStack {
@@ -38,6 +40,7 @@ struct NavidromeClientApp: App {
                             }
                         }
                     }
+                    
                 case .failed(let error):
                     InitializationErrorView(error: error) {
                         Task { try? await dependencies.appInitializer.initialize() }
@@ -62,6 +65,7 @@ struct NavidromeClientApp: App {
             .preferredColorScheme(dependencies.themeManager.colorScheme)
             .tint(dependencies.themeManager.accentColor.color)
             .task {
+                // 1. Pass Managers to Initializer
                 dependencies.appInitializer.configureManagers(
                     coverArtManager: dependencies.coverArtManager,
                     songManager: dependencies.songManager,
@@ -69,10 +73,20 @@ struct NavidromeClientApp: App {
                     favoritesManager: dependencies.favoritesManager,
                     exploreManager: dependencies.exploreManager,
                     musicLibraryManager: dependencies.musicLibraryManager,
-                    playerVM: dependencies.playerViewModel
+                    playerVM: dependencies.playerViewModel,
+                    offlineManager: dependencies.offlineManager
                 )
+                
+                // 2. Run Initialization
                 do { try await dependencies.appInitializer.initialize() }
                 catch { AppLogger.general.error("App initialization failed: \(error)") }
+            }
+            // 3. LISTEN FOR LOGIN (This fixes the post-login empty state)
+            .onChange(of: dependencies.appConfig.getCredentials()) { _, newCreds in
+                if let creds = newCreds {
+                    AppLogger.general.info("Credentials changed/loaded - Configuring Service")
+                    dependencies.appInitializer.setupService(with: creds)
+                }
             }
             .onChange(of: scenePhase) { _, newPhase in
                 handleScenePhaseChange(newPhase)
@@ -84,7 +98,6 @@ struct NavidromeClientApp: App {
     }
     
     private func handleScenePhaseChange(_ phase: ScenePhase) {
-        // These methods now exist in the updated AudioSessionManager
         switch phase {
         case .background:
             dependencies.audioSessionManager.handleAppEnteredBackground()
@@ -102,19 +115,16 @@ struct NavidromeClientApp: App {
     }
     
     private func setupTerminationHandler() {
-        // 1. OS Notification
         NotificationCenter.default.addObserver(
             forName: UIApplication.willTerminateNotification,
             object: nil,
             queue: .main
         ) { _ in
-            // Fix: Explicitly assume isolation since we are on 'queue: .main'
             MainActor.assumeIsolated {
                 performEmergencySave()
             }
         }
         
-        // 2. SIGTERM
         signal(SIGTERM) { _ in
             Task { @MainActor in
                 AudioSessionManager.shared.handleEmergencyShutdown()
@@ -125,7 +135,6 @@ struct NavidromeClientApp: App {
     @MainActor
     private func performEmergencySave() {
         AppLogger.general.info("[App] Application terminating - saving state.")
-        // Now valid, method added in step 1
         dependencies.audioSessionManager.handleAppWillTerminate()
     }
     
@@ -140,7 +149,7 @@ struct NavidromeClientApp: App {
     }
     
     private func handleBackgroundRefresh() async {
-        guard dependencies.appInitializer.isConfigured,
+        guard dependencies.appConfig.getCredentials() != nil,
               dependencies.networkMonitor.canLoadOnlineContent else { return }
         await dependencies.favoritesManager.loadFavoriteSongs()
         scheduleBackgroundRefresh()

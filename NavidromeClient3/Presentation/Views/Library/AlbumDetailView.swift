@@ -2,76 +2,25 @@
 //  AlbumDetailView.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed Environment error by introducing ViewModel
+//  Swift 6: Restored Data Loading via SongManager & Added Background
 //
 
 import SwiftUI
-import Observation
 
-// MARK: - ViewModel
-@MainActor
-@Observable
-final class AlbumDetailViewModel {
-    var songs: [Song] = []
-    var isLoading = false
-    var errorMessage: String?
-    
-    // Dependencies
-    // In a real app, you might inject these via init or a DI container.
-    // For now, we assume access to the shared logic we built.
-    
-    func loadSongs(for album: Album, isConnected: Bool) async {
-        // 1. Check Offline Mode
-        if !isConnected {
-            let offlineSongs = OfflineManager.shared.getOfflineSongs().filter { $0.albumId == album.id }
-            
-            if !offlineSongs.isEmpty {
-                self.songs = offlineSongs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
-                return
-            }
-            
-            self.errorMessage = "Offline: Cannot load songs"
-            return
-        }
-        
-        // 2. Load Online
-        isLoading = true
-        errorMessage = nil
-        
-        do {
-            // FIX: Access service via a Singleton or DI helper since Environment failed
-            // Assuming AppDependencies is the entry point, or creating a new service instance if it's stateless.
-            // For this fix to compile, we'll use a placeholder or the shared instance if you have one.
-            // Since we don't have the Service code, I will use a generic fetch pattern.
-            
-            // let fetchedAlbum = try await AppDependencies.shared.subsonicService.getAlbum(id: album.id)
-            
-            // Simulation to make the View compile and work:
-            try await Task.sleep(for: .seconds(0.5))
-            
-            // In a real run, populate 'self.songs' here from the service result.
-            // For now, if we are online but have no service instance accessible, we warn.
-            self.songs = []
-            // self.errorMessage = "Service Not Connected"
-            
-        } catch {
-            self.errorMessage = "Failed to load songs: \(error.localizedDescription)"
-        }
-        
-        isLoading = false
-    }
-}
-
-// MARK: - View
 struct AlbumDetailView: View {
     let album: Album
     
-    // MARK: - State & Environment
-    @State private var viewModel = AlbumDetailViewModel()
-    
+    // MARK: - Environment
     @Environment(PlayerViewModel.self) private var playerVM
     @Environment(DownloadManager.self) private var downloadManager
+    @Environment(SongManager.self) private var songManager
     @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(OfflineManager.self) private var offlineManager
+    
+    // MARK: - State
+    @State private var songs: [Song] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
     
     var body: some View {
         ScrollView {
@@ -84,7 +33,7 @@ struct AlbumDetailView: View {
                 HStack(spacing: 20) {
                     // PLAY BUTTON
                     Button {
-                        playerVM.playQueue(songs: viewModel.songs, startIndex: 0)
+                        playerVM.playQueue(songs: songs, startIndex: 0)
                     } label: {
                         Label("Play", systemImage: "play.fill")
                             .font(.headline)
@@ -94,12 +43,12 @@ struct AlbumDetailView: View {
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
-                    .disabled(viewModel.songs.isEmpty)
+                    .disabled(songs.isEmpty)
                     
                     // DOWNLOAD BUTTON
                     Button {
                         Task {
-                            await downloadManager.downloadAlbum(album: album, songs: viewModel.songs)
+                            await downloadManager.downloadAlbum(album: album, songs: songs)
                         }
                     } label: {
                         Label(
@@ -112,30 +61,61 @@ struct AlbumDetailView: View {
                         .background(.ultraThinMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
-                    .disabled(viewModel.songs.isEmpty || downloadManager.isAlbumDownloaded(album.id))
+                    .disabled(songs.isEmpty || downloadManager.isAlbumDownloaded(album.id))
                 }
                 .padding(.horizontal)
                 
                 // 3. Songs List
-                if viewModel.isLoading {
+                if isLoading {
                     ProgressView()
                         .padding(.top, 40)
-                } else if let error = viewModel.errorMessage {
+                } else if let error = errorMessage {
                     ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
-                    AlbumSongsListView(songs: viewModel.songs, album: album)
+                    AlbumSongsListView(songs: songs, album: album)
                 }
             }
             .padding(.bottom, 100)
         }
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
+        // FIX: Add dynamic blurred background using the album cover
+        .background(
+            DynamicMusicBackground(albumId: album.coverArt ?? album.id)
+        )
         .task {
-            // Pass the network status to the ViewModel
-            await viewModel.loadSongs(for: album, isConnected: networkMonitor.isConnected)
+            await loadSongs()
         }
         .refreshable {
-            await viewModel.loadSongs(for: album, isConnected: networkMonitor.isConnected)
+            await loadSongs()
         }
+    }
+    
+    // MARK: - Data Loading
+    private func loadSongs() async {
+        // 1. Offline Mode Check
+        if !networkMonitor.isConnected {
+            let offlineSongs = offlineManager.getOfflineSongs().filter { $0.albumId == album.id }
+            if !offlineSongs.isEmpty {
+                self.songs = offlineSongs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
+                return
+            }
+            self.errorMessage = "Offline: Cannot load songs"
+            return
+        }
+        
+        // 2. Online Load
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let fetchedSongs = try await songManager.getSongs(for: album.id)
+            self.songs = fetchedSongs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
+            
+        } catch {
+            self.errorMessage = "Failed to load songs: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
     }
 }

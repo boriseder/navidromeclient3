@@ -2,7 +2,7 @@
 //  NetworkMonitor.swift
 //  NavidromeClient3
 //
-//  Swift 6: Added 'isConnected' convenience property
+//  Swift 6: Fixed configuration state logic
 //
 
 import Foundation
@@ -32,7 +32,6 @@ final class NetworkMonitor {
     var state: NetworkState
     var connectionType: NetworkConnectionType = .unknown
     
-    // FIX: Added convenience property used by Views
     var isConnected: Bool {
         state.hasInternet
     }
@@ -71,7 +70,16 @@ final class NetworkMonitor {
     // MARK: - Configuration
     func configureService(_ service: UnifiedSubsonicService?) {
         self.subsonicService = service
-        Task { await recheckConnection() }
+        
+        // FIX: Explicitly update configuration state
+        // If we have a service, we are configured.
+        let isConfigured = (service != nil)
+        
+        Task {
+            await recheckConnection()
+            // Apply the configuration change
+            updateState(isConfigured: isConfigured)
+        }
     }
     
     func updateConfiguration(isConfigured: Bool) {
@@ -125,6 +133,7 @@ final class NetworkMonitor {
                 serverAvailable = await service.ping()
             }
         } else {
+            // Assume server is reachable if we haven't configured it yet (avoid blocking setup)
             serverAvailable = true
         }
         
@@ -156,7 +165,7 @@ final class NetworkMonitor {
         let newState = NetworkState(
             hasInternet: hasInternet,
             isServerReachable: isServerReachable,
-            isConfigured: isConfigured ?? state.isConfigured,
+            isConfigured: isConfigured ?? state.isConfigured, // Persist existing state if nil
             manualOfflineMode: manualOfflineMode
         )
         
@@ -176,7 +185,7 @@ final class NetworkMonitor {
     func reset() {
         isServerReachable = true
         manualOfflineMode = false
-        updateState()
+        updateState(isConfigured: false)
     }
 }
 

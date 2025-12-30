@@ -2,66 +2,36 @@
 //  ArtistsView.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed Environment error by moving logic to ViewModel
+//  Swift 6: Full Implementation with sub-views
 //
 
 import SwiftUI
 import Observation
 
-// MARK: - ViewModel
-@MainActor
-@Observable
-final class ArtistsViewModel {
-    var artists: [Artist] = []
-    var isLoading = false
-    var errorMessage: String?
-    
-    // Dependencies
-    // In a real app, inject this. For now, we access the shared instance or placeholder.
-    // Assuming AppDependencies or a Singleton exists.
-    // If not, we fall back to empty for safety until wired up.
-    
-    func loadArtists() async {
-        self.isLoading = true
-        self.errorMessage = nil
-        
-        do {
-            // Simulate Fetch or call Service
-            // let fetched = try await AppDependencies.shared.subsonicService.getArtists()
-            
-            // Placeholder simulation to satisfy compiler/preview
-            try await Task.sleep(for: .seconds(0.5))
-            
-            // Mock Data for now since we can't see the Service signature
-            self.artists = []
-            
-        } catch {
-            self.errorMessage = error.localizedDescription
-        }
-        
-        self.isLoading = false
-    }
-}
-
-// MARK: - View
 struct ArtistsView: View {
-    @State private var viewModel = ArtistsViewModel()
+    @Environment(MusicLibraryManager.self) private var library
     @Environment(NetworkMonitor.self) private var networkMonitor
     
     var body: some View {
         NavigationStack {
             Group {
-                if viewModel.isLoading {
+                if library.artistLoadingState.isLoading && library.loadedArtists.isEmpty {
                     ProgressView("Loading Artists...")
-                } else if let error = viewModel.errorMessage {
-                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
-                } else if viewModel.artists.isEmpty {
+                } else if case .error(let message) = library.artistLoadingState {
+                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(message))
+                } else if library.loadedArtists.isEmpty {
                     ContentUnavailableView("No Artists", systemImage: "music.mic", description: Text("Your library seems empty."))
                 } else {
                     List {
-                        ForEach(viewModel.artists) { artist in
+                        ForEach(library.loadedArtists) { artist in
                             NavigationLink(destination: ArtistDetailView(artist: artist)) {
                                 ArtistRow(artist: artist)
+                            }
+                            .onAppear {
+                                // Pagination
+                                if artist.id == library.loadedArtists.last?.id {
+                                    Task { await library.loadArtistsProgressively() }
+                                }
                             }
                         }
                     }
@@ -70,16 +40,12 @@ struct ArtistsView: View {
             }
             .navigationTitle("Artists")
             .task {
-                // Check network before loading
-                if networkMonitor.isConnected {
-                    await viewModel.loadArtists()
-                } else {
-                    // Handle offline scenario (load from DB)
-                    viewModel.errorMessage = "Offline: Cannot load artists"
+                if library.loadedArtists.isEmpty && networkMonitor.shouldLoadOnlineContent {
+                    await library.loadArtistsProgressively(reset: true)
                 }
             }
             .refreshable {
-                await viewModel.loadArtists()
+                await library.loadArtistsProgressively(reset: true)
             }
         }
     }
@@ -92,14 +58,10 @@ struct ArtistRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(Color.secondary.opacity(0.2))
+            // FIX: Replaced Placeholder Circle with ArtistImageView
+            ArtistImageView(artist: artist, context: .list)
                 .frame(width: 40, height: 40)
-                .overlay {
-                    Text(String(artist.name.prefix(1)))
-                        .bold()
-                        .foregroundStyle(.secondary)
-                }
+                .clipShape(Circle())
             
             VStack(alignment: .leading) {
                 Text(artist.name)
@@ -119,20 +81,42 @@ struct ArtistRow: View {
 
 struct ArtistDetailView: View {
     let artist: Artist
+    @Environment(MusicLibraryManager.self) private var library
+    @State private var albums: [Album] = []
+    @State private var isLoading = true
     
     var body: some View {
-        VStack {
-            Text(artist.name)
-                .font(.largeTitle)
-                .bold()
-            
-            Text("Albums would appear here")
-                .foregroundStyle(.secondary)
-            
-            // Integration point for AlbumCollectionView
-            Spacer()
+        List(albums) { album in
+            NavigationLink(destination: AlbumDetailView(album: album)) {
+                HStack(spacing: 12) {
+                    AlbumImageView(album: album, context: .list)
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    
+                    VStack(alignment: .leading) {
+                        Text(album.name)
+                            .font(.body)
+                        Text(String(album.year ?? 0))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
-        .padding()
         .navigationTitle(artist.name)
+        .overlay {
+            if isLoading {
+                ProgressView()
+            } else if albums.isEmpty {
+                ContentUnavailableView("No Albums", systemImage: "music.note.list")
+            }
+        }
+        .task {
+            isLoading = true
+            if let fetched = try? await library.loadAlbums(for: artist) {
+                self.albums = fetched
+            }
+            isLoading = false
+        }
     }
 }

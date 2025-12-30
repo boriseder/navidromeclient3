@@ -173,7 +173,10 @@ struct FullScreenPlayer: View {
                 .padding(.bottom, 40)
             }
         }
-        .background(DynamicMusicBackground())
+        // FIX: Pass current song ID for dynamic background
+        .background(
+            DynamicMusicBackground(albumId: player.currentSong?.coverArt ?? player.currentSong?.albumId)
+        )
         .sheet(isPresented: $showingQueue) {
             QueueView()
         }

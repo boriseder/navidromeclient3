@@ -2,7 +2,7 @@
 //  PlayerViewModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Added Queue Management (Move/Delete)
+//  Swift 6: Fixed - Uses Service for URL or falls back to CredentialStore with correct Auth
 //
 
 import SwiftUI
@@ -33,6 +33,9 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     private var musicLibraryManager: MusicLibraryManager?
     private var downloadManager: DownloadManager?
     private var favoritesManager: FavoritesManager?
+    
+    // API Service Reference
+    private weak var service: UnifiedSubsonicService?
     
     // MARK: - Playback State
     var isPlaying: Bool = false
@@ -74,7 +77,12 @@ final class PlayerViewModel: PlaybackEngineDelegate {
         self.musicLibraryManager = musicLibraryManager
         self.downloadManager = downloadManager
         self.favoritesManager = favoritesManager
-        AppLogger.general.info("PlayerViewModel configured with dependencies")
+        AppLogger.general.info("PlayerViewModel configured with managers")
+    }
+    
+    func configure(service: UnifiedSubsonicService) {
+        self.service = service
+        AppLogger.general.info("PlayerViewModel configured with Service")
     }
     
     // MARK: - Intents
@@ -87,15 +95,12 @@ final class PlayerViewModel: PlaybackEngineDelegate {
         setupQueue(songs: songs, startIndex: startIndex)
     }
     
-    // MARK: - Queue Management (Fix for QueueView)
+    // MARK: - Queue Management
     
     func moveQueueItem(from source: IndexSet, to destination: Int) {
-        // Track the playing song ID so we can update currentIndex after the move
         let playingId = currentSong?.id
-        
         queue.move(fromOffsets: source, toOffset: destination)
         
-        // Restore currentIndex
         if let playingId, let newIndex = queue.firstIndex(where: { $0.id == playingId }) {
             self.currentIndex = newIndex
         }
@@ -103,7 +108,6 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     
     func removeQueueItem(at offsets: IndexSet) {
         let playingId = currentSong?.id
-        
         queue.remove(atOffsets: offsets)
         
         if queue.isEmpty {
@@ -111,12 +115,7 @@ final class PlayerViewModel: PlaybackEngineDelegate {
         } else if let playingId, let newIndex = queue.firstIndex(where: { $0.id == playingId }) {
             self.currentIndex = newIndex
         } else {
-            // If we deleted the current song, stop or play next available?
-            // Simple approach: stop if confused, or clamp index
-            if currentIndex >= queue.count {
-                currentIndex = 0
-            }
-            // Ideally load the new song at currentIndex if playing
+            if currentIndex >= queue.count { currentIndex = 0 }
         }
     }
     
@@ -214,12 +213,35 @@ final class PlayerViewModel: PlaybackEngineDelegate {
     
     private func startPlayback(for song: Song) {
         self.currentSong = song
-        let serverUrl = UserDefaults.standard.string(forKey: "serverUrl") ?? ""
-        let username = UserDefaults.standard.string(forKey: "username") ?? ""
-        let password = UserDefaults.standard.string(forKey: "password") ?? ""
-        let streamUrlString = "\(serverUrl)/rest/stream?id=\(song.id)&u=\(username)&p=\(password)&v=1.16.1&c=NavidromeClient&f=mp3"
-        guard let url = URL(string: streamUrlString) else { return }
-        playbackEngine.play(url: url, songId: song.id)
+        
+        Task {
+            // Priority 1: Use the injected Service (Best Practice)
+            if let service = service, let url = await service.streamURL(for: song.id) {
+                playbackEngine.play(url: url, songId: song.id)
+                return
+            }
+            
+            // Priority 2: Fallback to CredentialStore (if Service not ready)
+            // Fixes the issue where password was missing from UserDefaults
+            guard let creds = CredentialStore.shared.currentCredentials else {
+                AppLogger.general.error("Cannot play: No credentials found")
+                return
+            }
+            
+            let serverUrl = creds.baseURL.absoluteString
+            let username = creds.username
+            let password = creds.password
+            
+            // Encode password for Subsonic (enc:hex)
+            let hexPassword = password.data(using: .utf8)?.map { String(format: "%02x", $0) }.joined() ?? ""
+            let encodedParam = "enc:\(hexPassword)"
+            
+            let streamUrlString = "\(serverUrl)/rest/stream?id=\(song.id)&u=\(username)&p=\(encodedParam)&v=1.16.1&c=NavidromeClient&f=mp3"
+            
+            if let url = URL(string: streamUrlString) {
+                playbackEngine.play(url: url, songId: song.id)
+            }
+        }
     }
     
     // MARK: - PlaybackEngineDelegate

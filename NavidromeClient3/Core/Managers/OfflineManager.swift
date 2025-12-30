@@ -2,7 +2,7 @@
 //  OfflineManager.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed - Removed extra arguments to match V1 Models
+//  Swift 6: Fixed - Added configure method for Dependency Injection
 //
 
 import Foundation
@@ -20,10 +20,20 @@ final class OfflineManager {
     // Simple in-memory set of downloaded IDs
     private var downloadedSongIds: Set<String> = []
     
+    // MARK: - Dependencies
+    // Added to satisfy AppInitializer.configureManagers
+    private weak var service: UnifiedSubsonicService?
+    
     // MARK: - Init
     init() {
         AppLogger.general.info("OfflineManager initialized")
         loadOfflineIndex()
+    }
+    
+    // MARK: - Configuration
+    
+    func configure(service: UnifiedSubsonicService) {
+        self.service = service
     }
     
     // MARK: - View Requirements
@@ -43,7 +53,6 @@ final class OfflineManager {
         let downloads = DownloadManager.shared.downloadedAlbums
         
         return downloads.map { dlAlbum in
-            // FIX: strictly match Album.init in AlbumModel.swift
             Album(
                 id: dlAlbum.id,
                 name: dlAlbum.title,
@@ -52,9 +61,9 @@ final class OfflineManager {
                 genre: dlAlbum.genre,
                 coverArt: dlAlbum.coverArtId,
                 coverArtId: dlAlbum.coverArtId,
-                duration: nil, // Total duration not strictly tracked in DownloadedAlbum
+                duration: nil,
                 songCount: dlAlbum.songs.count,
-                artistId: nil, // Not available in DownloadedAlbum
+                artistId: nil,
                 displayArtist: dlAlbum.artist
             )
         }
@@ -67,7 +76,6 @@ final class OfflineManager {
         
         for album in downloads {
             let albumSongs = album.songs.map { dlSong in
-                // FIX: strictly match Song.init in SongModel.swift
                 Song(
                     id: dlSong.id,
                     title: dlSong.title,
@@ -81,8 +89,8 @@ final class OfflineManager {
                     genre: album.genre,
                     artistId: nil,
                     isVideo: false,
-                    contentType: "audio/mpeg", // Assumed for offline
-                    suffix: "mp3",             // Assumed for offline
+                    contentType: "audio/mpeg",
+                    suffix: "mp3",
                     path: dlSong.localFileName
                 )
             }

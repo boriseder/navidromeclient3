@@ -2,13 +2,13 @@
 //  ServerCredentials.swift
 //  NavidromeClient3
 //
-//  Swift 6: Credentials Model
+//  Swift 6: Added Equatable conformance for .onChange support
 //
 
 import Foundation
 
-struct ServerCredentials: Codable, Sendable {
+struct ServerCredentials: Codable, Sendable, Equatable {
     let baseURL: URL
     let username: String
-    let password: String // Stored securely, this model might be used for transport or config
+    let password: String
 }

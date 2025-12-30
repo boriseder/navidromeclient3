@@ -1,79 +1,57 @@
 //
 //  ArtistImageView.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Swift 6: @Environment & Deprecation Fixes
+//  Swift 6: Async Image Loading for Artists
 //
 
 import SwiftUI
 
 struct ArtistImageView: View {
+    let artist: Artist
+    var context: ImageContext = .list // Default context
+    
     @Environment(CoverArtManager.self) private var coverArtManager
     
-    let artistId: String
-    let context: ImageContext
-    
     @State private var image: UIImage?
-    
-    // Standard Init
-    init(artist: Artist, context: ImageContext) {
-        self.artistId = artist.id
-        self.context = context
-    }
-    
-    // Convenience Init with size (Fixes Deprecation)
-    init(artist: Artist, size: Int) {
-        self.artistId = artist.id
-        
-        // FIX: Use UITraitCollection.current.displayScale instead of UIScreen.main
-        // If 0 (unknown), default to 2.0 (standard Retina)
-        let scale = UITraitCollection.current.displayScale > 0 ? UITraitCollection.current.displayScale : 2.0
-        
-        self.context = .custom(displaySize: CGFloat(size), scale: scale)
-    }
+    @State private var hasError = false
     
     var body: some View {
-        ZStack {
-            placeholderView
-                .opacity(image != nil ? 0 : 1)
-            
-            if let uiImage = image {
-                Image(uiImage: uiImage)
+        Group {
+            if let image {
+                Image(uiImage: image)
                     .resizable()
-                    .scaledToFill()
-                    .frame(width: context.displaySize, height: context.displaySize)
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle().stroke(DSColor.onLight.opacity(0.1), lineWidth: 1)
-                    )
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                // Placeholder
+                ZStack {
+                    Color.secondary.opacity(0.1)
+                    if hasError {
+                        Image(systemName: "person.crop.circle.badge.exclamationmark")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(String(artist.name.prefix(1)))
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
-        .frame(width: context.displaySize, height: context.displaySize)
-        .task(id: artistId) {
-            await loadImage()
-        }
-    }
-    
-    private func loadImage() async {
-        // Attempt load via manager
-        self.image = await coverArtManager.loadArtistImage(for: artistId, context: context)
-    }
-    
-    @ViewBuilder
-    private var placeholderView: some View {
-        Circle()
-            .fill(
-                LinearGradient(
-                    colors: [.blue, .purple.opacity(0.7)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .frame(width: context.displaySize, height: context.displaySize)
-            .overlay {
-                Image(systemName: "music.mic")
-                    .font(.system(size: DSLayout.icon))
-                    .foregroundStyle(.white.opacity(0.6))
+        .onAppear {
+            // Check memory cache first for instant load
+            if let cached = coverArtManager.getArtistImage(for: artist.id, context: context) {
+                self.image = cached
             }
+        }
+        .task(id: artist.id) {
+            // Async load from disk/network
+            if image == nil {
+                if let loaded = await coverArtManager.loadArtistImage(for: artist.id, context: context) {
+                    self.image = loaded
+                } else {
+                    self.hasError = true
+                }
+            }
+        }
     }
 }
