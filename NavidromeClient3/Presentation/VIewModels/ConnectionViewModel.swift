@@ -2,18 +2,26 @@
 //  ConnectionViewModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed AppConfig integration & Added Pre-check
+//  Swift 6: Added Port Support
 //
 
 import SwiftUI
 import Observation
+
+enum ServerScheme: String, CaseIterable, Identifiable {
+    case https = "https"
+    case http = "http"
+    var id: String { rawValue }
+}
 
 @MainActor
 @Observable
 final class ConnectionViewModel {
     
     // MARK: - Properties
-    var serverUrl: String = ""
+    var scheme: ServerScheme = .http // Default to HTTP for local setups usually
+    var host: String = ""
+    var port: String = "" // New Port Property
     var username: String = ""
     var password: String = ""
     
@@ -21,15 +29,15 @@ final class ConnectionViewModel {
     var errorMessage: String?
     
     var isValid: Bool {
-        guard let _ = URL(string: serverUrl) else { return false }
-        return !serverUrl.isEmpty && !username.isEmpty && !password.isEmpty
+        // Port is optional (implies 80/443), but if entered, it must be valid
+        return !host.isEmpty && !username.isEmpty && !password.isEmpty
     }
     
     // MARK: - Actions
     
     func connect() async {
         guard isValid else {
-            errorMessage = "Please enter a valid URL, username, and password."
+            errorMessage = "Please enter a valid Host, Username, and Password."
             return
         }
         
@@ -37,9 +45,40 @@ final class ConnectionViewModel {
         errorMessage = nil
         
         // 1. Normalize Inputs
-        let cleanUrl = serverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Ensure scheme exists
-        let finalUrlString = cleanUrl.lowercased().hasPrefix("http") ? cleanUrl : "https://\(cleanUrl)"
+        var cleanHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Handle if user pasted full URL into Host field
+        if cleanHost.lowercased().hasPrefix("http://") {
+            cleanHost = String(cleanHost.dropFirst(7))
+            scheme = .http
+        } else if cleanHost.lowercased().hasPrefix("https://") {
+            cleanHost = String(cleanHost.dropFirst(8))
+            scheme = .https
+        }
+        
+        // Handle if user pasted "host:port" into Host field
+        if cleanHost.contains(":") && !cleanHost.hasSuffix("]") { // Excluding IPv6 brackets
+            let components = cleanHost.split(separator: ":")
+            if components.count == 2 {
+                cleanHost = String(components[0])
+                if port.isEmpty {
+                    port = String(components[1]).trimmingCharacters(in: .punctuationCharacters)
+                }
+            }
+        }
+        
+        // Remove trailing slashes
+        while cleanHost.hasSuffix("/") {
+            cleanHost = String(cleanHost.dropLast())
+        }
+        
+        let cleanPort = port.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // 2. Construct Full URL
+        var finalUrlString = "\(scheme.rawValue)://\(cleanHost)"
+        if !cleanPort.isEmpty {
+            finalUrlString += ":\(cleanPort)"
+        }
         
         guard let url = URL(string: finalUrlString) else {
             isLoading = false
@@ -49,8 +88,7 @@ final class ConnectionViewModel {
         
         let finalUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // 2. Verify Connection BEFORE saving
-        // We create a temporary service just to check credentials
+        // 3. Verify Connection
         let tempService = ConnectionService(
             baseURL: url,
             username: finalUsername,
@@ -60,23 +98,21 @@ final class ConnectionViewModel {
         let isSuccess = await tempService.ping()
         
         if isSuccess {
-            // 3. Save Credentials
-            // This triggers 'AppConfig' to notify 'AppInitializer', which switches the view.
+            // 4. Save Credentials
             let credentials = ServerCredentials(
                 baseURL: url,
                 username: finalUsername,
                 password: password
             )
             
-            // FIX: Use saveCredentials instead of 'configure'
             AppConfig.shared.saveCredentials(credentials)
             
-            // Success! The UI will update automatically via AppState
+            // Success
             isLoading = false
             
         } else {
             isLoading = false
-            errorMessage = "Connection failed. Please check your URL and credentials."
+            errorMessage = "Connection failed. Check your Host, Port, and Network."
         }
     }
 }

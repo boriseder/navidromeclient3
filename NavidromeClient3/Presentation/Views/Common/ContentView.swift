@@ -2,79 +2,134 @@
 //  ContentView.swift
 //  NavidromeClient3
 //
-//  Swift 6: @Observable Consumption
+//  Swift 6: Restored Original Tab Layout & Overlays
 //
 
 import SwiftUI
 
 struct ContentView: View {
-    // 1. New Environment Syntax
+    // MARK: - Dependencies (Swift 6 Environment)
+    @Environment(AppConfig.self) private var appConfig
+    @Environment(AppInitializer.self) private var appInitializer
     @Environment(PlayerViewModel.self) private var playerVM
-    @Environment(MusicLibraryManager.self) private var library
-    @Environment(OfflineManager.self) private var offlineManager
     @Environment(NetworkMonitor.self) private var networkMonitor
-
-    // Local state remains @State
-    @State private var selectedTab: TabIdentifier = .library
+    @Environment(OfflineManager.self) private var offlineManager
+    @Environment(DownloadManager.self) private var downloadManager
+    @Environment(ThemeManager.self) private var theme
+    
+    // MARK: - Local State
+    @State private var selectedTab: TabIdentifier = .explore
+    @State private var showingSettings = false
     
     enum TabIdentifier: Hashable {
-        case library, search, downloads, settings
+        case explore, albums, artists, genres, favorites
     }
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // MARK: - Main Tab View
             TabView(selection: $selectedTab) {
-                // Tab 1: Library
+                
+                // 1. Explore
                 NavigationStack {
-                    ExploreView() // Internal views now use Environment internally
+                    ExploreView()
+                        .navigationDestination(for: NavidromeClient3.Album.self) { album in
+                            AlbumDetailView(album: album)
+                        }
                 }
                 .tabItem {
-                    Label("Library", systemImage: "music.note.house")
+                    Label("Explore", systemImage: "music.note.house")
                 }
-                .tag(TabIdentifier.library)
-
-                // Tab 2: Favorites (Example replacement for Search for now)
+                .tag(TabIdentifier.explore)
+                
+                // 2. Albums
+                NavigationStack {
+                    AlbumsView()
+                        .navigationDestination(for: NavidromeClient3.Album.self) { album in
+                            AlbumDetailView(album: album)
+                        }
+                }
+                .tabItem {
+                    Label("Albums", systemImage: "record.circle")
+                }
+                .tag(TabIdentifier.albums)
+                
+                // 3. Artists
+                NavigationStack {
+                    ArtistsView()
+                        .navigationDestination(for: NavidromeClient3.Album.self) { album in
+                            AlbumDetailView(album: album)
+                        }
+                }
+                .tabItem {
+                    Label("Artists", systemImage: "person.2")
+                }
+                .tag(TabIdentifier.artists)
+                
+                // 4. Genres
+                NavigationStack {
+                    GenreView()
+                        .navigationDestination(for: NavidromeClient3.Album.self) { album in
+                            AlbumDetailView(album: album)
+                        }
+                }
+                .tabItem {
+                    Label("Genres", systemImage: "music.note.list")
+                }
+                .tag(TabIdentifier.genres)
+                
+                // 5. Favorites
                 NavigationStack {
                     FavoritesView()
+                        .navigationDestination(for: NavidromeClient3.Album.self) { album in
+                            AlbumDetailView(album: album)
+                        }
                 }
                 .tabItem {
                     Label("Favorites", systemImage: "heart")
                 }
-                .tag(TabIdentifier.search)
-                
-                // Tab 3: Downloads
-                NavigationStack {
-                    // DownloadsView() - Assuming existence
-                    Text("Downloads Placeholder")
-                }
-                .tabItem {
-                    Label("Downloads", systemImage: "arrow.down.circle")
-                }
-                .tag(TabIdentifier.downloads)
-
-                // Tab 4: Settings
-                NavigationStack {
-                    SettingsView()
-                }
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .tag(TabIdentifier.settings)
+                .tag(TabIdentifier.favorites)
             }
-            .tint(Color.accentColor)
+            .tint(theme.accentColor.color) // Use ThemeManager color
             
-            // Player Overlay
+            // MARK: - Mini Player Overlay
             if playerVM.currentSong != nil {
                 MiniPlayerView()
                     .padding(.bottom, 49) // Approximate tab bar height
                     .transition(.move(edge: .bottom))
             }
+            
+            // MARK: - Network Status Overlay (Top)
+            networkStatusOverlay
         }
-        // Swift 6: Task modifier replaces .onAppear for async work
-        .task {
-             if networkMonitor.shouldLoadOnlineContent {
-                 await library.loadInitialDataIfNeeded()
-             }
+        // MARK: - Global Settings Sheet
+        // We add a settings button to the top of Explore/Home usually,
+        // or you can add a 6th tab for it.
+        // For now, I'll assume you trigger this via a toolbar button inside the views.
+        .sheet(isPresented: $showingSettings) {
+            NavigationStack {
+                SettingsView()
+            }
         }
+    }
+    
+    // MARK: - Network Overlay Component
+    @ViewBuilder
+    private var networkStatusOverlay: some View {
+        VStack {
+            switch networkMonitor.contentLoadingStrategy {
+            case .offlineOnly(let reason):
+                OfflineReasonBanner(reason: reason)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 50) // Adjust for safe area
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.easeOut, value: networkMonitor.canLoadOnlineContent)
+                
+            case .online, .setupRequired:
+                EmptyView()
+            }
+            Spacer()
+        }
+        .allowsHitTesting(false) // Let clicks pass through to the app
     }
 }

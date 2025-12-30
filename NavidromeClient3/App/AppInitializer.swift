@@ -2,7 +2,7 @@
 //  AppInitializer.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed Data Race & Unused Variable
+//  Swift 6: Fixed Dependency Injection Wiring
 //
 
 import Foundation
@@ -23,6 +23,16 @@ final class AppInitializer {
     var isConfigured: Bool = false
     private(set) var unifiedService: UnifiedSubsonicService?
     
+    // MARK: - Weak References to Managers
+    // We hold these weakly to avoid retain cycles. AppDependencies holds the strong references.
+    private weak var coverArtManager: CoverArtManager?
+    private weak var songManager: SongManager?
+    private weak var downloadManager: DownloadManager?
+    private weak var favoritesManager: FavoritesManager?
+    private weak var exploreManager: ExploreManager?
+    private weak var musicLibraryManager: MusicLibraryManager?
+    private weak var playerVM: PlayerViewModel?
+    
     var areServicesReady: Bool {
         return isConfigured && state == .completed
     }
@@ -32,9 +42,6 @@ final class AppInitializer {
     }
     
     private func setupNotificationObservers() {
-        // FIX: Replaced 'notification' with '_'
-        // This solves both the "unused variable" warning AND the "data race" error
-        // because we are no longer capturing the non-Sendable 'Notification' object.
         NotificationCenter.default.addObserver(
             forName: .credentialsUpdated,
             object: nil,
@@ -45,6 +52,35 @@ final class AppInitializer {
             }
         }
     }
+
+    // MARK: - Configuration
+    
+    // Call this ONCE from NavidromeClientApp to wire everything up
+    func configureManagers(
+        coverArtManager: CoverArtManager,
+        songManager: SongManager,
+        downloadManager: DownloadManager,
+        favoritesManager: FavoritesManager,
+        exploreManager: ExploreManager,
+        musicLibraryManager: MusicLibraryManager,
+        playerVM: PlayerViewModel
+    ) {
+        // 1. Store references
+        self.coverArtManager = coverArtManager
+        self.songManager = songManager
+        self.downloadManager = downloadManager
+        self.favoritesManager = favoritesManager
+        self.exploreManager = exploreManager
+        self.musicLibraryManager = musicLibraryManager
+        self.playerVM = playerVM
+        
+        // 2. If service already exists, inject immediately
+        if let service = unifiedService {
+            injectService(service)
+        }
+    }
+
+    // MARK: - Initialization Logic
 
     func initialize() async throws {
         guard state == .notStarted || state == .failed("") else { return }
@@ -57,66 +93,66 @@ final class AppInitializer {
 
         if let creds = credentials {
             try createUnifiedService(with: creds)
+        } else {
+            // No credentials yet, just mark as completed so we show WelcomeView
+            state = .completed
         }
-
-        state = .completed
-        AppLogger.general.info("[AppInitializer] === Initialization completed (configured: \(isConfigured)) ===")
     }
 
     func reinitializeAfterConfiguration() async throws {
         AppLogger.general.info("[AppInitializer] Reinitializing after configuration...")
-        reset()
-        try await initialize()
+        
+        // 1. Re-create service
+        let credentials = AppConfig.shared.getCredentials()
+        isConfigured = credentials != nil
+        
+        if let creds = credentials {
+            try createUnifiedService(with: creds)
+        }
+        
+        state = .completed
     }
 
     private func createUnifiedService(with creds: ServerCredentials) throws {
-        unifiedService = UnifiedSubsonicService(
+        let service = UnifiedSubsonicService(
             baseURL: creds.baseURL,
             username: creds.username,
             password: creds.password
         )
+        self.unifiedService = service
 
-        NetworkMonitor.shared.configureService(unifiedService)
+        NetworkMonitor.shared.configureService(service)
         NetworkMonitor.shared.updateConfiguration(isConfigured: true)
         
-        AppLogger.general.info("[AppInitializer] Service created")
-    }
-
-    func configureManagers(
-        coverArtManager: CoverArtManager,
-        songManager: SongManager,
-        downloadManager: DownloadManager,
-        favoritesManager: FavoritesManager,
-        exploreManager: ExploreManager,
-        musicLibraryManager: MusicLibraryManager,
-        playerVM: PlayerViewModel
-    ) {
-        guard state == .completed, let service = unifiedService else {
-            AppLogger.general.warn("[AppInitializer] Cannot configure managers - Service not ready")
-            return
+        // FIX: Inject the new service into all managers immediately
+        injectService(service)
+        
+        // FIX: Trigger initial data load
+        Task {
+            await loadInitialData()
         }
-
+        
+        AppLogger.general.info("[AppInitializer] Service created & Managers injected")
+        state = .completed
+    }
+    
+    private func injectService(_ service: UnifiedSubsonicService) {
         AppLogger.general.info("[AppInitializer] Injecting service into managers...")
-
-        coverArtManager.configure(service: service)
-        songManager.configure(service: service)
-        downloadManager.configure(service: service)
-        favoritesManager.configure(service: service)
-        exploreManager.configure(service: service)
-        musicLibraryManager.configure(service: service)
-        playerVM.configure(service: service)
-
-        AppLogger.general.info("[AppInitializer] ✅ Managers configured")
+        coverArtManager?.configure(service: service)
+        songManager?.configure(service: service)
+        downloadManager?.configure(service: service)
+        favoritesManager?.configure(service: service)
+        exploreManager?.configure(service: service)
+        musicLibraryManager?.configure(service: service)
+        playerVM?.configure(service: service)
     }
 
-    func loadInitialData(
-        exploreManager: ExploreManager,
-        favoritesManager: FavoritesManager,
-        musicLibraryManager: MusicLibraryManager
-    ) async {
-        guard state == .completed, unifiedService != nil else { return }
+    private func loadInitialData() async {
+        guard let exploreManager = exploreManager,
+              let favoritesManager = favoritesManager,
+              let musicLibraryManager = musicLibraryManager else { return }
 
-        AppLogger.general.info("[AppInitializer] Loading initial data...")
+        AppLogger.general.info("[AppInitializer] 📥 Loading initial data...")
 
         await withDiscardingTaskGroup { group in
             group.addTask { await exploreManager.loadExploreData() }
@@ -124,6 +160,8 @@ final class AppInitializer {
             group.addTask { await musicLibraryManager.loadInitialDataIfNeeded() }
         }
     }
+    
+    // MARK: - Reset
     
     func performFactoryReset() async {
         AppLogger.general.info("[AppInitializer] === Factory Reset Start ===")
@@ -134,15 +172,9 @@ final class AppInitializer {
         
         unifiedService = nil
         isConfigured = false
-        state = .completed
+        state = .completed // Return to WelcomeView
+        
         NetworkMonitor.shared.configureService(nil)
         AppLogger.general.info("[AppInitializer] === Factory Reset Complete ===")
-    }
-    
-    func reset() {
-        unifiedService = nil
-        state = .notStarted
-        isConfigured = false
-        NetworkMonitor.shared.configureService(nil)
     }
 }

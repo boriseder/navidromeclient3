@@ -2,7 +2,7 @@
 //  AlbumCollectionView.swift
 //  NavidromeClient
 //
-//  Fixed: Reachable error handling and CardItemContainer signature
+//  Fixed: Removed conflicting navigationDestination
 //
 
 import SwiftUI
@@ -51,9 +51,7 @@ struct AlbumCollectionView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: NavidromeClient3.Album.self) { album in
-                AlbumDetailView(album: album)
-            }
+            // FIX: Removed .navigationDestination to prevent conflicts with ContentView
             .scrollIndicators(.hidden)
             .task {
                 await loadContent()
@@ -68,10 +66,8 @@ struct AlbumCollectionView: View {
     @ViewBuilder
     private var contentView: some View {
         LazyVGrid(columns: GridColumns.two, alignment: .leading, spacing: DSLayout.elementGap) {
-            // FIX: Use enumerated array for safe index access
             ForEach(Array(displayedAlbums.enumerated()), id: \.element.id) { index, album in
                 NavigationLink(value: album) {
-                    // FIX: Updated to match new CardItemContainer signature
                     CardItemContainer(
                         title: album.name,
                         subtitle: album.artist,
@@ -90,7 +86,6 @@ struct AlbumCollectionView: View {
         do {
             switch context {
             case .byArtist(let artist):
-                // Using try? to avoid crash on single failure
                 if let loaded = try? await musicLibraryManager.loadAlbums(for: artist) {
                     self.albums = loaded
                 }

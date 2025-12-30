@@ -2,19 +2,18 @@
 //  NavidromeClientApp.swift
 //  NavidromeClient3
 //
-//  Swift 6: Composition Root with Dependency Injection
+//  Swift 6: Fixed Missing AudioSessionManager Injection
 //
 
 import SwiftUI
-import BackgroundTasks
 
 @main
 struct NavidromeClientApp: App {
-    // 1. Single Source of Truth for all Dependencies
     @State private var dependencies = AppDependencies()
-    
-    // 2. Local App State
     @Environment(\.scenePhase) private var scenePhase
+    
+    // Navigation state for the Welcome flow
+    @State private var showLogin = false
     
     init() {
         AppLogger.general.info("[App] Launching NavidromeClient3 (Swift 6)")
@@ -23,7 +22,6 @@ struct NavidromeClientApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                // Route based on initialization state
                 switch dependencies.appInitializer.state {
                 case .notStarted, .inProgress:
                     InitializationView(initializer: dependencies.appInitializer)
@@ -32,23 +30,33 @@ struct NavidromeClientApp: App {
                     if dependencies.appInitializer.isConfigured {
                         ContentView()
                     } else {
-                        WelcomeView()
+                        // Welcome Flow
+                        NavigationStack {
+                            WelcomeView {
+                                showLogin = true
+                            }
+                            .navigationDestination(isPresented: $showLogin) {
+                                ServerEditView(viewModel: dependencies.connectionViewModel)
+                            }
+                        }
                     }
                     
                 case .failed(let error):
                     InitializationErrorView(error: error) {
                         Task {
-                            // FIX: Added 'try?' to handle the throwing async function in the retry action
                             try? await dependencies.appInitializer.initialize()
                         }
                     }
                 }
             }
-            // 3. Inject Dependencies into Environment
+            // MARK: - Dependency Injection
             .environment(dependencies.appConfig)
             .environment(dependencies.appInitializer)
             .environment(dependencies.connectionViewModel)
             .environment(dependencies.playerViewModel)
+            
+            // FIX: Added missing AudioSessionManager
+            .environment(dependencies.audioSessionManager)
             
             .environment(dependencies.musicLibraryManager)
             .environment(dependencies.coverArtManager)
@@ -60,13 +68,22 @@ struct NavidromeClientApp: App {
             .environment(dependencies.networkMonitor)
             .environment(dependencies.themeManager)
             
-            // 4. Styling
+            // Styles
             .preferredColorScheme(dependencies.themeManager.colorScheme)
             .tint(dependencies.themeManager.accentColor.color)
             
-            // 5. Lifecycle Hooks
+            // Lifecycle
             .task {
-                // FIX: Wrapped throwing call in do-catch
+                dependencies.appInitializer.configureManagers(
+                    coverArtManager: dependencies.coverArtManager,
+                    songManager: dependencies.songManager,
+                    downloadManager: dependencies.downloadManager,
+                    favoritesManager: dependencies.favoritesManager,
+                    exploreManager: dependencies.exploreManager,
+                    musicLibraryManager: dependencies.musicLibraryManager,
+                    playerVM: dependencies.playerViewModel
+                )
+                
                 do {
                     try await dependencies.appInitializer.initialize()
                 } catch {
@@ -78,9 +95,6 @@ struct NavidromeClientApp: App {
                     // dependencies.someManager.saveState()
                 }
             }
-        }
-        .backgroundTask(.appRefresh("com.navidrome.client.refresh")) {
-            await dependencies.favoritesManager.loadFavoriteSongs()
         }
     }
 }
