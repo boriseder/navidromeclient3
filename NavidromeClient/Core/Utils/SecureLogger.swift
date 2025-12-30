@@ -2,17 +2,19 @@
 //  SecureLogger.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 11.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Marked final and Sendable
+//  - os.Logger is thread-safe
 //
-
 
 import Foundation
 import os.log
 
 // MARK: - Secure Logger
-final class SecureLogger {
+final class SecureLogger: Sendable {
     static let shared = SecureLogger()
     
+    // Logger struct is thread-safe
     private let logger = Logger(subsystem: "at.amtabor.NavidromeClient", category: "Network")
     private let authLogger = Logger(subsystem: "at.amtabor.NavidromeClient", category: "Authentication")
     
@@ -33,7 +35,7 @@ final class SecureLogger {
     }
     
     func logAuthenticationAttempt(username: String, success: Bool) {
-        // Anonymisiere Username für Logs
+        // Anonymize username for logs
         let anonymizedUsername = anonymizeUsername(username)
         if success {
             authLogger.info(" Authentication successful for user: \(anonymizedUsername)")
@@ -76,14 +78,6 @@ final class SecureLogger {
         }
     }
     
-    // MARK: - Development Only (Remove in Production)
-    
-    #if DEBUG
-    func logDebug(_ message: String) {
-        logger.debug("🐛 Debug: \(message)")
-    }
-    #endif
-    
     // MARK: - Private Helper Methods
     
     private func anonymizeUsername(_ username: String) -> String {
@@ -92,23 +86,23 @@ final class SecureLogger {
     }
     
     private func anonymizeKey(_ key: String) -> String {
-        // Zeige nur ersten Teil des Keys
+        // Only show first part of key
         guard key.count > 8 else { return "****" }
         return String(key.prefix(8)) + "..."
     }
     
     private func sanitizeForLogging(_ input: String) -> String {
-        // Entferne potentiell schädliche Zeichen
+        // Remove potentially harmful characters
         return input
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
             .replacingOccurrences(of: "\t", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .prefix(100) // Begrenze Länge
+            .prefix(100) // Limit length
             .description
     }
     
-    enum SecuritySeverity {
+    enum SecuritySeverity: Sendable {
         case low, medium, high
     }
 }

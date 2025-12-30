@@ -2,7 +2,9 @@
 //  ConnectionService.swift
 //  NavidromeClient
 //
-//  Optimized: Single request, proper error handling, accurate timing
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Marked @MainActor to protect @Published state
+//  - URLSession handles background I/O automatically
 //
 
 import Foundation
@@ -61,7 +63,11 @@ class ConnectionService: ObservableObject {
         
         do {
             // Single request - ping provides all needed info
-            let url = buildURL(endpoint: "ping")!
+            // Force-unwrap safe here because buildURL checks endpoint validity
+            guard let url = buildURL(endpoint: "ping") else {
+                return .failure(.invalidURL)
+            }
+            
             let (data, response) = try await session.data(from: url)
             
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -137,7 +143,10 @@ class ConnectionService: ObservableObject {
     }
     
     private func pingWithInfo() async throws -> PingInfo {
-        let url = buildURL(endpoint: "ping")!
+        guard let url = buildURL(endpoint: "ping") else {
+            throw SubsonicError.badURL
+        }
+        
         let (data, response) = try await session.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse,
@@ -232,7 +241,7 @@ class ConnectionService: ObservableObject {
     private func validateEndpoint(_ endpoint: String) -> Bool {
         let allowedEndpoints = [
             "ping", "getArtists", "getArtist", "getAlbum", "getAlbumList2",
-            "getCoverArt", "stream", "getGenres", "search2",
+            "getCoverArt", "stream", "download", "getGenres", "search2",
             "star", "unstar", "getStarred2"
         ]
         return allowedEndpoints.contains(endpoint) &&

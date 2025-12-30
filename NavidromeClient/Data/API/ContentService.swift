@@ -1,21 +1,14 @@
 //
-//  ContentService.swift
+//  ContentService.swift - Library Content Operations
 //  NavidromeClient
 //
-//  Created by Boris Eder on 16.09.25.
-//
-
-
-//
-//  ContentService.swift - Library Content Operations  
-//  NavidromeClient
-//
-//   FOCUSED: Albums, artists, songs, genres - all library content
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Marked @MainActor to align with ConnectionService and UI consumers
 //
 
 import Foundation
 
-@MainActor  
+@MainActor
 class ContentService {
     private let connectionService: ConnectionService
     private let session: URLSession

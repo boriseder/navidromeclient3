@@ -2,13 +2,13 @@
 //  LocalizedString.swift
 //  NavidromeClient
 //
-//  Type-safe localized string access
-//  All user-facing strings are defined here and resolved at runtime
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Explicit Sendable conformance (though implicitly inferred)
 //
 
 import Foundation
 
-enum LocalizedString {
+enum LocalizedString: Sendable {
     
     // MARK: - Navigation & Tabs
     

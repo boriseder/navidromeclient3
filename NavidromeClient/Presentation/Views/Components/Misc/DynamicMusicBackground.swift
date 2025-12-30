@@ -1,3 +1,10 @@
+//
+//  DynamicMusicBackground.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Concurrency Compliance
+//
+
 import SwiftUI
 
 struct DynamicMusicBackground: View {
@@ -5,7 +12,6 @@ struct DynamicMusicBackground: View {
 
     var body: some View {
         ZStack {
-            // Basis dunkler LinearGradient, leicht getönt nach accentColor
             LinearGradient(
                 colors: [
                     theme.accent.opacity(0.05),
@@ -17,7 +23,6 @@ struct DynamicMusicBackground: View {
             )
             .ignoresSafeArea()
 
-            // Subtiler Radial Glow in Akzentfarbe
             RadialGradient(
                 colors: [
                     theme.accent.opacity(0.2),
@@ -30,7 +35,6 @@ struct DynamicMusicBackground: View {
             .blendMode(.screen)
             .ignoresSafeArea()
 
-            // Textur für Tiefe
             Rectangle()
                 .fill(
                     LinearGradient(

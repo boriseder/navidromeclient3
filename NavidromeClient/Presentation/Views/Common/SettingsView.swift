@@ -1,15 +1,12 @@
 //
-//  SettingsView.swift - CLEANED: Removed fake metrics and dead code
+//  SettingsView.swift
 //  NavidromeClient
 //
-//   REMOVED: Fake response times, duplicate health indicators
-//   REMOVED: Always-zero memory count KPIs
-//   IMPROVED: Replaced with useful download statistics
+//  Updated: Swift 6 Concurrency
 //
 
 import SwiftUI
 
-// MARK: - SettingsView
 struct SettingsView: View {
     @EnvironmentObject var connectionVM: ConnectionViewModel
     @EnvironmentObject var appConfig: AppConfig
@@ -93,7 +90,6 @@ struct SettingsView: View {
                 NavigationLink(destination: CoverArtDebugView()) {
                     Label("Cover Art Debug", systemImage: "photo.artframe")
                 }
-                
             }
             Section(header: Text("Appearance")) {
                 Picker("Select Theme", selection: $theme.backgroundStyle) {
@@ -167,21 +163,21 @@ struct SettingsView: View {
             NetworkDebugBanner()
         } header: {
             Text("Network Debug")
-        } footer: { }
+        }
     }
     
     // MARK: - Actions
+    
     private func performFactoryReset() async {
         isPerformingReset = true
         defer { isPerformingReset = false }
         
+        // This is nonisolated/async, but safe to call from MainActor
         await appInitializer.performFactoryReset()
         
-        await MainActor.run {
-            songManager.reset()
-        }
-        
-        await MainActor.run { dismiss() }
+        // Views and ObservableObjects are MainActor, so simple calls are fine
+        songManager.reset()
+        dismiss()
     }
 }
 
@@ -201,8 +197,6 @@ struct SettingsRow: View {
         }
     }
 }
-
-// MARK: - Factory Reset
 
 struct FactoryResetOverlayView: View {
     var body: some View {

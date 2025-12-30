@@ -1,9 +1,9 @@
-// ContentView.swift - Navigation direkt zu MainTabView
+// ContentView.swift - Navigation to MainTabView
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var appInitializer: AppInitializer  // ✅ Added
+    @EnvironmentObject var appInitializer: AppInitializer
     @EnvironmentObject var playerVM: PlayerViewModel
     @EnvironmentObject var networkMonitor: NetworkMonitor
     @EnvironmentObject var offlineManager: OfflineManager
@@ -60,12 +60,12 @@ struct ContentView: View {
                         .tag(4)
                 }
                 .accentColor(theme.accent)
-                .id(theme.accent) // zwingt SwiftUI, die TabView neu zu rendern, wenn sich die Farbe ändert
+                .id(theme.accent)
                 .overlay(networkStatusOverlay, alignment: .top)
                 .overlay(alignment: .bottom) {
                     MiniPlayerView()
                         .environmentObject(playerVM)
-                        .padding(.bottom, DSLayout.miniPlayerHeight) // Standard tab bar height
+                        .padding(.bottom, DSLayout.miniPlayerHeight)
                 }
             }
         }
@@ -83,23 +83,21 @@ struct ContentView: View {
         }
     }
 
-    
     private func retryServiceInitialization() async {
-        guard let credentials = appConfig.getCredentials() else {
+        guard appConfig.hasCredentials() else {
             serviceInitError = "No credentials available"
             return
         }
         
         serviceInitError = nil
         
-        // ✅ Updated: No longer posts notification - AppInitializer handles this automatically
-        // Just trigger reinit directly
+        // AppInitializer handles notifications internally
         try? await appInitializer.reinitializeAfterConfiguration()
         
         // Wait for initialization with timeout
-        for attempt in 0..<10 {
+        for _ in 0..<10 {
             try? await Task.sleep(nanoseconds: 500_000_000)
-            if appInitializer.areServicesReady {  // ✅ Changed from appConfig to appInitializer
+            if appInitializer.areServicesReady {
                 AppLogger.ui.info("Service initialization retry succeeded")
                 return
             }
@@ -111,7 +109,6 @@ struct ContentView: View {
     // MARK: - Network Status Overlay
     @ViewBuilder
     private var networkStatusOverlay: some View {
-        // DISTINGUISH between different offline reasons
         switch networkMonitor.contentLoadingStrategy {
             case .offlineOnly(let reason):
                 OfflineReasonBanner(reason: reason)

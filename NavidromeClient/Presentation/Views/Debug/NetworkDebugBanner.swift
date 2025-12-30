@@ -1,3 +1,11 @@
+//
+//  NetworkDebugBanner.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Aligned with ConnectionViewModel capabilities
+//
+
 import SwiftUI
 
 struct NetworkDebugBanner: View {
@@ -28,74 +36,39 @@ struct NetworkDebugBanner: View {
                 VStack(spacing: 4) {
                     DebugRow(label: "isFullyConnected", value: "\(networkMonitor.state.isFullyConnected)")
                     DebugRow(label: "isConfigured", value: "\(networkMonitor.state.isConfigured)")
-                    DebugRow(label: "hasInternet", value: "\(networkMonitor.state.hasInternet)")
-                    DebugRow(label: "isServerReachable", value: "\(networkMonitor.state.isServerReachable)")
-                    DebugRow(label: "manualOfflineMode", value: "\(networkMonitor.state.manualOfflineMode)")
-                    DebugRow(label: "contentLoadingStrategy", value: strategyLabel(networkMonitor.state.contentLoadingStrategy))
-                    DebugRow(label: "reason", value: reasonLabelIfPresent(networkMonitor.state.contentLoadingStrategy))
-                    DebugRow(label: "isEffectivelyOffline", value: "\(networkMonitor.state.contentLoadingStrategy.isEffectivelyOffline)")
-                    DebugRow(label: "shouldLoadOnlineContent", value: "\(networkMonitor.state.contentLoadingStrategy.shouldLoadOnlineContent)")
-                    DebugRow(label: "displayName", value: networkMonitor.state.contentLoadingStrategy.displayName)
+                    DebugRow(label: "Strategy", value: networkMonitor.state.contentLoadingStrategy.displayName)
                 }
                 .padding(DSLayout.elementPadding)
-                
             }
             .background(networkMonitor.state.contentLoadingStrategy.isEffectivelyOffline ? Color.red.opacity(0.8) : Color.green.opacity(0.8))
             
             HStack {
                 VStack(spacing: DSLayout.contentGap) {
-                    if let h = health {
-                        VStack(alignment: .leading) {
-                            Text("Connected: \(h.isConnected ? "ja" : "nein")")
-                            Text("Quality: \(String(describing: h.quality))")
-                            Text("Response: \(h.responseTime)")
-                            Text("Last success: \(String(describing: h.lastSuccessfulConnection))")
-                        }
-                    }
-                    
                     Button {
                         Task {
-                            await connectionManager.performQuickHealthCheck()
+                            // Updated to use the available method in ConnectionViewModel
+                            await connectionManager.testConnection()
                         }
                     } label: {
-                        Text("Call performConnectionHealthCheck()")
+                        Text("Test Connection")
                             .font(DSText.footnote)
                             .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.white.opacity(0.2))
+                            .cornerRadius(4)
                     }
                     .padding(.leading, DSLayout.elementPadding)
+                    
+                    if connectionManager.isTestingConnection {
+                        ProgressView().tint(.white)
+                    } else {
+                        Text(connectionManager.connectionStatusText)
+                            .font(DSText.fine)
+                            .foregroundStyle(.white)
+                    }
                 }
             }
             .background(networkMonitor.state.contentLoadingStrategy.isEffectivelyOffline ? Color.red.opacity(0.8) : Color.green.opacity(0.8))
-        }
-    }
-    
-    func strategyLabel(_ strategy: ContentLoadingStrategy) -> String {
-        switch strategy {
-        case .online:
-            return "online"
-
-        case .offlineOnly(let reason):
-            return "offlineOnly: \(reasonLabel(reason))"
-
-        case .setupRequired:
-            return "setupRequired"
-        }
-    }
-    
-    func reasonLabelIfPresent(_ strategy: ContentLoadingStrategy) -> String {
-        switch strategy {
-        case .offlineOnly(let reason):
-            return reasonLabel(reason)
-        default:
-            return "none"
-        }
-    }
-
-    func reasonLabel(_ reason: ContentLoadingStrategy.OfflineReason) -> String {
-        switch reason {
-        case .noNetwork: return "noNetwork"
-        case .serverUnreachable: return "serverUnreachable"
-        case .userChoice: return "userChoice"
         }
     }
 }
@@ -103,7 +76,7 @@ struct NetworkDebugBanner: View {
 struct DebugRow: View {
     let label: String
     let value: String
-    private let labelWidth: CGFloat = 180
+    private let labelWidth: CGFloat = 140
 
     var body: some View {
         HStack(alignment: .top) {

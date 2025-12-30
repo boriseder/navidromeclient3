@@ -47,14 +47,14 @@ final class ThemeManager: ObservableObject {
     }
 }
 
-enum UserBackgroundStyle: String, CaseIterable {
+// Swift 6: Enums are value types, thus implicitly Sendable
+enum UserBackgroundStyle: String, CaseIterable, Sendable {
     case dynamic
     case light
     case dark
-    
 }
 
-enum UserAccentColor: String, CaseIterable, Identifiable {
+enum UserAccentColor: String, CaseIterable, Identifiable, Sendable {
     case red, orange, green, blue, purple, pink
     
     var id: String { rawValue }

@@ -2,8 +2,9 @@
 //  OfflineWelcomeHeader.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 21.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
 //
+
 import SwiftUI
 
 struct OfflineWelcomeHeader: View {

@@ -2,7 +2,7 @@
 //  ArtistImageView.swift
 //  NavidromeClient
 //
-//  OPTIMIZED: Context-aware image loading with caching and preload support
+//  UPDATED: Swift 6 Concurrency Compliance
 //
 
 import SwiftUI
@@ -49,22 +49,18 @@ struct ArtistImageView: View {
         .frame(width: displaySize, height: displaySize)
         .animation(.easeInOut(duration: 0.3), value: hasImage)
         .task(id: "\(artist.id)_\(context.size)_\(coverArtManager.cacheGeneration)") {
-            // Früher Return bei Cache-Hit
             if coverArtManager.getArtistImage(for: artist.id, context: context) != nil {
-                return  // Bild bereits im Cache
+                return
             }
             
-            // NUR bei kleinen Bildern verzögern, Fullscreen sofort laden
             if context.size < ImageContext.fullscreen.size {
-                try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
-                
-                // Nochmal prÃ¼fen nach VerzÃ¶gerung
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 if coverArtManager.getArtistImage(for: artist.id, context: context) != nil {
                     return
                 }
             }
             
-            await coverArtManager.loadArtistImage(
+            _ = await coverArtManager.loadArtistImage(
                 for: artist.id,
                 context: context
             )
@@ -73,7 +69,7 @@ struct ArtistImageView: View {
     
     @ViewBuilder
     private var placeholderView: some View {
-        Circle()  // ✅ Runder Placeholder für Artists
+        Circle()
             .fill(
                 LinearGradient(
                     colors: [.blue, .purple.opacity(0.7)],
@@ -91,7 +87,7 @@ struct ArtistImageView: View {
             ProgressView()
                 .scaleEffect(0.7)
                 .tint(.white)
-        } else if let error = coverArtManager.getImageError(for: artist.id, size: context.size) {
+        } else if let _ = coverArtManager.getImageError(for: artist.id, size: context.size) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: DSLayout.smallIcon))
                 .foregroundStyle(.white.opacity(0.8))

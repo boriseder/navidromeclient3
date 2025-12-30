@@ -2,8 +2,8 @@
 //  CredentialStore.swift
 //  NavidromeClient
 //
-//  Single source of truth for credential persistence.
-//  Pure infrastructure layer - no business logic.
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - MainActor isolation ensures safe access from AppConfig
 //
 
 import Foundation

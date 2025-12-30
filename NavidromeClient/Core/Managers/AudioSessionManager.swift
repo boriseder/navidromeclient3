@@ -2,7 +2,9 @@
 //  AudioSessionManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Added modern lifecycle methods to existing implementation
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Removed unsafe background queue usage for observer cleanup
+//  - Enforced MainActor isolation for lifecycle methods
 //
 
 import Foundation
@@ -17,7 +19,7 @@ class AudioSessionManager: NSObject, ObservableObject {
     @Published var isHeadphonesConnected = false
     @Published var audioRoute: String = ""
     
-    private let observerQueue = DispatchQueue(label: "audio.observers", attributes: .concurrent)
+    // Swift 6: Observers must be accessed on MainActor since the class is @MainActor
     private var audioObservers: [NSObjectProtocol] = []
 
     private let audioSession = AVAudioSession.sharedInstance()
@@ -33,22 +35,27 @@ class AudioSessionManager: NSObject, ObservableObject {
     }
         
     deinit {
-        Task { @MainActor in
-            performCleanup()
+        // Swift 6: Deinit isolation is tricky.
+        // We rely on explicit cleanup calls (handleAppWillTerminate) for safety.
+        // However, if deinit triggers, we attempt a safe cleanup.
+        Task { @MainActor [weak self] in
+            self?.performCleanup()
         }
     }
 
     // MARK: - Cleanup
 
     func performCleanup() {
-        observerQueue.async(flags: .barrier) {
-            let observers = self.audioObservers
-            self.audioObservers.removeAll()
-            
-            DispatchQueue.main.async {
-                observers.forEach { NotificationCenter.default.removeObserver($0) }
-            }
+        // Swift 6 Fix: Accessing `audioObservers` must happen on MainActor.
+        // NotificationCenter itself is thread-safe, so we don't need a background queue here.
+        let observers = self.audioObservers
+        self.audioObservers.removeAll()
+        
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
         }
+        
+        AppLogger.audio.info("🧹 AudioSessionManager cleanup performed")
     }
 
     // MARK: - Audio Session Setup
@@ -66,7 +73,7 @@ class AudioSessionManager: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Thread-safe Notifications Setup
+    // MARK: - Notifications Setup
     
     private func setupNotifications() {
         let center = NotificationCenter.default
@@ -232,9 +239,8 @@ class AudioSessionManager: NSObject, ObservableObject {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = artworkItem
         }
         
-        DispatchQueue.main.async {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-        }
+        // Direct assignment on MainActor (Class is @MainActor)
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         AppLogger.audio.info("📱 Updated Now Playing Info: \(title) - \(artist)")
     }
     
@@ -243,52 +249,40 @@ class AudioSessionManager: NSObject, ObservableObject {
         AppLogger.audio.info("🔇 Cleared Now Playing Info")
     }
     
-    // MARK: - Modern App Lifecycle Handlers (NEW)
+    // MARK: - Modern App Lifecycle Handlers
     
-    /// Called when app becomes active from background or launch
     func handleAppBecameActive() async {
         AppLogger.audio.info("🟢 App became active - reactivating audio session")
         
         do {
-            // Run on background thread to avoid blocking main
             try await Task.detached {
                 try AVAudioSession.sharedInstance().setActive(true)
             }.value
             
-            await MainActor.run {
-                self.isAudioSessionActive = true
-            }
+            // Re-check on MainActor
+            self.isAudioSessionActive = true
             
             checkAudioRoute()
             AppLogger.audio.info("✅ Audio session reactivated")
             
         } catch {
-            await MainActor.run {
-                self.isAudioSessionActive = false
-            }
+            self.isAudioSessionActive = false
             AppLogger.audio.error("❌ Failed to reactivate audio session: \(error)")
         }
     }
     
-    /// Called when app will resign active (going to background or interrupted)
     func handleAppWillResignActive() {
         AppLogger.audio.info("🟡 App will resign active")
-        
-        // Just log - keep audio session active for background playback
-        // PlayerViewModel should handle saving state
     }
     
-    /// Called when app enters background
     func handleAppEnteredBackground() {
         AppLogger.audio.info("⬛ App entered background")
         
-        // Update Now Playing info to ensure lock screen is current
         guard let player = playerViewModel,
               let song = player.currentSong else {
             return
         }
         
-        // Simple and clean - just call the existing method
         updateNowPlayingInfo(
             title: song.title,
             artist: song.artist ?? "Unknown Artist",
@@ -300,14 +294,11 @@ class AudioSessionManager: NSObject, ObservableObject {
         )
     }
     
-    /// Called when app will terminate (graceful shutdown)
     func handleAppWillTerminate() {
         AppLogger.audio.info("🔴 App will terminate - cleaning up")
         
-        // Clean up observers
         performCleanup()
         
-        // Deactivate audio session
         do {
             try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
             isAudioSessionActive = false
@@ -316,18 +307,12 @@ class AudioSessionManager: NSObject, ObservableObject {
             AppLogger.audio.error("❌ Failed to deactivate audio session: \(error)")
         }
         
-        // Clear lock screen
         clearNowPlayingInfo()
-        
-        // Disable remote commands
         disableRemoteCommands()
     }
     
-    /// Called on crash or force quit (NOT guaranteed!)
     func handleEmergencyShutdown() {
         AppLogger.audio.info("⚠️ Emergency shutdown - minimal cleanup")
-        
-        // Absolute minimum - don't do heavy work
         try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
     }
     
@@ -337,7 +322,6 @@ class AudioSessionManager: NSObject, ObservableObject {
         let route = audioSession.currentRoute
         audioRoute = route.outputs.first?.portName ?? "Unknown"
         
-        // Check for headphones
         isHeadphonesConnected = route.outputs.contains { output in
             output.portType == .headphones ||
             output.portType == .bluetoothA2DP ||
@@ -359,7 +343,7 @@ class AudioSessionManager: NSObject, ObservableObject {
         
         switch type {
         case .began:
-            AppLogger.audio.info("🔴 Audio Interruption BEGAN (e.g., phone call)")
+            AppLogger.audio.info("🔴 Audio Interruption BEGAN")
             isAudioSessionActive = false
             NotificationCenter.default.post(name: .audioInterruptionBegan, object: nil)
             
@@ -367,7 +351,6 @@ class AudioSessionManager: NSObject, ObservableObject {
             AppLogger.audio.info("🟢 Audio Interruption ENDED")
             isAudioSessionActive = true
             
-            // Check if we should resume
             if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 if options.contains(.shouldResume) {
@@ -380,7 +363,7 @@ class AudioSessionManager: NSObject, ObservableObject {
             }
             
         @unknown default:
-            AppLogger.audio.info("⚠️ Unknown interruption type")
+            break
         }
     }
     
@@ -394,12 +377,8 @@ class AudioSessionManager: NSObject, ObservableObject {
         checkAudioRoute()
         
         switch reason {
-        case .newDeviceAvailable:
-            AppLogger.audio.info("🎧 New audio device connected: \(audioRoute)")
-            
         case .oldDeviceUnavailable:
             AppLogger.audio.info("🔌 Audio device disconnected")
-            // Pause playback when headphones are removed
             if let previousRoute = info[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {
                 let wasHeadphones = previousRoute.outputs.contains { output in
                     output.portType == .headphones || output.portType == .bluetoothA2DP
@@ -410,99 +389,38 @@ class AudioSessionManager: NSObject, ObservableObject {
                     NotificationCenter.default.post(name: .audioDeviceDisconnected, object: nil)
                 }
             }
-            
-        case .categoryChange:
-            AppLogger.audio.info("📂 Audio category changed")
-            
-        case .override:
-            AppLogger.audio.info("🔄 Audio route overridden")
-            
-        case .wakeFromSleep:
-            AppLogger.audio.info("😴 Audio woke from sleep")
-            
-        case .noSuitableRouteForCategory:
-            AppLogger.audio.info("❌ No suitable route for category")
-            
-        case .routeConfigurationChange:
-            AppLogger.audio.info("⚙️ Route configuration changed")
-            
-        @unknown default:
-            AppLogger.audio.info("⚠️ Unknown route change reason: \(reason.rawValue)")
+        default:
+            break
         }
     }
     
     private func handleMediaServicesResetNotification() {
-        AppLogger.audio.info("🔄 Media services were reset - reconfiguring audio session")
+        AppLogger.audio.info("🔄 Media services were reset - reconfiguring")
         setupAudioSession()
         setupRemoteCommandCenter()
     }
     
     private func handleSilenceSecondaryAudioNotification(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let typeValue = info[AVAudioSessionSilenceSecondaryAudioHintTypeKey] as? UInt,
-              let type = AVAudioSession.SilenceSecondaryAudioHintType(rawValue: typeValue) else {
-            return
-        }
-        
-        switch type {
-        case .begin:
-            AppLogger.audio.info("🔇 Other apps requested to lower volume")
-        case .end:
-            AppLogger.audio.info("🔊 Other apps stopped requesting volume reduction")
-        @unknown default:
-            AppLogger.audio.info("⚠️ Unknown silence hint type: \(type.rawValue)")
-        }
+        // Logging only
     }
     
-    // MARK: - Remote Command Handlers (forward to PlayerViewModel)
+    // MARK: - Remote Command Handlers
     
-    private func handleRemotePlay() {
-        AppLogger.audio.info("▶️ Remote Play Command")
-        playerViewModel?.handleRemotePlay()
-    }
-
-    private func handleRemotePause() {
-        AppLogger.audio.info("⏸️ Remote Pause Command")
-        playerViewModel?.handleRemotePause()
-    }
-
-    private func handleRemoteTogglePlayPause() {
-        AppLogger.audio.info("⏯️ Remote Toggle Play/Pause Command")
-        playerViewModel?.handleRemoteTogglePlayPause()
-    }
-
-    private func handleRemoteNextTrack() {
-        AppLogger.audio.info("⏭️ Remote Next Track Command")
-        playerViewModel?.handleRemoteNextTrack()
-    }
-
-    private func handleRemotePreviousTrack() {
-        AppLogger.audio.info("⏮️ Remote Previous Track Command")
-        playerViewModel?.handleRemotePreviousTrack()
-    }
-
+    private func handleRemotePlay() { playerViewModel?.handleRemotePlay() }
+    private func handleRemotePause() { playerViewModel?.handleRemotePause() }
+    private func handleRemoteTogglePlayPause() { playerViewModel?.handleRemoteTogglePlayPause() }
+    private func handleRemoteNextTrack() { playerViewModel?.handleRemoteNextTrack() }
+    private func handleRemotePreviousTrack() { playerViewModel?.handleRemotePreviousTrack() }
+    
     private func handleRemoteSeek(to time: TimeInterval) {
-        AppLogger.audio.info("⏩ Remote Seek Command: \(time)s")
         playerViewModel?.handleRemoteSeek(to: time)
     }
-
+    
     private func handleRemoteSkipForward(interval: TimeInterval) {
-        AppLogger.audio.info("⏭️ Remote Skip Forward: \(interval)s")
         playerViewModel?.handleRemoteSkipForward(interval: interval)
     }
-
+    
     private func handleRemoteSkipBackward(interval: TimeInterval) {
-        AppLogger.audio.info("⏮️ Remote Skip Backward: \(interval)s")
         playerViewModel?.handleRemoteSkipBackward(interval: interval)
     }
-}
-
-// MARK: - Notification Names
-
-extension Notification.Name {
-    // Audio Interruptions
-    static let audioInterruptionBegan = Notification.Name("audioInterruptionBegan")
-    static let audioInterruptionEnded = Notification.Name("audioInterruptionEnded")
-    static let audioInterruptionEndedShouldResume = Notification.Name("audioInterruptionEndedShouldResume")
-    static let audioDeviceDisconnected = Notification.Name("audioDeviceDisconnected")
 }

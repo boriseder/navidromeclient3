@@ -2,8 +2,9 @@
 //  EqualizerBars.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 22.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
 //
+
 import SwiftUI
 
 struct EqualizerBars: View {
@@ -12,6 +13,7 @@ struct EqualizerBars: View {
     
     @State private var barScales: [CGFloat] = [0.3, 0.5, 0.8]
     
+    // Timer is safe on main thread
     private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
     
     var body: some View {
@@ -32,10 +34,7 @@ struct EqualizerBars: View {
         .background(
             Circle()
                 .fill(accentColor.opacity(0.15))
-                .overlay(
-                    Circle()
-                        .stroke(accentColor.opacity(0.3), lineWidth: 1)
-                )
+                .overlay(Circle().stroke(accentColor.opacity(0.3), lineWidth: 1))
         )
         .onReceive(timer) { _ in
             updateBars()

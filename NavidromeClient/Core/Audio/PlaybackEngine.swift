@@ -3,6 +3,8 @@ import AVFoundation
 
 // MARK: - PlaybackEngine Delegate Protocol
 
+// Swift 6: Protocol must be @MainActor because implementation (PlayerViewModel) is @MainActor
+@MainActor
 protocol PlaybackEngineDelegate: AnyObject {
     func playbackEngine(_ engine: PlaybackEngine, didUpdateTime time: TimeInterval)
     func playbackEngine(_ engine: PlaybackEngine, didUpdateDuration duration: TimeInterval)
@@ -11,7 +13,6 @@ protocol PlaybackEngineDelegate: AnyObject {
     func playbackEngine(_ engine: PlaybackEngine, didEncounterError error: String)
     
     func playbackEngineNeedsMoreItems(_ engine: PlaybackEngine) async
-
 }
 
 // MARK: - PlaybackEngine

@@ -2,9 +2,9 @@
 //  TaskHelpers.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 30.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Generic Extensions are safe
 //
-
 
 import Foundation
 

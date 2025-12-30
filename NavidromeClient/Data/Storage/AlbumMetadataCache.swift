@@ -41,22 +41,36 @@ class AlbumMetadataCache: ObservableObject {
     
     func clearCache() {
         cachedAlbums.removeAll()
-        try? FileManager.default.removeItem(at: cacheFile)
+        // Offload file deletion
+        let file = cacheFile
+        Task.detached {
+            try? FileManager.default.removeItem(at: file)
+        }
         AppLogger.general.info("📦 AlbumMetadataCache: Cache cleared")
     }
     
     private func loadCache() {
-        guard FileManager.default.fileExists(atPath: cacheFile.path),
-              let data = try? Data(contentsOf: cacheFile),
-              let albums = try? JSONDecoder().decode([String: Album].self, from: data) else {
-            return
+        guard FileManager.default.fileExists(atPath: cacheFile.path) else { return }
+        
+        do {
+            let data = try Data(contentsOf: cacheFile)
+            let albums = try JSONDecoder().decode([String: Album].self, from: data)
+            self.cachedAlbums = albums
+            AppLogger.general.info("📦 Loaded \(cachedAlbums.count) albums from metadata cache")
+        } catch {
+            AppLogger.general.error("📦 Failed to load metadata cache: \(error)")
         }
-        cachedAlbums = albums
-        AppLogger.general.info("📦 Loaded \(cachedAlbums.count) albums from metadata cache")
     }
     
     private func saveCache() {
-        guard let data = try? JSONEncoder().encode(cachedAlbums) else { return }
-        try? data.write(to: cacheFile)
+        let albums = cachedAlbums
+        let file = cacheFile
+        
+        // Save in background to prevent UI stutter
+        Task.detached {
+            if let data = try? JSONEncoder().encode(albums) {
+                try? data.write(to: file, options: .atomic)
+            }
+        }
     }
 }

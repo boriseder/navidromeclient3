@@ -21,8 +21,8 @@ struct NavidromeClientApp: App {
     @StateObject private var theme = ThemeManager()
     
     // MARK: - Local State
-    @State private var hasPerformedInitialConfiguration = false  // ✅ Use @State
-    @State private var hasConfiguredManagers = false  // ✅ Use @State
+    @State private var hasPerformedInitialConfiguration = false
+    @State private var hasConfiguredManagers = false
     
     // MARK: - Scene Phase
     @Environment(\.scenePhase) private var scenePhase
@@ -75,10 +75,7 @@ struct NavidromeClientApp: App {
     private var contentRoot: some View {
         switch appInitializer.state {
         
-        case .notStarted:
-            InitializationView(initializer: appInitializer)
-
-        case .inProgress:
+        case .notStarted, .inProgress:
             InitializationView(initializer: appInitializer)
             
         case .completed:
@@ -108,35 +105,7 @@ struct NavidromeClientApp: App {
         }
     }
 
-    private func handleConfigurationChange(_ isConfigured: Bool) {
-        guard isConfigured else { return }
-
-        guard !hasConfiguredManagers else {
-            AppLogger.general.info("[App] Managers already configured - skipping")
-            return
-        }
-        
-        guard appInitializer.state == .completed else {
-            AppLogger.general.info("[App] Waiting for initialization to complete")
-            return
-        }
-
-        AppLogger.general.info("[App] Configuration changed - reinitializing...")
-        
-        if !hasPerformedInitialConfiguration {
-            // Initial setup nach erstem Login
-            hasPerformedInitialConfiguration = true
-            AppLogger.general.info("[App] Initial configuration completed - configuring managers")
-            configureManagersAndLoadData()
-        } else {
-            // Reconfiguration (z.B. nach Factory Reset + neuem Login)
-            AppLogger.general.info("[App] Reconfiguration detected - reinitializing managers")
-            hasConfiguredManagers = false  // Reset flag für Reconfiguration
-            configureManagersAndLoadData()
-        }
-    }
-
-    // MARK: - Initialization
+    // MARK: - Initialization Logic
     
     private func performInitialization() async {
         do {
@@ -144,35 +113,27 @@ struct NavidromeClientApp: App {
             if appInitializer.state == .completed && appInitializer.isConfigured {
                 AppLogger.general.info("[App] Initialization completed - configuring managers")
                 configureManagersAndLoadData()
-            } else {
-                AppLogger.general.info("[App] Initialization completed - no configuration available")
             }
         } catch {
             AppLogger.general.error("[App] Initialization failed: \(error)")
         }
     }
 
-    private func waitForStableNetworkState() async {
-        // Wait for the NetworkMonitor to complete its initial, asynchronous check.
-        // The state is considered stable once it transitions from the initial .setupRequired (or .notStarted) state.
-        for _ in 0..<40 { // 40 iterations * 50ms = 2 seconds max wait
-            // Check if the contentLoadingStrategy has determined a concrete state (online or offline).
-            if networkMonitor.contentLoadingStrategy != .setupRequired {
-                return
+    private func handleConfigurationChange(_ isConfigured: Bool) {
+        guard isConfigured else { return }
+
+        if !hasConfiguredManagers {
+            AppLogger.general.info("[App] Configuration changed - initializing managers")
+            configureManagersAndLoadData()
+            
+            if !hasPerformedInitialConfiguration {
+                hasPerformedInitialConfiguration = true
             }
-            // Short sleep to yield control without blocking the MainActor excessively.
-            try? await Task.sleep(nanoseconds: 50_000_000)
         }
-        AppLogger.general.warn("[App] Timeout waiting for stable network state. Proceeding with initial state.")
     }
 
-    
     private func configureManagersAndLoadData() {
-        guard !hasConfiguredManagers else {
-            AppLogger.general.info("[App] Managers already configured - skipping")
-            return
-        }
-        
+        guard !hasConfiguredManagers else { return }
         hasConfiguredManagers = true
         
         appInitializer.configureManagers(
@@ -186,7 +147,7 @@ struct NavidromeClientApp: App {
         )
         
         Task {
-            // NEW: Coordinate data loading to wait for a stable network state.
+            // Wait for network monitor to settle before loading data
             await waitForStableNetworkState()
             
             await appInitializer.loadInitialData(
@@ -197,21 +158,24 @@ struct NavidromeClientApp: App {
         }
     }
     
-    private func configureInitialDependencies() {
-        // Setup audio session
-        audioSessionManager.playerViewModel = playerVM
-        audioSessionManager.setupRemoteCommandCenter()
-        
-        // Setup termination handler
-        setupTerminationHandler()
-        
-        AppLogger.general.info("[App] ✅ Initial dependencies configured")
+    private func waitForStableNetworkState() async {
+        // Poll for network state stability (max 2 seconds)
+        for _ in 0..<40 {
+            if networkMonitor.contentLoadingStrategy != .setupRequired {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        AppLogger.general.warn("[App] Timeout waiting for stable network state")
     }
     
+    private func configureInitialDependencies() {
+        audioSessionManager.playerViewModel = playerVM
+        audioSessionManager.setupRemoteCommandCenter()
+        setupTerminationHandler()
+    }
     
-    
-    
-    // MARK: - Termination Handler
+    // MARK: - Lifecycle & Background
     
     private func setupTerminationHandler() {
         NotificationCenter.default.addObserver(
@@ -219,157 +183,54 @@ struct NavidromeClientApp: App {
             object: nil,
             queue: .main
         ) { [weak audioSessionManager] _ in
-            AppLogger.general.info("[App] Will terminate - performing cleanup")
             audioSessionManager?.handleAppWillTerminate()
         }
-        
-        signal(SIGTERM) { _ in
-            Task { @MainActor in
-                AudioSessionManager.shared.handleEmergencyShutdown()
-            }
-        }
     }
-    
-    // MARK: - Scene Phase Handling
     
     private func handleScenePhaseChange(from oldPhase: ScenePhase, to newPhase: ScenePhase) {
-        switch newPhase {
-        case .active:
-            handleSceneBecameActive()
-        case .inactive:
-            handleSceneWillResignActive()
-        case .background:
-            handleSceneDidEnterBackground()
-        @unknown default:
-            break
+        if newPhase == .active {
+            guard appInitializer.state == .completed else { return }
+            Task { @MainActor in await handleAppActivation() }
+        } else if newPhase == .background {
+            audioSessionManager.handleAppEnteredBackground()
+            scheduleBackgroundRefresh()
         }
-    }
-    
-    private func handleSceneBecameActive() {
-        guard appInitializer.state == .completed else {
-            AppLogger.general.info("[App] Scene activation ignored - not initialized")
-            return
-        }
-        
-        AppLogger.general.info("[App] Scene became active")
-        
-        Task { @MainActor in
-            await handleAppActivation()
-        }
-    }
-    
-    private func handleSceneWillResignActive() {
-        AppLogger.general.info("[App] Scene will resign active")
-        audioSessionManager.handleAppWillResignActive()
-    }
-    
-    private func handleSceneDidEnterBackground() {
-        AppLogger.general.info("[App] Scene entered background - audio should continue")
-        audioSessionManager.handleAppEnteredBackground()
-        scheduleBackgroundRefresh()
     }
     
     private func handleAppActivation() async {
-        AppLogger.general.info("[App] Starting parallel activation")
+        await audioSessionManager.handleAppBecameActive()
+        await networkMonitor.recheckConnection()
         
-        let startTime = Date()
-        
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                await self.audioSessionManager.handleAppBecameActive()
-            }
-            
-            group.addTask {
-                await self.networkMonitor.recheckConnection()
-            }
-            
-            group.addTask {
-                if await !self.musicLibraryManager.isDataFresh {
-                    await self.musicLibraryManager.handleNetworkChange(
-                        isOnline: self.networkMonitor.canLoadOnlineContent
-                    )
-                }
-            }
+        if await !musicLibraryManager.isDataFresh {
+             await musicLibraryManager.handleNetworkChange(isOnline: networkMonitor.canLoadOnlineContent)
         }
-        
-        let duration = Date().timeIntervalSince(startTime)
-        AppLogger.general.info("[App] Activation completed in \(String(format: "%.2f", duration))s")
     }
-    
-    // MARK: - Background Tasks
     
     private func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: "com.navidrome.client.refresh")
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        
-        do {
-            try BGTaskScheduler.shared.submit(request)
-            AppLogger.general.info("[App] Background refresh scheduled")
-        } catch {
-            AppLogger.general.error("[App] Failed to schedule background refresh: \(error)")
-        }
+        try? BGTaskScheduler.shared.submit(request)
     }
     
     private func handleBackgroundRefresh() async {
-        
-        AppLogger.general.info("[App] Background refresh triggered - starting work")
-
-            // 1. Refresh Metadata (Current logic)
-            await favoritesManager.loadFavoriteSongs()
-            
-            // Fetch a small batch of content to preload covers for (e.g., the 'Newest' albums)
-            // The explore manager does not expose a background-only function, so we call its load.
-            // OPTIMIZED: If exploreManager.loadExploreData() retrieves new data,
-            // it triggers passive preloading when the app next launches.
-
-            // 2. ACTIVE IMAGE WORK (NEW STEP)
-            // We actively preload images for the freshest content found in the background.
-            
-            do {
-                let newestAlbums = try await appInitializer.unifiedService?.getNewestAlbums(size: 10) ?? []
-                let randomAlbums = try await appInitializer.unifiedService?.getRandomAlbums(size: 10) ?? []
-
-                let albumsToPreload = Array(Set(newestAlbums + randomAlbums))
-                
-                AppLogger.general.info("[App] BG Preload: Found \(albumsToPreload.count) albums to preload.")
-
-                // Use the existing manager function for controlled background preload (small size/low priority)
-                await coverArtManager.preloadAlbums(
-                    albumsToPreload,
-                    context: .card // Use medium size (e.g., 300px)
-                )
-            } catch {
-                AppLogger.general.error("[App] BG Preload failed to fetch albums: \(error.localizedDescription)")
-            }
-            
-            AppLogger.general.info("[App] Background refresh completed")
-        
+        // Background refresh logic - perform essential updates only
+        if let service = appInitializer.unifiedService {
+             await favoritesManager.loadFavoriteSongs()
+             // Preload some fresh covers
+             if let newest = try? await service.getNewestAlbums(size: 5) {
+                 await coverArtManager.preloadAlbums(newest, context: .card)
+             }
+        }
     }
-    
-    // MARK: - Network Handling
     
     private func handleNetworkChange(isConnected: Bool) async {
-        guard appInitializer.state == .completed else {
-            AppLogger.general.info("[App] Network change ignored - not initialized")
-            return
-        }
-        
-        // ✅ NUR wenn Manager bereits konfiguriert sind
-        guard hasConfiguredManagers else {
-            AppLogger.general.info("[App] Network change ignored - managers not configured yet")
-            return
-        }
-
-        
+        guard hasConfiguredManagers else { return }
         await musicLibraryManager.handleNetworkChange(isOnline: isConnected)
-        AppLogger.general.info("[App] Network state changed: \(isConnected ? "Connected" : "Disconnected")")
     }
-    
-    // MARK: - Factory Reset
     
     private func handleFactoryReset() async {
         hasPerformedInitialConfiguration = false
         hasConfiguredManagers = false
-        AppLogger.general.info("[App] Factory reset completed - ready for new setup")
+        AppLogger.general.info("[App] Factory reset handled")
     }
 }

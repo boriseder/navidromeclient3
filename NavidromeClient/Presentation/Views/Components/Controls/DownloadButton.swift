@@ -1,9 +1,9 @@
 //
-//  DownloadButton.swift - FIXED: Proper State Observation
+//  DownloadButton.swift
 //  NavidromeClient
 //
-//  FIXED: Direct state observation with objectWillChange
-//  FIXED: Multiple download prevention
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Proper state observation on MainActor
 //
 
 import SwiftUI
@@ -136,9 +136,7 @@ struct DownloadButton: View {
         isProcessing = true
         Task {
             await downloadManager.startDownload(album: album, songs: songs)
-            await MainActor.run {
-                isProcessing = false
-            }
+            isProcessing = false
         }
     }
     

@@ -2,12 +2,11 @@
 //  AlbumSongsListView.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 11.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
 //
 
 import SwiftUI
 
-// MARK: - Album Songs List
 struct AlbumSongsListView: View {
     let songs: [Song]
     let album: Album
@@ -33,4 +32,3 @@ struct AlbumSongsListView: View {
         }
     }
 }
-

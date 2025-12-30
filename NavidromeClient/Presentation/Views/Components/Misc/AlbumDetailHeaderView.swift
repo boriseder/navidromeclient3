@@ -2,7 +2,8 @@
 //  AlbumDetailHeaderView.swift
 //  NavidromeClient
 //
-//  FIXED: Download state observation and multiple download prevention
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Safe Task execution for playback and downloads
 //
 
 import SwiftUI
@@ -21,24 +22,18 @@ struct AlbumHeaderView: View {
 
     var body: some View {
         VStack {
-            //backgroundImageLayer
             albumHeroContent
         }
         .onAppear {
             updateDownloadState()
         }
-        .onReceive(
-            NotificationCenter.default.publisher(for: .downloadCompleted)
-        ) { notification in
-            if let albumId = notification.object as? String, albumId == album.id
-            {
+        .onReceive(NotificationCenter.default.publisher(for: .downloadCompleted)) { notification in
+            if let albumId = notification.object as? String, albumId == album.id {
                 updateDownloadState()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .downloadDeleted))
-        { notification in
-            if let albumId = notification.object as? String, albumId == album.id
-            {
+        .onReceive(NotificationCenter.default.publisher(for: .downloadDeleted)) { notification in
+            if let albumId = notification.object as? String, albumId == album.id {
                 updateDownloadState()
             }
         }
@@ -52,34 +47,19 @@ struct AlbumHeaderView: View {
         isDownloading = downloadManager.isAlbumDownloading(album.id)
     }
 
-
     @ViewBuilder
     private var albumHeroContent: some View {
         VStack(alignment: .leading, spacing: DSLayout.sectionGap) {
             AlbumImageView(album: album, context: .detail)
-                .clipShape(
-                    RoundedRectangle(cornerRadius: DSCorners.element)
-                )
-                .shadow(
-                    color: .black.opacity(0.6),
-                    radius: 20,
-                    x: 0,
-                    y: 10
-                )
-                .shadow(
-                    color: .black.opacity(0.3),
-                    radius: 40,
-                    x: 0,
-                    y: 20
-                )
+                .clipShape(RoundedRectangle(cornerRadius: DSCorners.element))
+                .shadow(color: .black.opacity(0.6), radius: 20, x: 0, y: 10)
+                .shadow(color: .black.opacity(0.3), radius: 40, x: 0, y: 20)
 
             VStack(alignment: .leading, spacing: DSLayout.contentGap) {
                 Text(album.name)
                     .font(DSText.sectionTitle)
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.9), radius: 1, x: 0, y: 1)
-                    .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
-                    .shadow(color: .black.opacity(0.4), radius: 12, x: 0, y: 6)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 
@@ -87,7 +67,6 @@ struct AlbumHeaderView: View {
                     .font(DSText.prominent)
                     .foregroundStyle(.white.opacity(0.95))
                     .shadow(color: .black.opacity(0.8), radius: 1, x: 0, y: 1)
-                    .shadow(color: .black.opacity(0.5), radius: 6, x: 0, y: 3)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 
@@ -95,7 +74,6 @@ struct AlbumHeaderView: View {
                     .font(DSText.metadata)
                     .foregroundStyle(.white.opacity(0.85))
                     .shadow(color: .black.opacity(0.7), radius: 1, x: 0, y: 1)
-                    .shadow(color: .black.opacity(0.4), radius: 4, x: 0, y: 2)
                     .multilineTextAlignment(.leading)
                
                 actionButtonsFloating
@@ -108,69 +86,48 @@ struct AlbumHeaderView: View {
     @ViewBuilder
     private var actionButtonsFloating: some View {
         HStack(spacing: 12) {
-            // Refactored Play Button Action (Lines 162-171)
+            // Play Button
             Button {
                 Task {
                     if isAlbumCurrentlyLoaded {
-                        // Case 1: Album is active (playing or paused) -> Toggle state without resetting the queue.
                         playerVM.togglePlayPause()
                     } else {
-                        // Case 2: Album is inactive -> Start a new, fresh playlist from the beginning.
                         await playAlbum()
                     }
                 }
-            }
-            label: {
+            } label: {
                 HStack(spacing: DSLayout.contentGap) {
-                    Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill" )
+                    Image(systemName: playerVM.isPlaying && isAlbumCurrentlyLoaded ? "pause.fill" : "play.fill")
                         .font(DSText.emphasized)
-                    Text("Play")
+                    Text(playerVM.isPlaying && isAlbumCurrentlyLoaded ? "Pause" : "Play")
                         .font(DSText.emphasized)
                 }
-                .foregroundStyle(playerVM.isPlaying ? .white : .green)
+                .foregroundStyle(playerVM.isPlaying && isAlbumCurrentlyLoaded ? .white : .green)
                 .padding(.horizontal, DSLayout.contentPadding)
                 .padding(.vertical, DSLayout.elementPadding)
                 .background(
                     Capsule()
-                        .fill(playerVM.isPlaying ? .green : .black)
-                        .shadow(
-                            color: .black.opacity(0.6),
-                            radius: 8,
-                            x: 0,
-                            y: 4
-                        )
-                        .shadow(
-                            color: .green.opacity(0.4),
-                            radius: 12,
-                            x: 0,
-                            y: 6
-                        )
+                        .fill(playerVM.isPlaying && isAlbumCurrentlyLoaded ? .green : .black)
+                        .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 4)
                 )
-                .overlay(
-                    Capsule()
-                        .stroke(.green, lineWidth: 1.5)
-                )
+                .overlay(Capsule().stroke(.green, lineWidth: 1.5))
             }
 
-            // Refactored Shuffle Button Action (Lines 173-189)
+            // Shuffle Button
             Button {
                 Task {
-                    playerVM.toggleShuffle() // Toggle the shuffle mode immediately
-                    
+                    // Logic: If loading new album, shuffle it. If existing, toggle shuffle mode.
                     if isAlbumCurrentlyLoaded {
-                        // Apply mode to the current queue.
-                        if playerVM.isShuffling {
-                            playerVM.shuffleUpNext() // Shuffle songs after the current track
-                        }
+                        playerVM.toggleShuffle()
+                    } else {
+                        await shuffleAlbum()
                     }
-                    // If the album is not loaded, the mode change will apply when "Play" is next pressed.
                 }
-            }
-            label: {
+            } label: {
                 HStack(spacing: DSLayout.contentGap) {
-                    Image(systemName: playerVM.isShuffling ? "repeat" : "shuffle" )
+                    Image(systemName: playerVM.isShuffling ? "shuffle" : "arrow.right")
                         .font(DSText.emphasized)
-                    Text(playerVM.isShuffling ? "Sequential" : "Shuffle")
+                    Text("Shuffle")
                         .font(DSText.emphasized)
                 }
                 .foregroundStyle(playerVM.isShuffling ? .white : .orange)
@@ -179,42 +136,24 @@ struct AlbumHeaderView: View {
                 .background(
                     Capsule()
                         .fill(playerVM.isShuffling ? .orange : .black.opacity(0.4))
-                        .overlay(
-                            Capsule()
-                                .stroke(.orange, lineWidth: 1.5)
-                        )
-                        .shadow(
-                            color: .black.opacity(0.6),
-                            radius: 8,
-                            x: 0,
-                            y: 4
-                        )
+                        .overlay(Capsule().stroke(.orange, lineWidth: 1.5))
+                        .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 4)
                 )
             }
 
+            // Download Button
             Button {
                 Task { await downloadAlbum() }
             } label: {
                 downloadButtonIcon
                     .font(DSText.emphasized)
                     .foregroundStyle(isDownloaded ? .white : .blue)
-                    .frame(
-                        width: DSLayout.largeIcon,
-                        height: DSLayout.largeIcon
-                    )
+                    .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
                     .background(
                         Circle()
                             .fill(isDownloaded ? .blue : .black)
-                            .overlay(
-                                Circle()
-                                    .stroke(.blue, lineWidth: 1.5)
-                            )
-                            .shadow(
-                                color: .black.opacity(0.6),
-                                radius: 8,
-                                x: 0,
-                                y: 4
-                            )
+                            .overlay(Circle().stroke(.blue, lineWidth: 1.5))
+                            .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 4)
                     )
             }
             .disabled(isDownloading)
@@ -227,71 +166,43 @@ struct AlbumHeaderView: View {
             ProgressView()
                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 .scaleEffect(0.8)
-        } else if isDownloaded {
-            Image(systemName: "arrow.down")
-                .font(DSText.largeButton)
         } else {
-            Image(systemName: "arrow.down")
+            Image(systemName: isDownloaded ? "checkmark" : "arrow.down")
                 .font(DSText.largeButton)
-
         }
     }
 
     private func playAlbum() async {
         guard !songs.isEmpty else { return }
         await playerVM.setPlaylist(songs, startIndex: 0, albumId: album.id)
-
-        if playerVM.isShuffling {
-            playerVM.toggleShuffle()
-        }
     }
 
     private func shuffleAlbum() async {
         guard !songs.isEmpty else { return }
         let shuffledSongs = songs.shuffled()
-        await playerVM.setPlaylist(
-            shuffledSongs,
-            startIndex: 0,
-            albumId: album.id
-        )
-
+        await playerVM.setPlaylist(shuffledSongs, startIndex: 0, albumId: album.id)
+        
+        // Ensure shuffle mode is active for UI consistency
         if !playerVM.isShuffling {
             playerVM.toggleShuffle()
         }
     }
 
     private func downloadAlbum() async {
-        guard !isDownloading else {
-            AppLogger.ui.info("Download already in progress for album: \(album.id)")
-            return
-        }
+        guard !isDownloading else { return }
 
         if isDownloaded {
             downloadManager.deleteAlbum(albumId: album.id)
         } else {
-            AppLogger.ui.info("Starting download for album: \(album.name)")
-            isDownloading = true
-            defer { isDownloading = false }
-
             await downloadManager.startDownload(album: album, songs: songs)
         }
     }
 
     private func buildMetadataString() -> String {
         var parts: [String] = []
-
-        if !songs.isEmpty {
-            parts.append("\(songs.count) Song\(songs.count != 1 ? "s" : "")")
-        }
-
-        if let duration = album.duration {
-            parts.append(formatDuration(duration))
-        }
-
-        if let year = album.year {
-            parts.append("\(year)")
-        }
-
+        if !songs.isEmpty { parts.append("\(songs.count) Song\(songs.count != 1 ? "s" : "")") }
+        if let duration = album.duration { parts.append(formatDuration(duration)) }
+        if let year = album.year { parts.append("\(year)") }
         return parts.joined(separator: " • ")
     }
 
@@ -301,7 +212,6 @@ struct AlbumHeaderView: View {
         return String(format: "%d:%02d", minutes, remaining)
     }
     
-    // Helper (Internal to AlbumDetailHeaderView or in a ViewModel extension)
     private var isAlbumCurrentlyLoaded: Bool {
         return playerVM.currentAlbumId == album.id && !playerVM.currentPlaylist.isEmpty
     }

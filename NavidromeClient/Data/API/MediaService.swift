@@ -1,16 +1,9 @@
 //
-//  MediaService.swift
-//  NavidromeClient
-//
-//  Created by Boris Eder on 16.09.25.
-//
-
-
-//
 //  MediaService.swift - Media URLs & Cover Art
 //  NavidromeClient
 //
-//   FOCUSED: Cover art, streaming URLs, downloads
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Marked @MainActor
 //
 
 import Foundation
@@ -20,9 +13,6 @@ import UIKit
 class MediaService {
     private let connectionService: ConnectionService
     private let session: URLSession
-    
-    // Request deduplication for cover art
-    // The property 'activeRequests' was removed as deduplication logic is centralized in CoverArtManager.
     
     init(connectionService: ConnectionService) {
         self.connectionService = connectionService
@@ -36,9 +26,6 @@ class MediaService {
     // MARK: -  COVER ART API
     
     func getCoverArt(for coverId: String, size: Int = 300) async -> UIImage? {
-        // All request deduplication and concurrency management is now handled exclusively
-        // by the calling layer (CoverArtManager). This function is now a simple, non-blocking fetcher.
-        
         // Load from server
         guard let url = connectionService.buildURL(
             endpoint: "getCoverArt",
@@ -149,7 +136,6 @@ class MediaService {
     
     func clearCoverArtCache() {
         PersistentImageCache.shared.clearCache()
-        // activeRequests.removeAll() was removed with deduplication logic
         AppLogger.general.info("🧹 Cleared media cache")
     }
     
@@ -159,7 +145,7 @@ class MediaService {
         return MediaCacheStats(
             imageCount: cacheStats.diskCount,
             cacheSize: cacheStats.diskSize,
-            activeRequests: 0 // activeRequests removed from MediaService
+            activeRequests: 0
         )
     }
 }

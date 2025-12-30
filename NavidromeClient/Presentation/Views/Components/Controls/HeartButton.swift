@@ -1,10 +1,9 @@
 //
-//  HeartButton.swift - SIMPLE & EFFECTIVE
+//  HeartButton.swift
 //  NavidromeClient
 //
-//  SIMPLE: Direct color parameter for context
-//  CLEAN: No over-engineering
-//  WORKS: Solves the actual problem
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Tasks are safely isolated
 //
 
 import SwiftUI
@@ -19,9 +18,7 @@ struct HeartButton: View {
     @State private var isAnimating = false
     
     enum HeartButtonSize {
-        case small    // 16pt - SongRows
-        case medium   // 20pt - MiniPlayer
-        case large    // 24pt - FullScreenPlayer
+        case small, medium, large
         
         var iconSize: CGFloat {
             switch self {
@@ -45,9 +42,7 @@ struct HeartButton: View {
     }
     
     enum HeartButtonStyle {
-        case minimal      // No haptics, no animation
-        case interactive  // Haptics only
-        case prominent    // Haptics + animation
+        case minimal, interactive, prominent
         
         var hasHaptic: Bool {
             switch self {
@@ -68,7 +63,6 @@ struct HeartButton: View {
     var body: some View {
         Button(action: toggleFavorite) {
             ZStack {
-                // Animated background pulse for prominent style
                 if style.hasAnimation && isAnimating {
                     Circle()
                         .fill(DSColor.error.opacity(0.2))
@@ -77,7 +71,6 @@ struct HeartButton: View {
                         .animation(.easeOut(duration: 0.5), value: isAnimating)
                 }
                 
-                // Heart icon
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
                     .font(size.font)
                     .foregroundStyle(heartColor)
@@ -89,8 +82,6 @@ struct HeartButton: View {
         .disabled(favoritesManager.isLoading)
     }
     
-    // MARK: - Computed Properties
-    
     private var isFavorite: Bool {
         return favoritesManager.isFavorite(song.id)
     }
@@ -99,28 +90,24 @@ struct HeartButton: View {
         return Color.white
     }
     
-    // MARK: - Actions
-    
     private func toggleFavorite() {
-        // Haptic feedback
         if style.hasHaptic {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
         
-        // Animation
         if style.hasAnimation {
             withAnimation(DSAnimations.spring) {
                 isAnimating = true
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 withAnimation(DSAnimations.spring) {
                     isAnimating = false
                 }
             }
         }
         
-        // Toggle favorite status
         Task {
             await favoritesManager.toggleFavorite(song)
         }
@@ -130,43 +117,15 @@ struct HeartButton: View {
 // MARK: - Convenience Initializers
 
 extension HeartButton {
-    /// For song rows in lists - light backgrounds
     static func songRow(song: Song) -> HeartButton {
-        HeartButton(
-            song: song,
-            size: .small,
-            style: .interactive,
-            unfavoriteColor: DSColor.secondary  // Standard for light backgrounds
-        )
+        HeartButton(song: song, size: .small, style: .interactive, unfavoriteColor: DSColor.secondary)
     }
     
-    /// For mini player - dark background
     static func miniPlayer(song: Song) -> HeartButton {
-        HeartButton(
-            song: song,
-            size: .medium,
-            style: .interactive,
-            unfavoriteColor: DSColor.onDark.opacity(0.8)  // Light for dark background
-        )
+        HeartButton(song: song, size: .medium, style: .interactive, unfavoriteColor: DSColor.onDark.opacity(0.8))
     }
     
-    /// For full screen player - dark background with animation
     static func fullScreen(song: Song) -> HeartButton {
-        HeartButton(
-            song: song,
-            size: .large,
-            style: .prominent,
-            unfavoriteColor: DSColor.onDark.opacity(0.8)  // Light for dark background
-        )
-    }
-    
-    /// Custom color variant
-    static func custom(song: Song, size: HeartButtonSize, style: HeartButtonStyle, unfavoriteColor: Color) -> HeartButton {
-        HeartButton(
-            song: song,
-            size: size,
-            style: style,
-            unfavoriteColor: unfavoriteColor
-        )
+        HeartButton(song: song, size: .large, style: .prominent, unfavoriteColor: DSColor.onDark.opacity(0.8))
     }
 }

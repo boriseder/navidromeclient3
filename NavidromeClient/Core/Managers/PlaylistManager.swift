@@ -66,7 +66,6 @@ extension PlaylistManager {
     
     // MARK: - Queue Navigation
     
-    /// Jump to a specific song in the queue
     func jumpToSong(at index: Int) {
         guard currentPlaylist.indices.contains(index) else {
             AppLogger.general.warn("Invalid queue index: \(index)")
@@ -79,7 +78,6 @@ extension PlaylistManager {
     
     // MARK: - Queue Modification
     
-    /// Remove a song from the queue
     func removeSong(at index: Int) {
         guard currentPlaylist.indices.contains(index) else {
             AppLogger.general.info("⚠️ Cannot remove song at invalid index: \(index)")
@@ -89,11 +87,9 @@ extension PlaylistManager {
         let removedSong = currentPlaylist.remove(at: index)
         AppLogger.general.info("🗑️ Removed from queue: \(removedSong.title)")
         
-        // Adjust current index
         if index < currentIndex {
             currentIndex -= 1
         } else if index == currentIndex {
-            // If we removed the current song, stay at same index but play new song there
             if currentIndex >= currentPlaylist.count {
                 currentIndex = max(0, currentPlaylist.count - 1)
             }
@@ -101,9 +97,8 @@ extension PlaylistManager {
         objectWillChange.send()
     }
     
-    /// Remove multiple songs from the queue
     func removeSongs(at indices: [Int]) {
-        let sortedIndices = indices.sorted(by: >) // Remove from back to front
+        let sortedIndices = indices.sorted(by: >)
         
         for index in sortedIndices {
             guard currentPlaylist.indices.contains(index) else { continue }
@@ -111,7 +106,6 @@ extension PlaylistManager {
         }
     }
     
-    /// Move a song within the queue
     func moveSong(from source: Int, to destination: Int) {
         guard currentPlaylist.indices.contains(source),
               destination >= 0 && destination <= currentPlaylist.count else {
@@ -123,7 +117,6 @@ extension PlaylistManager {
         let adjustedDestination = source < destination ? destination - 1 : destination
         currentPlaylist.insert(song, at: adjustedDestination)
         
-        // Adjust currentIndex accordingly
         if source == currentIndex {
             currentIndex = adjustedDestination
         } else if source < currentIndex && adjustedDestination >= currentIndex {
@@ -136,9 +129,7 @@ extension PlaylistManager {
         AppLogger.general.info("🔄 Moved queue item: \(song.title) from \(source) to \(adjustedDestination)")
     }
     
-    /// Move multiple songs within the queue
     func moveSongs(from sourceIndices: [Int], to destinationIndex: Int) {
-        // Simple implementation: move one by one
         let sortedSources = sourceIndices.sorted()
         var adjustedDestination = destinationIndex
         
@@ -154,25 +145,21 @@ extension PlaylistManager {
     
     // MARK: - Queue Shuffling
     
-    /// Shuffle only the upcoming songs (not the current song)
     func shuffleUpNext() {
         guard currentPlaylist.count > currentIndex + 1 else {
             AppLogger.general.warn("No upcoming songs to shuffle")
             return
         }
         
-        //let currentSong = currentPlaylist[currentIndex]
         let upcomingSongs = Array(currentPlaylist[(currentIndex + 1)...])
         let shuffledUpcoming = upcomingSongs.shuffled()
         
-        // Rebuild playlist: current song + shuffled upcoming
         currentPlaylist = Array(currentPlaylist[0...currentIndex]) + shuffledUpcoming
         
         objectWillChange.send()
         AppLogger.general.info("Shuffled \(shuffledUpcoming.count) upcoming songs")
     }
     
-    /// Clear all songs after the current song
     func clearUpNext() {
         guard currentPlaylist.count > currentIndex + 1 else {
             AppLogger.general.warn("No upcoming songs to clear")
@@ -186,7 +173,6 @@ extension PlaylistManager {
         AppLogger.general.info("Cleared \(removedCount) upcoming songs from queue")
     }
     
-    /// Add songs to the end of the queue
     func addToQueue(_ songs: [Song]) {
         guard !songs.isEmpty else { return }
         
@@ -196,7 +182,6 @@ extension PlaylistManager {
         AppLogger.general.info("Added \(songs.count) songs to queue")
     }
     
-    /// Insert songs after the current song
     func playNext(_ songs: [Song]) {
         guard !songs.isEmpty else { return }
         
@@ -210,32 +195,27 @@ extension PlaylistManager {
     
     // MARK: - Queue Information
     
-    /// Get upcoming songs in the queue
     func getUpNextSongs() -> [Song] {
         guard currentIndex + 1 < currentPlaylist.count else { return [] }
         return Array(currentPlaylist[(currentIndex + 1)...])
     }
     
-    /// Get total queue duration
     func getTotalDuration() -> Int {
         return currentPlaylist.reduce(0) { total, song in
             total + (song.duration ?? 0)
         }
     }
     
-    /// Get remaining queue duration
     func getRemainingDuration() -> Int {
         return getUpNextSongs().reduce(0) { total, song in
             total + (song.duration ?? 0)
         }
     }
     
-    /// Check if there are songs after the current one
     func hasUpNext() -> Bool {
         return currentIndex + 1 < currentPlaylist.count
     }
     
-    /// Get upcoming songs for preloading (respects repeat mode)
     func getUpcoming(count: Int) -> [Song] {
         guard !currentPlaylist.isEmpty else { return [] }
         

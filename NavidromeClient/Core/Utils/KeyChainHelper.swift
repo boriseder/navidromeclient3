@@ -1,8 +1,9 @@
 import Foundation
 import Security
 
-// 1. KeychainHelper für sichere Speicherung
-class KeychainHelper {
+// MARK: - KeychainHelper (Swift 6)
+// Marked final and Sendable as it's a thread-safe helper class
+final class KeychainHelper: Sendable {
     static let shared = KeychainHelper()
     private init() {}
     

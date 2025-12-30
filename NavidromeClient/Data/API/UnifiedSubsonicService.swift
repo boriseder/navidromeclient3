@@ -29,6 +29,7 @@ class UnifiedSubsonicService: ObservableObject {
     
     // MARK: - Initialization
     
+    // Swift 6: Explicitly @MainActor to safely initialize connectionService (which is @MainActor)
     init(baseURL: URL, username: String, password: String) {
         self.connectionService = ConnectionService(
             baseURL: baseURL,
@@ -386,7 +387,7 @@ extension UnifiedSubsonicService {
         return searchService
     }
     */
-    // --- 
+    // ---
     private func getFavoritesService() -> FavoritesService {
         return favoritesService
     }

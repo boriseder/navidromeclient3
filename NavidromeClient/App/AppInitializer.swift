@@ -33,11 +33,12 @@ final class AppInitializer: ObservableObject {
 
     // MARK: - Initialization
 
-    init() {
+    // Swift 6: Marked nonisolated to allow initialization from App init
+    nonisolated init() {
         setupNotificationObservers()
     }
     
-    private func setupNotificationObservers() {
+    private nonisolated func setupNotificationObservers() {
         // Listen for credential updates
         NotificationCenter.default.addObserver(
             forName: .credentialsUpdated,
@@ -164,7 +165,6 @@ final class AppInitializer: ObservableObject {
 
     // MARK: - Factory Reset
 
-    // AppInitializer.swift
     func performFactoryReset() async {
         AppLogger.general.info("[AppInitializer] === Factory Reset Start ===")
         

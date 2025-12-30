@@ -2,8 +2,8 @@
 //  AppConfig.swift
 //  NavidromeClient
 //
-//  Pure credential storage and retrieval
-//  No state management, no manager coordination
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - MainActor isolation for configuration state
 //
 
 import Foundation

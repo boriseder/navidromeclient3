@@ -22,6 +22,9 @@ class PlayerViewModel: NSObject, ObservableObject {
     }
     @Published var playlistManager = PlaylistManager()
     
+    // MARK: - Combine Storage
+    // Swift 6: Replaces NSObjectProtocol observers to avoid deinit isolation issues
+    private var cancellables = Set<AnyCancellable>()
     private var playlistObserver: AnyCancellable?
 
     // MARK: - Playlist Delegation
@@ -34,7 +37,6 @@ class PlayerViewModel: NSObject, ObservableObject {
     // MARK: - Private Properties
     
     private let playbackEngine = PlaybackEngine()
-    private var notificationObservers: [NSObjectProtocol] = []
     
     // MARK: - Dependencies
     
@@ -57,12 +59,11 @@ class PlayerViewModel: NSObject, ObservableObject {
         playbackEngine.delegate = self
         playbackEngine.volume = volume
         
-        setupNotifications()
+        setupCombineObservers()
         configureAudioSession()
    
         // Chain PlaylistManager changes to PlayerViewModel
         setupPlaylistObserver()
-
     }
     
     private func setupPlaylistObserver() {
@@ -83,11 +84,12 @@ class PlayerViewModel: NSObject, ObservableObject {
         AppLogger.general.info("PlayerViewModel configured with UnifiedSubsonicService")
     }
     
-    deinit {
-        // Synchronous cleanup for deinit
-        notificationObservers.forEach {
-            NotificationCenter.default.removeObserver($0)
-        }
+    // Swift 6: removed deinit accessing MainActor properties.
+    // Cancellables will clean themselves up automatically.
+    func shutdown() {
+        cancellables.removeAll()
+        playbackEngine.stop()
+        audioSessionManager.clearNowPlayingInfo()
     }
     
     // MARK: - Public Playback Methods
@@ -243,66 +245,37 @@ class PlayerViewModel: NSObject, ObservableObject {
         return nil
     }
     
-    // MARK: - Notifications Setup
+    // MARK: - Notifications Setup (Combine)
     
-    private func setupNotifications() {
+    private func setupCombineObservers() {
         let center = NotificationCenter.default
         
-        notificationObservers.append(
-            center.addObserver(
-                forName: .audioInterruptionBegan,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
+        center.publisher(for: .audioInterruptionBegan)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
                 self?.pause()
             }
-        )
+            .store(in: &cancellables)
         
-        notificationObservers.append(
-            center.addObserver(
-                forName: .audioInterruptionEndedShouldResume,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
+        center.publisher(for: .audioInterruptionEndedShouldResume)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
                 if self?.currentSong != nil {
                     self?.resume()
                 }
             }
-        )
+            .store(in: &cancellables)
         
-        notificationObservers.append(
-            center.addObserver(
-                forName: .audioDeviceDisconnected,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
+        center.publisher(for: .audioDeviceDisconnected)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
                 self?.pause()
             }
-        )
+            .store(in: &cancellables)
     }
     
     private func configureAudioSession() {
         _ = audioSessionManager.isAudioSessionActive
-    }
-    
-    // MARK: - Cleanup
-    
-    private func cleanup() {
-        notificationObservers.forEach {
-            NotificationCenter.default.removeObserver($0)
-        }
-        notificationObservers.removeAll()
-        
-        // Cancel playlist observer
-        playlistObserver?.cancel()
-        playlistObserver = nil
-
-        audioSessionManager.clearNowPlayingInfo()
-    }
-    
-    func shutdown() {
-        cleanup()
-        playbackEngine.stop()
     }
     
     // MARK: - Now Playing Info
@@ -427,133 +400,4 @@ extension PlayerViewModel: PlaybackEngineDelegate {
             return
         }
         
-        await playbackEngine.addItemsToQueue(urls)
-        AppLogger.general.info("PlayerViewModel: Successfully added \(urls.count) items to queue")
-    }
-    
-}
-
-// MARK: - Queue Management Extension
-
-extension PlayerViewModel {
-    
-    func jumpToSong(at index: Int) async {
-        guard currentPlaylist.indices.contains(index) else { return }
-        playlistManager.jumpToSong(at: index)
-        await playCurrent()
-    }
-    
-    func removeQueueSongs(at indices: [Int]) async {
-        guard !indices.isEmpty else { return }
-        
-        let wasCurrentSongRemoved = indices.contains(playlistManager.currentIndex)
-        playlistManager.removeSongs(at: indices)
-        
-        if wasCurrentSongRemoved {
-            if playlistManager.currentPlaylist.isEmpty {
-                stop()
-            } else {
-                await playCurrent()
-            }
-        }
-    }
-    
-    func moveQueueSongs(from sourceIndices: [Int], to destinationIndex: Int) async {
-        guard !sourceIndices.isEmpty else { return }
-        
-        let wasCurrentSongMoved = sourceIndices.contains(playlistManager.currentIndex)
-        playlistManager.moveSongs(from: sourceIndices, to: destinationIndex)
-        
-        if wasCurrentSongMoved {
-            await playCurrent()
-        }
-    }
-    
-    func shuffleUpNext() {
-        playlistManager.shuffleUpNext()
-    }
-    
-    func clearQueue() {
-        playlistManager.clearUpNext()
-    }
-    
-    func addToQueue(_ songs: [Song]) {
-        playlistManager.addToQueue(songs)
-    }
-    
-    func playNext(_ songs: [Song]) {
-        playlistManager.playNext(songs)
-    }
-    
-    func getQueueStats() -> QueueStats {
-        return QueueStats(
-            totalSongs: playlistManager.currentPlaylist.count,
-            currentIndex: playlistManager.currentIndex,
-            upNextCount: playlistManager.getUpNextSongs().count,
-            totalDuration: playlistManager.getTotalDuration(),
-            remainingDuration: playlistManager.getRemainingDuration(),
-            isShuffling: playlistManager.isShuffling,
-            repeatMode: playlistManager.repeatMode
-        )
-    }
-}
-
-// MARK: - Download Status (UI Support)
-
-extension PlayerViewModel {
-    
-    func isAlbumDownloaded(_ albumId: String) -> Bool {
-        downloadManager.isAlbumDownloaded(albumId)
-    }
-    
-    func isAlbumDownloading(_ albumId: String) -> Bool {
-        downloadManager.isAlbumDownloading(albumId)
-    }
-    
-    func isSongDownloaded(_ songId: String) -> Bool {
-        downloadManager.isSongDownloaded(songId)
-    }
-    
-    func getDownloadProgress(albumId: String) -> Double {
-        downloadManager.downloadProgress[albumId] ?? 0.0
-    }
-    
-    func deleteAlbum(albumId: String) {
-        downloadManager.deleteAlbum(albumId: albumId)
-    }
-}
-
-// MARK: - Supporting Types
-
-struct QueueStats {
-    let totalSongs: Int
-    let currentIndex: Int
-    let upNextCount: Int
-    let totalDuration: Int
-    let remainingDuration: Int
-    let isShuffling: Bool
-    let repeatMode: PlaylistManager.RepeatMode
-    
-    var currentPosition: String {
-        "\(currentIndex + 1) of \(totalSongs)"
-    }
-    
-    var formattedTotalDuration: String {
-        formatDuration(totalDuration)
-    }
-    
-    var formattedRemainingDuration: String {
-        formatDuration(remainingDuration)
-    }
-    
-    private func formatDuration(_ seconds: Int) -> String {
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        
-        if hours > 0 {
-            return String(format: "%d:%02d:00", hours, minutes)
-        } else {
-            return String(format: "%d:00", minutes)
-        }
-    }
-}
+        await playbackEngine.addItemsToQueue(urls

@@ -2,7 +2,8 @@
 //  QueueView.swift
 //  NavidromeClient
 //
-//  Complete Queue Management with native iOS design
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Added @MainActor to closure definitions in subviews
 //
 
 import SwiftUI
@@ -31,7 +32,6 @@ struct QueueView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                
                 if currentPlaylist.isEmpty {
                     emptyQueueView
                 } else {
@@ -140,7 +140,6 @@ struct QueueView: View {
             }
             .scrollContentBackground(.hidden)
             .onAppear {
-                // Scroll to current song when view appears
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     withAnimation {
                         proxy.scrollTo("song-\(currentIndex + 1)", anchor: .top)
@@ -172,50 +171,32 @@ struct QueueView: View {
     // MARK: - Queue Management Actions
     
     private func jumpToSong(at index: Int) {
-        Task {
-            await playerVM.jumpToSong(at: index)
-        }
-        
-        // Haptic feedback
+        Task { await playerVM.jumpToSong(at: index) }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
     
     private func moveUpNextSongs(from source: IndexSet, to destination: Int) {
-        // Convert relative indices to absolute playlist indices
         let sourceIndices = source.map { currentIndex + 1 + $0 }
         let destIndex = currentIndex + 1 + destination
         
-        Task {
-            await playerVM.moveQueueSongs(from: sourceIndices, to: destIndex)
-        }
-        
+        Task { await playerVM.moveQueueSongs(from: sourceIndices, to: destIndex) }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
     
     private func deleteUpNextSongs(at offsets: IndexSet) {
-        // Convert relative indices to absolute playlist indices
         let indicesToDelete = offsets.map { currentIndex + 1 + $0 }
         
-        Task {
-            await playerVM.removeQueueSongs(at: indicesToDelete)
-        }
-        
+        Task { await playerVM.removeQueueSongs(at: indicesToDelete) }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
     
     private func shuffleUpNext() {
-        Task {
-            await playerVM.shuffleUpNext()
-        }
-        
+        playerVM.shuffleUpNext()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
     
     private func clearQueue() {
-        Task {
-            await playerVM.clearQueue()
-        }
-        
+        playerVM.clearQueue()
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
     }
     
@@ -250,7 +231,6 @@ struct CurrentlyPlayingRow: View {
     
     var body: some View {
         HStack(spacing: DSLayout.contentGap) {
-            // Album Art with playing indicator
             ZStack {
                 if let coverArt = coverArt {
                     Image(uiImage: coverArt)
@@ -268,7 +248,6 @@ struct CurrentlyPlayingRow: View {
                         )
                 }
                 
-                // Playing indicator overlay
                 if playerVM.isPlaying {
                     RoundedRectangle(cornerRadius: DSCorners.element)
                         .fill(.black.opacity(0.4))
@@ -280,7 +259,6 @@ struct CurrentlyPlayingRow: View {
                 }
             }
             
-            // Song Info
             VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                 Text(song.title)
                     .font(DSText.emphasized)
@@ -295,7 +273,6 @@ struct CurrentlyPlayingRow: View {
             
             Spacer()
             
-            // Current playing indicator
             VStack(spacing: DSLayout.tightGap) {
                 Image(systemName: "speaker.wave.2.fill")
                     .foregroundColor(.green)
@@ -315,7 +292,8 @@ struct CurrentlyPlayingRow: View {
 struct QueueSongRow: View {
     let song: Song
     let queuePosition: Int
-    let onTap: () -> Void
+    // Swift 6: Closure isolated to MainActor
+    let onTap: @MainActor () -> Void
     
     @EnvironmentObject var coverArtManager: CoverArtManager
     
@@ -327,13 +305,11 @@ struct QueueSongRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: DSLayout.contentGap) {
-                // Queue position number
                 Text("\(queuePosition)")
                     .font(DSText.metadata.monospacedDigit())
                     .foregroundColor(.white.opacity(0.6))
                     .frame(width: 20, alignment: .center)
                 
-                // Album Art
                 if let coverArt = coverArt {
                     Image(uiImage: coverArt)
                         .resizable()
@@ -351,7 +327,6 @@ struct QueueSongRow: View {
                         )
                 }
                 
-                // Song Info
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                     Text(song.title)
                         .font(DSText.emphasized)
@@ -366,7 +341,6 @@ struct QueueSongRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 
-                // Duration
                 if let duration = song.duration {
                     Text(formatDuration(duration))
                         .font(DSText.metadata.monospacedDigit())

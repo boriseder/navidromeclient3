@@ -2,7 +2,8 @@
 //  DiscoveryService.swift - Home Screen & Recommendations
 //  NavidromeClient
 //
-//   FOCUSED: Recent, newest, frequent, random albums - discovery content
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Marked @MainActor
 //
 
 import Foundation

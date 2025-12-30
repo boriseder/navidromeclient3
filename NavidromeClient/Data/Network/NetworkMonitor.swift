@@ -2,12 +2,10 @@
 //  NetworkMonitor.swift
 //  NavidromeClient
 //
-//  Pure state management for network connectivity and content loading strategy.
-//  NetworkState is the single source of truth, all dependencies are explicit.
-//
-//  REFACTORED: Clear semantic naming
-//  - hasInternet: Device has internet connectivity
-//  - isServerReachable: Navidrome server responds
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Strictly MainActor for state updates
+//  - Detached tasks for non-blocking checks
+//  - Thread-safe I/O
 //
 
 import Foundation
@@ -23,6 +21,7 @@ class NetworkMonitor: ObservableObject {
     
     // MARK: - Network Monitoring Infrastructure
     private let monitor = NWPathMonitor()
+    // DispatchQueue is Sendable
     private let queue = DispatchQueue(label: "NetworkMonitor")
     
     // MARK: - Internal Hardware State
@@ -37,10 +36,8 @@ class NetworkMonitor: ObservableObject {
     
     // Server health tracking
     private weak var subsonicService: UnifiedSubsonicService?
-    private var lastServerCheck: Date?
-    private let serverCheckInterval: TimeInterval = 10.0
     
-    enum NetworkConnectionType {
+    enum NetworkConnectionType: Sendable {
         case wifi, cellular, ethernet, unknown
         
         var displayName: String {
@@ -183,11 +180,12 @@ class NetworkMonitor: ObservableObject {
     func recheckConnection() async {
         // Force new checks
         lastInternetCheck = nil
-        lastServerCheck = nil
         
+        // Detached task allows background execution, but we must be careful with state updates
         await Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             
+            // Safe access to NWPathMonitor (thread-safe class)
             let currentPath = self.monitor.currentPath
             var pathSatisfied = currentPath.status == .satisfied
             
@@ -195,6 +193,7 @@ class NetworkMonitor: ObservableObject {
             if !pathSatisfied {
                 AppLogger.network.debug("[NetworkMonitor] Path not satisfied - trying direct check...")
                 
+                // Hop back to MainActor to access `checkInternetReachable` (which touches isolated state)
                 let directCheck = await self.checkInternetReachable(force: true)
                 
                 if directCheck {
@@ -203,11 +202,11 @@ class NetworkMonitor: ObservableObject {
                 }
             }
             
-            // Check internet availability
+            // Check internet availability (hops to MainActor)
             let internetAvailable = pathSatisfied ? await self.checkInternetReachable(force: true) : false
             
             // Check server availability (only if internet is available)
-            // FIX: Capture service reference on MainActor, then ping it outside
+            // Capture service reference safely on MainActor
             let service = await MainActor.run { self.subsonicService }
             
             let serverAvailable: Bool
@@ -219,6 +218,7 @@ class NetworkMonitor: ObservableObject {
                 serverAvailable = service == nil
             }
             
+            // Final state update on MainActor
             await MainActor.run {
                 let wasInternetAvailable = self.hasInternet
                 let wasServerReachable = self.isServerReachable
@@ -317,7 +317,7 @@ class NetworkMonitor: ObservableObject {
         
         monitor.start(queue: queue)
         
-        // Initial check without race condition
+        // Initial check
         Task { @MainActor in
             await Task.yield() // Let monitor start
             
@@ -362,11 +362,10 @@ class NetworkMonitor: ObservableObject {
         return false
     }
     
-    private func checkURL(_ urlString: String, expecting statusCode: Int?) async -> Bool {
+    private nonisolated func checkURL(_ urlString: String, expecting statusCode: Int?) async -> Bool {
         guard let url = URL(string: urlString) else { return false }
         
         var request = URLRequest(url: url)
-        // Increased timeout from 3 to 5 seconds for a more robust initial reachability check
         request.timeoutInterval = 5
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         
@@ -377,7 +376,6 @@ class NetworkMonitor: ObservableObject {
                 if let expectedCode = statusCode {
                     return httpResponse.statusCode == expectedCode
                 } else {
-                    // Any HTTP response means connection
                     return (200...299).contains(httpResponse.statusCode) ||
                            httpResponse.statusCode == 301 ||
                            httpResponse.statusCode == 302
@@ -443,39 +441,6 @@ class NetworkMonitor: ObservableObject {
             return status.joined(separator: " | ")
         }
     }
-    
-    // MARK: - Debug
-    
-    #if DEBUG
-    func printDiagnostics() {
-        let diagnostics = getDiagnostics()
-        
-        AppLogger.network.info("""
-        
-        [NetworkMonitor] DIAGNOSTICS:
-        \(diagnostics.summary)
-        
-        State Details:
-        \(state.debugDescription)
-        
-        Hardware:
-        - Connection Type: \(connectionType.displayName)
-        - Has Internet: \(hasInternet)
-        - Server Reachable: \(isServerReachable)
-        - Manual Offline: \(manualOfflineMode)
-        """)
-    }
-    
-    func debugSetState(_ state: NetworkState) {
-        self.state = state
-        AppLogger.network.info("[NetworkMonitor] DEBUG: Forced state to \(state.contentLoadingStrategy.displayName)")
-    }
-    #endif
 }
 
-// MARK: - Notification Names
-
-extension Notification.Name {
-    static let contentLoadingStrategyChanged = Notification.Name("contentLoadingStrategyChanged")
-    static let networkStateChanged = Notification.Name("networkStateChanged")
-}
+// MARK: -

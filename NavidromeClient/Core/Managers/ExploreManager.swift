@@ -1,8 +1,9 @@
 //
-//  ExploreManager.swift - STEP 1: Add initial load tracking
+//  ExploreManager.swift
 //  NavidromeClient
 //
-//  CHANGE: Added hasCompletedInitialLoad to prevent empty states during startup
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Strictly MainActor
 //
 
 import Foundation
@@ -20,7 +21,7 @@ class ExploreManager: ObservableObject {
     @Published private(set) var isLoadingExploreData = false
     @Published private(set) var exploreError: String?
     @Published private(set) var lastHomeRefresh: Date?
-    @Published var hasCompletedInitialLoad = false  // NEW: Track first load
+    @Published var hasCompletedInitialLoad = false
     
     private weak var service: UnifiedSubsonicService?
     
@@ -61,7 +62,6 @@ class ExploreManager: ObservableObject {
             return
         }
         
-        // Only show loading indicator on subsequent loads, not first load
         let isFirstLoad = !hasCompletedInitialLoad
         if !isFirstLoad {
             isLoadingExploreData = true
@@ -70,7 +70,7 @@ class ExploreManager: ObservableObject {
         exploreError = nil
         defer {
             isLoadingExploreData = false
-            hasCompletedInitialLoad = true  // Mark as loaded
+            hasCompletedInitialLoad = true
         }
         
         do {
@@ -114,7 +114,7 @@ class ExploreManager: ObservableObject {
     
     // MARK: - FALLBACK IMPLEMENTATION
     private func loadExploreDataFallback() async {
-        guard let service = service else { return }
+        guard service != nil else { return }
         
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadRecentAlbums() }
@@ -205,7 +205,7 @@ class ExploreManager: ObservableObject {
         isLoadingExploreData = false
         exploreError = nil
         lastHomeRefresh = nil
-        hasCompletedInitialLoad = false  // Reset tracking
+        hasCompletedInitialLoad = false
         
         AppLogger.general.info("ExploreManager reset completed")
     }

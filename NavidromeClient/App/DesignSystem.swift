@@ -1,60 +1,60 @@
 import SwiftUI
 
-// MARK: - Layout (Ersetzt Spacing + Padding + Sizes)
+// MARK: - Layout (Namespace)
 
 enum DSLayout {
-    // MARK: Gaps (zwischen Elementen)
-    static let tightGap: CGFloat = 4        // Icon-Text, sehr eng
-    static let elementGap: CGFloat = 8      // Standard Icon-Text, Button-Elemente
-    static let contentGap: CGFloat = 16     // Zwischen Content-Blöcken
-    static let sectionGap: CGFloat = 24     // Zwischen Sections
-    static let screenGap: CGFloat = 32      // Zwischen Major Areas
-    static let largeGap: CGFloat = 40       // Sehr große Abstände
+    // MARK: Gaps
+    static let tightGap: CGFloat = 4
+    static let elementGap: CGFloat = 8
+    static let contentGap: CGFloat = 16
+    static let sectionGap: CGFloat = 24
+    static let screenGap: CGFloat = 32
+    static let largeGap: CGFloat = 40
     
-    // MARK: Padding (innerhalb Elementen)
-    static let tightPadding: CGFloat = 4    // Sehr enge Innenabstände
-    static let elementPadding: CGFloat = 8  // Button-Inhalt, kleine Elemente
-    static let contentPadding: CGFloat = 16 // Standard Card/Container-Inhalt
-    static let comfortPadding: CGFloat = 24 // Große Container
-    static let screenPadding: CGFloat = 16  // Screen-Ränder (16 war zu eng)
+    // MARK: Padding
+    static let tightPadding: CGFloat = 4
+    static let elementPadding: CGFloat = 8
+    static let contentPadding: CGFloat = 16
+    static let comfortPadding: CGFloat = 24
+    static let screenPadding: CGFloat = 16
     
-    // MARK: Feste UI Größen
+    // MARK: Fixed Sizes
     static let buttonHeight: CGFloat = 44
     static let searchBarHeight: CGFloat = 44
     static let tabBarHeight: CGFloat = 90
     static let miniPlayerHeight: CGFloat = 49
     
-    // MARK: Icon Größen
-    static let smallIcon: CGFloat = 16      // Tiny icons
-    static let icon: CGFloat = 24          // Standard icons
-    static let largeIcon: CGFloat = 32     // Prominent icons
+    // MARK: Icon Sizes
+    static let smallIcon: CGFloat = 16
+    static let icon: CGFloat = 24
+    static let largeIcon: CGFloat = 32
     
-    // MARK: Cover/Avatar Größen (Use-Case spezifisch)
-    static let miniCover: CGFloat = 50      // Song rows, mini player
-    static let listCover: CGFloat = 70      // List items
-    static let cardCover: CGFloat = 150     // Grid cards
-    static let cardCoverNoPadding: CGFloat = 168     // Grid cards
-    static let detailCover: CGFloat = 300   // Detail views
-    static let fullCover: CGFloat = 400     // Full screen
-    static let smallAvatar: CGFloat = 72    // User avatars
-    static let avatar: CGFloat = 100        // Large avatars
+    // MARK: Cover/Avatar Sizes
+    static let miniCover: CGFloat = 50
+    static let listCover: CGFloat = 70
+    static let cardCover: CGFloat = 150
+    static let cardCoverNoPadding: CGFloat = 168
+    static let detailCover: CGFloat = 300
+    static let fullCover: CGFloat = 400
+    static let smallAvatar: CGFloat = 72
+    static let avatar: CGFloat = 100
     
-    // MARK: Content Width
-    static let maxContentWidth: CGFloat = 400 // Max content width
+    // MARK: Max Widths
+    static let maxContentWidth: CGFloat = 400
 }
 
-// MARK: - Corners (Ersetzt Radius)
+// MARK: - Corners
 
 enum DSCorners {
-    static let tight: CGFloat = 3           // AlbumCover mini
-    static let element: CGFloat = 8         // Buttons, small elements
-    static let content: CGFloat = 16        // Cards, containers
-    static let comfortable: CGFloat = 24    // Large containers
-    static let spacious: CGFloat = 32       // Very large elements
-    static let round: CGFloat = 50          // Circle buttons
+    static let tight: CGFloat = 3
+    static let element: CGFloat = 8
+    static let content: CGFloat = 16
+    static let comfortable: CGFloat = 24
+    static let spacious: CGFloat = 32
+    static let round: CGFloat = 50
 }
 
-// MARK: - Typography (Semantisch umbenannt)
+// MARK: - Typography
 
 enum DSText {
     // MARK: Hierarchy
@@ -82,45 +82,45 @@ enum DSText {
     static let numbers = Font.body.monospacedDigit()
 }
 
-// MARK: - Colors (Deine bestehenden, semantisch gruppiert)
+// MARK: - Colors
 
 enum DSColor {
-    // MARK: Content colors
-    static let primary = SwiftUI.Color.primary
-    static let secondary = SwiftUI.Color.secondary
-    static let tertiary = SwiftUI.Color(.tertiaryLabel)
-    static let quaternary = SwiftUI.Color(.quaternaryLabel)
+    // MARK: Content
+    static let primary = Color.primary
+    static let secondary = Color.secondary
+    static let tertiary = Color(.tertiaryLabel)
+    static let quaternary = Color(.quaternaryLabel)
     
     // MARK: Surfaces
-    static let background = SwiftUI.Color(.black)
-    static let surface = SwiftUI.Color(.secondarySystemBackground)
-    static let surfaceSecondary = SwiftUI.Color(.tertiarySystemBackground)
-    static let surfaceLight = SwiftUI.Color(UIColor.systemGray6)
-    static let surfaceMedium = SwiftUI.Color(UIColor.systemGray5)
+    static let background = Color(.black)
+    static let surface = Color(.secondarySystemBackground)
+    static let surfaceSecondary = Color(.tertiarySystemBackground)
+    static let surfaceLight = Color(UIColor.systemGray6)
+    static let surfaceMedium = Color(UIColor.systemGray5)
     
     // MARK: Brand & Status
-    static let accent = SwiftUI.Color.accentColor
-    static let brand = SwiftUI.Color(.systemBlue)
-    static let success = SwiftUI.Color(.systemGreen)
-    static let warning = SwiftUI.Color(.systemOrange)
-    static let error = SwiftUI.Color(.systemRed)
-    static let info = SwiftUI.Color(.systemBlue)
+    static let accent = Color.accentColor
+    static let brand = Color.blue
+    static let success = Color.green
+    static let warning = Color.orange
+    static let error = Color.red
+    static let info = Color.blue
     
     // MARK: Music-specific
-    static let playing = SwiftUI.Color(.systemBlue)
-    static let offline = SwiftUI.Color(.systemOrange)
-    static let downloaded = SwiftUI.Color(.systemGreen)
+    static let playing = Color.blue
+    static let offline = Color.orange
+    static let downloaded = Color.green
     
-    // MARK: On-colors (für dunkle Hintergründe)
-    static let onDark = SwiftUI.Color.white
-    static let onDarkSecondary = SwiftUI.Color.white.opacity(0.7)
-    static let onLight = SwiftUI.Color.black
-    static let onLightSecondary = SwiftUI.Color.black.opacity(0.7)
+    // MARK: On-colors
+    static let onDark = Color.white
+    static let onDarkSecondary = Color.white.opacity(0.7)
+    static let onLight = Color.black
+    static let onLightSecondary = Color.black.opacity(0.7)
     
     // MARK: Overlays
-    static let overlay = SwiftUI.Color.black.opacity(0.4)
-    static let overlayLight = SwiftUI.Color.black.opacity(0.2)
-    static let overlayHeavy = SwiftUI.Color.black.opacity(0.6)
+    static let overlay = Color.black.opacity(0.4)
+    static let overlayLight = Color.black.opacity(0.2)
+    static let overlayHeavy = Color.black.opacity(0.6)
 }
 
 enum DSMaterial {
@@ -140,12 +140,9 @@ enum DSAnimations {
 }
 
 // MARK: - Grid Helpers
+
 enum GridColumns {
     static let two = Array(repeating: GridItem(.flexible(), spacing: DSLayout.contentGap, alignment: .leading), count: 2)
     static let three = Array(repeating: GridItem(.flexible(), spacing: DSLayout.elementGap, alignment: .leading), count: 3)
     static let four = Array(repeating: GridItem(.flexible(), spacing: DSLayout.elementGap, alignment: .leading), count: 4)
 }
-
-
-// MARK: - Semantic Extensions (Deine bestehenden, umbenannt)
-

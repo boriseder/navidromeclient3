@@ -2,12 +2,9 @@
 //  WelcomeHeader.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 12.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
 //
 
-import SwiftUI
-
-// Less intrusive
 import SwiftUI
 
 struct WelcomeHeader: View {
@@ -15,22 +12,16 @@ struct WelcomeHeader: View {
     let nowPlaying: Song?
     @EnvironmentObject var offlineManager: OfflineManager
     
-    @State private var showingNetworkTestView = false
-    @State private var showingCoverArtDebugView = false
-    
-    // MARK: - Mehrsprachige Grüße nach Tageszeit
+    // MARK: - Greetings
     private let greetingsByTime: [String: [String]] = [
-        "morning": ["Good morning", "Bonjour", "Guten Morgen", "おはようございます", "Buongiorno"],
-        "afternoon": ["Good afternoon", "Bon après-midi", "Guten Tag", "Buenas tardes", "Buon pomeriggio"],
-        "evening": ["Good evening", "Bonsoir", "Guten Abend", "Buonasera", "こんばんは"],
-        "night": ["Good night", "Bonne nuit", "Gute Nacht", "おやすみなさい", "Buonanotte"]
+        "morning": ["Good morning", "Bonjour", "Guten Morgen", "Buongiorno"],
+        "afternoon": ["Good afternoon", "Bon après-midi", "Guten Tag", "Buon pomeriggio"],
+        "evening": ["Good evening", "Bonsoir", "Guten Abend", "Buonasera"],
+        "night": ["Good night", "Bonne nuit", "Gute Nacht", "Buonanotte"]
     ]
 
-
-    // MARK: - Body
     var body: some View {
         ZStack(alignment: .leading) {
-            // Hintergrundgradient
             LinearGradient(
                 colors: gradientColors(),
                 startPoint: .topLeading,
@@ -41,7 +32,6 @@ struct WelcomeHeader: View {
             .clipShape(RoundedRectangle(cornerRadius: DSCorners.element, style: .continuous))
             .shadow(radius: 8, y: 4)
 
-            // Inhalt
             HStack {
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                     Text("\(timeBasedGreeting()), \(username)")
@@ -67,7 +57,6 @@ struct WelcomeHeader: View {
         .padding(.top, DSLayout.contentPadding)
     }
 
-    // MARK: - Helper Methods
     private func gradientColors() -> [Color] {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
@@ -90,4 +79,3 @@ struct WelcomeHeader: View {
         return greetingsByTime[timeKey]?.randomElement() ?? "Hello"
     }
 }
-

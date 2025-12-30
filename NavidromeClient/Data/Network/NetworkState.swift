@@ -2,17 +2,13 @@
 //  NetworkState.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 30.09.25.
-//
-//  REFACTORED: Clear semantic naming
-//  - hasInternet: Device has internet connectivity
-//  - isServerReachable: Navidrome server responds to requests
-//  - isFullyConnected: BOTH internet AND server available
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Added Sendable conformance
 //
 
 import Foundation
 
-struct NetworkState: Equatable {
+struct NetworkState: Equatable, Sendable {
     let hasInternet: Bool           // Device has internet connection
     let isServerReachable: Bool     // Navidrome server responds
     let isConfigured: Bool          // App has been configured with credentials
@@ -35,7 +31,6 @@ struct NetworkState: Equatable {
         }
         
         // Priority 3: Server reachability (if we have internet)
-        // This check must come BEFORE the general internet check
         if hasInternet && !isServerReachable {
             return .offlineOnly(reason: .serverUnreachable)
         }

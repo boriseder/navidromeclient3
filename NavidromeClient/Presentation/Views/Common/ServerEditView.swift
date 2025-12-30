@@ -2,10 +2,9 @@
 //  ServerEditView.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 24.09.25.
+//  Updated: Swift 6 Concurrency
+//  - Strictly typed closure capture
 //
-
-
 
 import SwiftUI
 
@@ -23,9 +22,10 @@ struct ServerEditView: View {
     @State private var errorMessage = ""
     @State private var isWaitingForServices = false
     
-    let dismissParent: (() -> Void)?
+    // Swift 6: Closure must be MainActor because it affects UI state in parent
+    let dismissParent: (@MainActor () -> Void)?
     
-    init(dismissParent: (() -> Void)? = nil) {
+    init(dismissParent: (@MainActor () -> Void)? = nil) {
         self.dismissParent = dismissParent
     }
     
@@ -43,12 +43,12 @@ struct ServerEditView: View {
 
                 TextField("Host", text: $connectionManager.host)
                     .textInputAutocapitalization(.none)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled(true)
                 TextField("Port", text: $connectionManager.port)
                     .keyboardType(.numberPad)
                 TextField("Username", text: $connectionManager.username)
                     .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled(true)
                 SecureField("Password", text: $connectionManager.password)
 
                 ConnectionStatusView(connectionManager: connectionManager)
@@ -56,8 +56,6 @@ struct ServerEditView: View {
                 Button("Test Connection") {
                     Task { await testConnectionWithOfflineCheck() }
                 }
-                //.disabled(!connectionManager.canTestConnection ||
-                         //(offlineManager.isOfflineMode && !networkMonitor.canLoadOnlineContent))
             }
 
             Section {
@@ -80,11 +78,9 @@ struct ServerEditView: View {
         }
         .navigationTitle(appInitializer.isConfigured ? "Edit Server" : "Initial Setup")
         .onAppear {
-            //loadExistingCredentials()
             if connectionManager.canTestConnection {
                 Task { await testConnectionWithOfflineCheck() }
             }
-
         }
         .alert("Success", isPresented: $showingSaveSuccess) {
             Button("OK", role: .cancel) {}
@@ -109,45 +105,26 @@ struct ServerEditView: View {
     
     // MARK: - Actions
     
-    private func loadExistingCredentials() {
-        if let creds = AppConfig.shared.getCredentials() {
-            connectionManager.scheme = creds.baseURL.scheme ?? "http"
-            connectionManager.host = creds.baseURL.host ?? ""
-            connectionManager.port = creds.baseURL.port.map { String($0) } ?? ""
-            connectionManager.username = creds.username
-            connectionManager.password = creds.password
-        }
-    }
-    
     private func saveCredentialsAndConfigure() async {
         let success = await connectionManager.saveCredentials()
         if success {
-
-            await MainActor.run {
-                isWaitingForServices = true
-
-            }
+            isWaitingForServices = true
 
             // Wait for services to initialize (max 5 seconds)
-            for attempt in 0..<10 {
-                
+            for _ in 0..<10 {
                 if appInitializer.areServicesReady {
-                    await MainActor.run {
-                        isWaitingForServices = false
-                        dismiss()
-                        dismissParent?()  // Dismiss parent if initial setup
-                    }
+                    isWaitingForServices = false
+                    dismiss()
+                    dismissParent?()
                     return
                 }
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
 
             // Timeout
-            await MainActor.run {
-                isWaitingForServices = false
-                errorMessage = "Services failed to initialize. Please try again."
-                showingError = true
-            }
+            isWaitingForServices = false
+            errorMessage = "Services failed to initialize. Please try again."
+            showingError = true
         } else {
             errorMessage = connectionManager.connectionError ?? "Failed to save credentials"
             showingError = true

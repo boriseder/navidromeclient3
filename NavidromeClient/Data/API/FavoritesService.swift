@@ -2,7 +2,8 @@
 //  FavoritesService.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 21.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Marked @MainActor
 //
 
 import Foundation
@@ -46,7 +47,7 @@ class FavoritesService {
             switch httpResponse.statusCode {
             case 200:
                 // Parse response to verify success
-                let decoded = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
+                _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
                 
             case 401:
                 throw SubsonicError.unauthorized
@@ -87,7 +88,7 @@ class FavoritesService {
             switch httpResponse.statusCode {
             case 200:
                 // Parse response to verify success
-                let decoded = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
+                _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
             case 401:
                 throw SubsonicError.unauthorized
             case 404:

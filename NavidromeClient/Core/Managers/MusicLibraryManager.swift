@@ -45,7 +45,8 @@ class MusicLibraryManager: ObservableObject {
         static let batchDelay: UInt64 = 200_000_000
     }
     
-    init() {
+    // Swift 6: Marked nonisolated to allow initialization from App init
+    nonisolated init() {
         setupNetworkStateObserver()
         setupFactoryResetObserver()
     }
@@ -92,15 +93,6 @@ class MusicLibraryManager: ObservableObject {
             return
         }
         
-        // REMOVED GUARD: The App-Lifecycle is now waiting for a stable network state,
-            // so we should proceed and let internal checks handle connectivity issues later.
-            /*
-            guard NetworkMonitor.shared.shouldLoadOnlineContent else {
-                AppLogger.general.info("📚 Network offline - skipping initial load")
-                return
-            }
-            */
-        
         isCurrentlyLoading = true
         defer { isCurrentlyLoading = false }
         
@@ -122,10 +114,6 @@ class MusicLibraryManager: ObservableObject {
             }
         }
         
-        // NEW: Centralized setting of the overall library's freshness timestamp.
-        // This resolves the race condition by marking the state as fresh *after*
-        // the coordinated load completes, ensuring subsequent network change checks
-        // (from handleNetworkStrategyChange) skip the redundant refresh.
         if hasLoadedInitialData {
             lastRefreshDate = Date()
         }
@@ -166,7 +154,7 @@ class MusicLibraryManager: ObservableObject {
     
     // MARK: - Network State Handling
     
-    private func setupNetworkStateObserver() {
+    private nonisolated func setupNetworkStateObserver() {
         NotificationCenter.default.addObserver(
             forName: .contentLoadingStrategyChanged,
             object: nil,
@@ -180,7 +168,7 @@ class MusicLibraryManager: ObservableObject {
         }
     }
     
-    private func setupFactoryResetObserver() {
+    private nonisolated func setupFactoryResetObserver() {
         NotificationCenter.default.addObserver(
             forName: .factoryResetRequested,
             object: nil,

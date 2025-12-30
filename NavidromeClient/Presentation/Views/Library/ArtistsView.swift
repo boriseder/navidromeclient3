@@ -15,11 +15,8 @@ struct ArtistsView: View {
     
     @State private var lastPreloadedCount = 0
     
-    // MARK: - Unified State Logic
-    
     private var displayedArtists: [Artist] {
         let artists: [Artist]
-        
         switch networkMonitor.contentLoadingStrategy {
         case .online:
             artists = filterArtists(musicLibraryManager.artists)
@@ -28,7 +25,6 @@ struct ArtistsView: View {
         case .setupRequired:
             artists = []
         }
-        
         return artists
     }
 
@@ -38,7 +34,6 @@ struct ArtistsView: View {
                 if theme.backgroundStyle == .dynamic {
                     DynamicMusicBackground()
                 }
-                
                 contentView
             }
             .navigationTitle("Artists")
@@ -57,15 +52,10 @@ struct ArtistsView: View {
             .onChange(of: searchText) { _, _ in
                 handleSearchTextChange()
             }
-            // Proper lifecycle-aware preloading
             .task(id: displayedArtists.count) {
-                // Only preload if we have MORE artists than last time
                 guard displayedArtists.count > lastPreloadedCount else { return }
                 guard displayedArtists.count > 0 else { return }
-                
-                // Small delay to let list render first
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                
                 await preloadVisibleArtists()
             }
             .toolbar {
@@ -92,11 +82,8 @@ struct ArtistsView: View {
                     }
                     .buttonStyle(.plain)
                     .onAppear {
-                        // Progressive preload as user scrolls
                         if index > lastPreloadedCount - 10 && index < displayedArtists.count - 1 {
-                            Task {
-                                await preloadNextBatch(from: index)
-                            }
+                            Task { await preloadNextBatch(from: index) }
                         }
                     }
                 }
@@ -107,11 +94,8 @@ struct ArtistsView: View {
         .padding(.horizontal, DSLayout.screenPadding)
     }
     
-    // MARK: - Business Logic
-    
     private func filterArtists(_ artists: [Artist]) -> [Artist] {
         let filteredArtists: [Artist]
-        
         if searchText.isEmpty {
             filteredArtists = artists
         } else {
@@ -119,59 +103,36 @@ struct ArtistsView: View {
                 artist.name.localizedCaseInsensitiveContains(searchText)
             }
         }
-        
         return filteredArtists.sorted(by: { $0.name < $1.name })
     }
 
     private func refreshAllData() async {
         await musicLibraryManager.refreshAllData()
-        lastPreloadedCount = 0  // Reset to trigger new preload
+        lastPreloadedCount = 0
     }
     
     private func handleSearchTextChange() {
-        debouncer.debounce {
-            // Search filtering happens automatically via computed property
-        }
+        debouncer.debounce { }
     }
     
-    // MARK: - Intelligent Preloading
-    
     private func preloadVisibleArtists() async {
-        let artistsToPreload = Array(displayedArtists.prefix(40))  // ✅ Increased from 20
+        let artistsToPreload = Array(displayedArtists.prefix(40))
         guard !artistsToPreload.isEmpty else { return }
         
-        AppLogger.general.info("🎨 Preloading \(artistsToPreload.count) artist images")
-        
-        // Use controlled preload with higher priority
-        await coverArtManager.preloadArtists(
-            artistsToPreload,
-            context: .artistList
-        )
-        
+        await coverArtManager.preloadArtists(artistsToPreload, context: .artistList)
         lastPreloadedCount = displayedArtists.count
-        AppLogger.general.info("Artist preload completed - cached \(artistsToPreload.count) images")
     }
     
     private func preloadNextBatch(from index: Int) async {
         let batchStart = index + 1
         let batchEnd = min(batchStart + 20, displayedArtists.count)
-        
         guard batchStart < displayedArtists.count else { return }
         
         let batch = Array(displayedArtists[batchStart..<batchEnd])
-        
-        AppLogger.general.debug("🎨 Preloading scroll batch: \(batch.count) artists from index \(batchStart)")
-        
-        await coverArtManager.preloadArtists(
-            batch,
-            context: .artistList
-        )
-        
+        await coverArtManager.preloadArtists(batch, context: .artistList)
         lastPreloadedCount = max(lastPreloadedCount, batchEnd)
     }
 }
-
-// MARK: - Artist Row View
 
 struct ArtistRowView: View {
     let artist: Artist
@@ -181,13 +142,9 @@ struct ArtistRowView: View {
 
     var body: some View {
         HStack(spacing: DSLayout.contentGap) {
-            // Artist Image
             ArtistImageView(artist: artist, context: .artistList)
                 .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(.black.opacity(0.2), lineWidth: 1)
-                )
+                .overlay(Circle().stroke(.black.opacity(0.2), lineWidth: 1))
                 .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
                 .padding(.vertical, DSLayout.tightPadding)
                 .padding(.leading, DSLayout.tightPadding)
@@ -200,7 +157,6 @@ struct ArtistRowView: View {
             Spacer()
             
             if let count = artist.albumCount {
-                // Show offline indicator if available offline
                 if isAvailableOffline {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(DSText.fine)

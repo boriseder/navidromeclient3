@@ -1,10 +1,3 @@
-//
-//  AlbumsViewContent.swift - REAL FIX: Preloading for actual AlbumsView
-//  NavidromeClient
-//
-//   FIXED: Replace .onAppear + preloadWhenIdle with proper lifecycle
-//
-
 import SwiftUI
 
 struct AlbumsView: View {
@@ -22,7 +15,6 @@ struct AlbumsView: View {
     @State private var showOnlyDownloaded = false
     @StateObject private var debouncer = Debouncer()
     
-    // NEW: Track what we've preloaded
     @State private var lastPreloadedCount = 0
     
     // MARK: - Filter Logic
@@ -60,11 +52,9 @@ struct AlbumsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                
                 if theme.backgroundStyle == .dynamic {
                     DynamicMusicBackground()
                 }
-                
                 contentView
             }
             .navigationTitle("Albums")
@@ -74,10 +64,7 @@ struct AlbumsView: View {
             }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.clear, for: .navigationBar)
-            .toolbarColorScheme(
-                theme.colorScheme,
-                for: .navigationBar
-            )
+            .toolbarColorScheme(theme.colorScheme, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search albums...")
             .refreshable {
                 guard networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent else { return }
@@ -86,27 +73,19 @@ struct AlbumsView: View {
             .onChange(of: searchText) { _, _ in
                 handleSearchTextChange()
             }
-            // NEW: Proper lifecycle-aware preloading
             .task(id: displayedAlbums.count) {
-                // Only preload if we have MORE albums than last time
                 guard displayedAlbums.count > lastPreloadedCount else { return }
                 guard displayedAlbums.count > 0 else { return }
                 
-                // Small delay to let grid render first
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                
                 await preloadVisibleAlbums()
             }
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    
-                    // Sort Menu
                     Menu {
                         ForEach(ContentService.AlbumSortType.allCases, id: \.self) { sortType in
                             Button {
-                                Task {
-                                    await loadAlbums(sortBy: sortType)
-                                }
+                                Task { await loadAlbums(sortBy: sortType) }
                             } label: {
                                 HStack {
                                     Image(systemName: sortType.icon)
@@ -153,8 +132,6 @@ struct AlbumsView: View {
                         NavigationLink(destination: SettingsView()) {
                             Label("Settings", systemImage: "gear")
                         }
-
-
                     } label: {
                         Image(systemName: "ellipsis")
                             .foregroundColor(.white)
@@ -168,7 +145,6 @@ struct AlbumsView: View {
     private var contentView: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSLayout.contentGap) {
-                
                 LazyVGrid(columns: GridColumns.two, spacing: DSLayout.contentGap) {
                     ForEach(displayedAlbums.indices, id: \.self) { index in
                         let album = displayedAlbums[index]
@@ -177,19 +153,14 @@ struct AlbumsView: View {
                             CardItemContainer(content: .album(album), index: index)
                         }
                         .onAppear {
-                            // Existing: Load more when nearing end
+                            // Load more logic
                             if networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent &&
                                index >= displayedAlbums.count - 5 {
-                                Task {
-                                    await musicLibraryManager.loadMoreAlbumsIfNeeded()
-                                }
+                                Task { await musicLibraryManager.loadMoreAlbumsIfNeeded() }
                             }
-                            
-                            // NEW: Progressive preload as user scrolls
+                            // Preload logic
                             if index > lastPreloadedCount - 10 && index < displayedAlbums.count - 1 {
-                                Task {
-                                    await preloadNextBatch(from: index)
-                                }
+                                Task { await preloadNextBatch(from: index) }
                             }
                         }
                     }
@@ -201,58 +172,36 @@ struct AlbumsView: View {
         .padding(.horizontal, DSLayout.screenPadding)
     }
     
-    // MARK: - Business Logic
-    
     private func refreshAllData() async {
         await musicLibraryManager.refreshAllData()
-        lastPreloadedCount = 0  // Reset to trigger new preload
+        lastPreloadedCount = 0
     }
     
     private func loadAlbums(sortBy: ContentService.AlbumSortType) async {
         selectedAlbumSort = sortBy
         await musicLibraryManager.loadAlbumsProgressively(sortBy: sortBy, reset: true)
-        lastPreloadedCount = 0  // Reset to trigger new preload
+        lastPreloadedCount = 0
     }
     
     private func handleSearchTextChange() {
-        debouncer.debounce {
-            // Search filtering happens automatically via computed property
-        }
+        debouncer.debounce { }
     }
     
-    // MARK: - NEW: Intelligent Preloading
-    
     private func preloadVisibleAlbums() async {
-        let albumsToPreload = Array(displayedAlbums.prefix(40))  // Increased from 20
+        let albumsToPreload = Array(displayedAlbums.prefix(40))
         guard !albumsToPreload.isEmpty else { return }
         
-        AppLogger.general.info("🎨 Preloading \(albumsToPreload.count) album covers")
-        
-        // Use controlled preload with higher priority
-        await coverArtManager.preloadAlbumsControlled(
-            albumsToPreload,
-            context: .card
-        )
-        
+        await coverArtManager.preloadAlbumsControlled(albumsToPreload, context: .card)
         lastPreloadedCount = displayedAlbums.count
-        AppLogger.general.info("✅ Preload completed - cached \(albumsToPreload.count) covers")
     }
     
     private func preloadNextBatch(from index: Int) async {
         let batchStart = index + 1
         let batchEnd = min(batchStart + 20, displayedAlbums.count)
-        
         guard batchStart < displayedAlbums.count else { return }
         
         let batch = Array(displayedAlbums[batchStart..<batchEnd])
-        
-        AppLogger.general.debug("🎨 Preloading scroll batch: \(batch.count) albums from index \(batchStart)")
-        
-        await coverArtManager.preloadAlbumsControlled(
-            batch,
-            context: .card
-        )
-        
+        await coverArtManager.preloadAlbumsControlled(batch, context: .card)
         lastPreloadedCount = max(lastPreloadedCount, batchEnd)
     }
 }

@@ -1,11 +1,9 @@
 //
-//  OfflineManager.swift - REFACTORED: Simplified to Data Coordinator
+//  OfflineManager.swift
 //  NavidromeClient
 //
-//   SIMPLIFIED: No longer manages content loading strategy
-//   DELEGATES: All strategy decisions to NetworkMonitor
-//   FOCUSED: Pure offline data management and UI state tracking
-//   CLEANUP: Removed redundant internal caching state.
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Strictly MainActor to align with DownloadManager and UI
 //
 
 import Foundation
@@ -44,8 +42,6 @@ class OfflineManager: ObservableObject {
     
     private init() {
         setupFactoryResetObserver()
-        // Removed explicit observeDownloadChanges as views now observe DownloadManager directly,
-        // and data access is via a computed property.
     }
     
     // MARK: - Public API (Delegates to NetworkMonitor)
@@ -80,7 +76,6 @@ class OfflineManager: ObservableObject {
     
     // MARK: - UI State Properties (Read-Only)
     
-    
     /// Legacy compatibility: check if app is in offline mode
     var isOfflineMode: Bool {
         return !networkMonitor.shouldLoadOnlineContent
@@ -90,13 +85,11 @@ class OfflineManager: ObservableObject {
     
     func handleNetworkLoss() {
         // NetworkMonitor handles the strategy change
-        // OfflineManager just logs for UI feedback
         AppLogger.general.info("📵 Network lost - NetworkMonitor will handle strategy")
     }
     
     func handleNetworkRestored() {
         // NetworkMonitor handles the strategy change
-        // OfflineManager just logs for UI feedback
         AppLogger.general.info("📶 Network restored - NetworkMonitor will handle strategy")
     }
     
@@ -136,12 +129,7 @@ class OfflineManager: ObservableObject {
     // MARK: - Reset
     
     func performCompleteReset() {
-        // Removed internal cache clearing as it no longer holds internal state.
-        
-        // Clear subscriptions
         cancellables.removeAll()
-        
-        // Data is owned by DownloadManager and AlbumMetadataCache
         AppLogger.general.info("🔄 OfflineManager: Reset completed")
     }
     
@@ -157,7 +145,7 @@ class OfflineManager: ObservableObject {
         }
     }
     
-    // MARK: - Private Implementation (Unchanged)
+    // MARK: - Private Implementation
     
     private func extractUniqueArtists(from albums: [Album]) -> [Artist] {
         let uniqueArtists = Set(albums.map { $0.artist })
@@ -188,7 +176,7 @@ class OfflineManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 }
 
-// MARK: - Supporting Types (Unchanged)
+// MARK: - Supporting Types
 
 struct OfflineStats {
     let albumCount: Int

@@ -2,8 +2,8 @@
 //  AlbumImageView.swift
 //  NavidromeClient
 //
-//  Context-aware image loading with automatic Retina support
-//  Images now request proper pixel sizes based on display scale
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Efficient caching check in .task
 //
 
 import SwiftUI
@@ -45,20 +45,20 @@ struct AlbumImageView: View {
         .frame(width: displaySize, height: displaySize)
         .animation(.easeInOut(duration: 0.3), value: hasImage)
         .task(id: "\(album.id)_\(context.size)_\(coverArtManager.cacheGeneration)") {
-            // Früher Return bei Cache-Hit
-            if coverArtManager.getAlbumImage(for: album.id, context: context) != nil {
-                return  // Bild bereits da
-            }
-            
-            // Kleine Verzögerung, damit Preload Vorrang hat
-            try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
-            
-            // Nochmal prüfen nach Verzögerung
+            // Early return if cached
             if coverArtManager.getAlbumImage(for: album.id, context: context) != nil {
                 return
             }
             
-            await coverArtManager.loadAlbumImage(
+            // Debounce for scrolling
+            if context.size < ImageContext.fullscreen.size {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if coverArtManager.getAlbumImage(for: album.id, context: context) != nil {
+                    return
+                }
+            }
+            
+            _ = await coverArtManager.loadAlbumImage(
                 for: album.id,
                 context: context
             )
@@ -85,7 +85,7 @@ struct AlbumImageView: View {
             ProgressView()
                 .scaleEffect(0.7)
                 .tint(.white)
-        } else if let error = coverArtManager.getImageError(for: album.id, size: context.size) {
+        } else if let _ = coverArtManager.getImageError(for: album.id, size: context.size) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: DSLayout.smallIcon))
                 .foregroundStyle(.white.opacity(0.8))
@@ -96,24 +96,3 @@ struct AlbumImageView: View {
         }
     }
 }
-
-// MARK: - Usage Examples
-/*
- Verwendung in deinen Views - KEINE Änderungen nötig!
- 
- ```swift
- // List View - lädt jetzt automatisch ~240px auf 3x Display
- AlbumImageView(album: album, context: .list)
- 
- // Grid View - lädt jetzt automatisch ~600px auf 3x Display
- AlbumImageView(album: album, context: .grid)
- 
- // Detail View - lädt jetzt automatisch ~1200px auf 3x Display
- AlbumImageView(album: album, context: .detail)
- 
- // Fullscreen - lädt jetzt automatisch 1500px (Navidrome Max)
- AlbumImageView(album: album, context: .fullscreen)
- ```
- 
- Die Retina-Unterstützung funktioniert jetzt automatisch! 🎉
- */

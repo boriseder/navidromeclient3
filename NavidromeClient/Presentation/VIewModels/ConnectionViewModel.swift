@@ -1,10 +1,9 @@
 //
-//  ConnectionManager.swift - REDESIGNED: Lightweight UI-Focused
+//  ConnectionManager.swift
 //  NavidromeClient
 //
-//   LEAN: Nur UI-Essentials, delegiert an ConnectionService
-//   CLEAN: Separation of Concerns zwischen UI und Business Logic
-//   REDUCED: Von 200+ LOC auf ~80 LOC
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - MainActor isolation
 //
 
 import Foundation
@@ -13,7 +12,7 @@ import SwiftUI
 @MainActor
 class ConnectionViewModel: ObservableObject {
     
-    // MARK: -  UI Form Bindings (Core Responsibility)
+    // MARK: -  UI Form Bindings
     
     @Published var scheme: String = "http"
     @Published var host: String = ""
@@ -21,13 +20,13 @@ class ConnectionViewModel: ObservableObject {
     @Published var username: String = ""
     @Published var password: String = ""
     
-    // MARK: -  UI State (Minimal)
+    // MARK: -  UI State
     
     @Published private(set) var isConnected = false
     @Published private(set) var isTestingConnection = false
     @Published private(set) var connectionError: String?
     
-    // MARK: -  Service Dependency (Single Source of Truth)
+    // MARK: -  Dependencies
     
     private var connectionService: ConnectionService?
     
@@ -37,10 +36,8 @@ class ConnectionViewModel: ObservableObject {
         loadSavedCredentials()
     }
     
-    // MARK: -  UI Actions (Minimal Interface)
+    // MARK: -  UI Actions
     
-    /// Test connection with current form values
-
     func testConnection() async {
         guard let url = buildBasicURL() else {
             connectionError = "Invalid URL format"
@@ -52,16 +49,16 @@ class ConnectionViewModel: ObservableObject {
         isTestingConnection = true
         connectionError = nil
         
-        //  Delegate to Service
-        connectionService = ConnectionService(
+        // Create temporary service for testing
+        let service = ConnectionService(
             baseURL: url,
             username: username,
             password: password
         )
+        self.connectionService = service
         
-        let result = await connectionService!.testConnection()
+        let result = await service.testConnection()
         
-        //  Update UI State
         switch result {
         case .success:
             isConnected = true
@@ -74,28 +71,24 @@ class ConnectionViewModel: ObservableObject {
         isTestingConnection = false
     }
     
-    /// Save credentials if connection test succeeds
     func saveCredentials() async -> Bool {
         await testConnection()
         
         guard isConnected else { return false }
         
-        //  Delegate to AppConfig for persistence
         guard let url = buildBasicURL() else { return false }
         AppConfig.shared.configure(baseURL: url, username: username, password: password)
         
         return true
     }
        
-    // MARK: -  UI Helpers (Minimal)
+    // MARK: -  Helpers
     
-    /// Basic URL building for service creation
     private func buildBasicURL() -> URL? {
         let portString = port.isEmpty ? "" : ":\(port)"
         return URL(string: "\(scheme)://\(host)\(portString)")
     }
     
-    /// Basic input validation for UI
     private func validateBasicInput() -> Bool {
         if host.trimmingCharacters(in: .whitespaces).isEmpty {
             connectionError = "Host is required"
@@ -115,9 +108,6 @@ class ConnectionViewModel: ObservableObject {
         return true
     }
     
-    // MARK: -  Persistence (UI Convenience)
-    
-    /// Load saved credentials for form population
     private func loadSavedCredentials() {
         guard let creds = AppConfig.shared.getCredentials() else { return }
         
@@ -127,18 +117,15 @@ class ConnectionViewModel: ObservableObject {
         username = creds.username
         password = creds.password
         
-        //  Assume saved credentials are valid
+        // Assume valid if loaded
         isConnected = true
         
-        //  Create service for immediate use
         connectionService = ConnectionService(
             baseURL: creds.baseURL,
             username: creds.username,
             password: creds.password
         )
     }
-    
-    // MARK: -  Reset (UI State Only)
     
     func reset() {
         scheme = "http"
@@ -153,59 +140,21 @@ class ConnectionViewModel: ObservableObject {
         connectionService = nil
     }
     
-    // MARK: -  UI Computed Properties
+    // MARK: -  Computed Properties
     
-    /// Connection status for UI display
     var connectionStatusText: String {
-        if isTestingConnection {
-            return "Testing connection..."
-        } else if isConnected {
-            return "Connected"
-        } else {
-            return connectionError ?? "Not connected"
-        }
+        if isTestingConnection { return "Testing connection..." }
+        if isConnected { return "Connected" }
+        return connectionError ?? "Not connected"
     }
     
-    /// Connection status color for UI
     var connectionStatusColor: Color {
-        if isTestingConnection {
-            return .blue
-        } else if isConnected {
-            return .green
-        } else {
-            return .red
-        }
+        if isTestingConnection { return .blue }
+        if isConnected { return .green }
+        return .red
     }
     
-    /// Form validation for UI
     var canTestConnection: Bool {
         return !host.isEmpty && !username.isEmpty && !password.isEmpty && !isTestingConnection
-    }
-    
-    /// Current URL for display
-    var currentURLString: String {
-        buildBasicURL()?.absoluteString ?? "Invalid URL"
-    }
-}
-
-// MARK: -  UI Extensions
-
-extension ConnectionViewModel {
-    
-    /// Quick connection health check
-    func performQuickHealthCheck() async {
-        guard let service = connectionService else { return }
-        
-        let isHealthy = await service.ping()
-        await MainActor.run {
-            self.isConnected = isHealthy
-            if !isHealthy {
-                self.connectionError = "Server unreachable"
-            }
-        }
-    }
-    
-    /// Update NetworkMonitor with current service
-    func configureNetworkMonitor() {
     }
 }

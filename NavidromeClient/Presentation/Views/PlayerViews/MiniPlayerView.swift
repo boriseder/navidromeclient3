@@ -1,10 +1,9 @@
 //
-//  MiniPlayerView.swift - FIXED: Use CoverArtManager Directly
+//  MiniPlayerView.swift
 //  NavidromeClient
 //
-//   FIXED: Removed dependency on playerVM.coverArt
-//   CLEAN: Direct CoverArtManager integration
-//   CONSISTENT: Single source of truth for cover art
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Correctly accessing managers via EnvironmentObject
 //
 
 import SwiftUI
@@ -118,7 +117,7 @@ struct MiniPlayerView: View {
     }
 }
 
-// MARK: - Progress Bar unchanged
+// MARK: - Progress Bar
 
 struct ProgressBarView: View {
     @ObservedObject var playerVM: PlayerViewModel
@@ -161,7 +160,7 @@ struct ProgressBarView: View {
     }
 }
 
-// MARK: - Album Art unchanged
+// MARK: - Album Art
 
 struct AlbumArtView: View {
     let cover: UIImage?

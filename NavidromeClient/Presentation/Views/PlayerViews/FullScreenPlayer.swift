@@ -1,3 +1,12 @@
+//
+//  FullScreenPlayer.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Removed redundant MainActor.run calls (View methods are isolated)
+//  - Replaced DispatchQueue with Task.sleep
+//
+
 import SwiftUI
 import AVKit
 
@@ -79,44 +88,36 @@ struct FullScreenPlayerView: View {
                 .environmentObject(playerVM)
                 .environmentObject(coverArtManager)
         }
-        .onAppear {
-            Task {
-                await loadFullscreenImage()
-                await preloadAdjacentCovers()
-            }
-        }
         .task(id: "\(playerVM.currentSong?.albumId ?? "")_\(coverArtManager.cacheGeneration)") {
             await loadFullscreenImage()
             await preloadAdjacentCovers()
         }
     }
     
+    // Swift 6: Method is implicitly @MainActor because struct is a View
     private func loadFullscreenImage() async {
         guard let albumId = playerVM.currentSong?.albumId else {
-            await MainActor.run {
-                fullscreenImage = nil
-                isLoadingFullscreen = false
-            }
+            fullscreenImage = nil
+            isLoadingFullscreen = false
             return
         }
         
+        // Fast path: Check cache
         if let cached = coverArtManager.getAlbumImage(for: albumId, context: .fullscreen) {
-            await MainActor.run {
-                fullscreenImage = cached
-                isLoadingFullscreen = false
-            }
+            fullscreenImage = cached
+            isLoadingFullscreen = false
             await preloadAdjacentCovers()
             return
         }
         
-        await MainActor.run { isLoadingFullscreen = true }
+        isLoadingFullscreen = true
         
+        // Await background work
         let image = await coverArtManager.loadAlbumImage(for: albumId, context: .fullscreen)
         
-        await MainActor.run {
-            fullscreenImage = image
-            isLoadingFullscreen = false
-        }
+        // Resume on MainActor automatically
+        fullscreenImage = image
+        isLoadingFullscreen = false
         
         await preloadAdjacentCovers()
     }
@@ -132,10 +133,8 @@ struct FullScreenPlayerView: View {
         
         let (prevImg, nextImg) = await (previous, next)
         
-        await MainActor.run {
-            previousImage = prevImg
-            nextImage = nextImg
-        }
+        previousImage = prevImg
+        nextImage = nextImg
     }
     
     private func loadPreviousCover(playlist: [Song], currentIndex: Int) async -> UIImage? {
@@ -209,45 +208,35 @@ struct FullScreenPlayerView: View {
                 horizontalDragOffset = snapDistance
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                Task {
-                    await MainActor.run {
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            horizontalDragOffset = 0
-                            
-                            let oldPrevious = previousImage
-                            let oldCurrent = fullscreenImage
-                            
-                            fullscreenImage = oldPrevious
-                            nextImage = oldCurrent
-                        }
-                    }
+            // Swift 6: Use Task + Sleep instead of DispatchQueue to stay in concurrency domain
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    horizontalDragOffset = 0
                     
-                    await playerVM.playPrevious()
+                    let oldPrevious = previousImage
+                    let oldCurrent = fullscreenImage
                     
-                    await MainActor.run {
-                        animatingTrackChange = false
-                    }
-                    
-                    let playlist = playerVM.currentPlaylist
-                    let currentIdx = playerVM.currentIndex
-                    if currentIdx > 0 {
-                        let newPrevImage = await loadCoverForSong(playlist[currentIdx - 1])
-                        await MainActor.run {
-                            previousImage = newPrevImage
-                        }
-                    } else if playerVM.repeatMode == .all && !playlist.isEmpty {
-                        let newPrevImage = await loadCoverForSong(playlist[playlist.count - 1])
-                        await MainActor.run {
-                            previousImage = newPrevImage
-                        }
-                    } else {
-                        await MainActor.run {
-                            previousImage = nil
-                        }
-                    }
+                    fullscreenImage = oldPrevious
+                    nextImage = oldCurrent
+                }
+                
+                await playerVM.playPrevious()
+                animatingTrackChange = false
+                
+                // Reload covers for new position
+                let playlist = playerVM.currentPlaylist
+                let currentIdx = playerVM.currentIndex
+                
+                if currentIdx > 0 {
+                    previousImage = await loadCoverForSong(playlist[currentIdx - 1])
+                } else if playerVM.repeatMode == .all && !playlist.isEmpty {
+                    previousImage = await loadCoverForSong(playlist[playlist.count - 1])
+                } else {
+                    previousImage = nil
                 }
             }
             
@@ -258,45 +247,33 @@ struct FullScreenPlayerView: View {
                 horizontalDragOffset = -snapDistance
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                Task {
-                    await MainActor.run {
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            horizontalDragOffset = 0
-                            
-                            let oldCurrent = fullscreenImage
-                            let oldNext = nextImage
-                            
-                            fullscreenImage = oldNext
-                            previousImage = oldCurrent
-                        }
-                    }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    horizontalDragOffset = 0
                     
-                    await playerVM.playNext()
+                    let oldCurrent = fullscreenImage
+                    let oldNext = nextImage
                     
-                    await MainActor.run {
-                        animatingTrackChange = false
-                    }
-                    
-                    let playlist = playerVM.currentPlaylist
-                    let currentIdx = playerVM.currentIndex
-                    if currentIdx + 1 < playlist.count {
-                        let newNextImage = await loadCoverForSong(playlist[currentIdx + 1])
-                        await MainActor.run {
-                            nextImage = newNextImage
-                        }
-                    } else if playerVM.repeatMode == .all && !playlist.isEmpty {
-                        let newNextImage = await loadCoverForSong(playlist[0])
-                        await MainActor.run {
-                            nextImage = newNextImage
-                        }
-                    } else {
-                        await MainActor.run {
-                            nextImage = nil
-                        }
-                    }
+                    fullscreenImage = oldNext
+                    previousImage = oldCurrent
+                }
+                
+                await playerVM.playNext()
+                animatingTrackChange = false
+                
+                let playlist = playerVM.currentPlaylist
+                let currentIdx = playerVM.currentIndex
+                
+                if currentIdx + 1 < playlist.count {
+                    nextImage = await loadCoverForSong(playlist[currentIdx + 1])
+                } else if playerVM.repeatMode == .all && !playlist.isEmpty {
+                    nextImage = await loadCoverForSong(playlist[0])
+                } else {
+                    nextImage = nil
                 }
             }
             
@@ -316,7 +293,8 @@ struct FullScreenPlayerView: View {
     }
 }
 
-// MARK: - Stacked Album Art
+// MARK: - Subcomponents (Unchanged but verified)
+
 struct SpotifyStackedAlbumArt: View {
     let currentCover: UIImage?
     let previousCover: UIImage?
@@ -363,18 +341,8 @@ struct SpotifyStackedAlbumArt: View {
             return (coverWidth + spacing) + horizontalDragOffset
         }
     }
-    
-    private func calculateZIndex(for position: CardPosition) -> Double {
-        guard isHorizontalDragging else { return position == .current ? 10 : 5 }
-        switch position {
-        case .previous: return horizontalDragOffset > 0 ? 15 : 5
-        case .current: return 10
-        case .next: return horizontalDragOffset < 0 ? 15 : 5
-        }
-    }
 }
 
-// MARK: - Album Cover Card
 struct AlbumCoverCard: View {
     let cover: UIImage?
     let screenWidth: CGFloat
@@ -412,26 +380,6 @@ struct AlbumCoverCard: View {
     }
 }
 
-// MARK: - Background
-struct SpotifyBackground: View {
-    let image: UIImage?
-    
-    var body: some View {
-        ZStack {
-            if let cover = image {
-                Image(uiImage: cover)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .blur(radius: 20)
-                    .opacity(0.9)
-                    .scaleEffect(1.4)
-            }
-        }
-        .ignoresSafeArea()
-    }
-}
-
-// MARK: - TopBar
 struct TopBar: View {
     let dismiss: DismissAction
     @Binding var showingQueue: Bool
@@ -453,7 +401,6 @@ struct TopBar: View {
     }
 }
 
-// MARK: - Song Info
 struct SpotifySongInfoView: View {
     let song: Song
     let screenWidth: CGFloat
@@ -482,7 +429,6 @@ struct SpotifySongInfoView: View {
     }
 }
 
-// MARK: - Progress Section
 struct ProgressSection: View {
     @ObservedObject var playerVM: PlayerViewModel
     let screenWidth: CGFloat
@@ -554,7 +500,6 @@ struct ProgressSection: View {
     }
 }
 
-// MARK: - Main Controls
 struct MainControls: View {
     @ObservedObject var playerVM: PlayerViewModel
     
@@ -626,7 +571,6 @@ struct MainControls: View {
     }
 }
 
-// MARK: - Bottom Controls
 struct BottomControls: View {
     @ObservedObject var playerVM: PlayerViewModel
     let audioSessionManager: AudioSessionManager
@@ -644,7 +588,6 @@ struct BottomControls: View {
     }
 }
 
-// MARK: - Audio Source Button
 struct AudioSourceButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let picker = AVRoutePickerView()

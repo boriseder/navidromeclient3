@@ -2,8 +2,9 @@
 //  PersistentImageCache.swift
 //  NavidromeClient
 //
-//  DISK-ONLY persistent image cache
-//  Memory caching is handled by CoverArtManager
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Offloaded blocking disk I/O to background
+//  - Strict MainActor state management
 //
 
 import Foundation
@@ -18,7 +19,7 @@ class PersistentImageCache: ObservableObject {
     private let cacheDirectory: URL
     private let metadataFile: URL
     
-    struct CacheMetadata: Codable {
+    struct CacheMetadata: Codable, Sendable {
         let key: String
         let filename: String
         let createdAt: Date
@@ -35,65 +36,75 @@ class PersistentImageCache: ObservableObject {
         cacheDirectory = documentsPath.appendingPathComponent("CoverArtCache", isDirectory: true)
         metadataFile = cacheDirectory.appendingPathComponent("metadata.json")
         
-        createCacheDirectoryIfNeeded()
-        loadMetadata()
+        // Initial setup can be synchronous as it's app startup
+        if !fileManager.fileExists(atPath: cacheDirectory.path) {
+            try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        }
         
-        AppLogger.general.info("PersistentImageCache initialized (disk-only)")
+        // Load metadata
+        if fileManager.fileExists(atPath: metadataFile.path),
+           let data = try? Data(contentsOf: metadataFile),
+           let loadedMetadata = try? JSONDecoder().decode([String: CacheMetadata].self, from: data) {
+            self.metadata = loadedMetadata
+            AppLogger.general.info("PersistentImageCache: Loaded metadata for \(loadedMetadata.count) items")
+        }
         
         Task {
             await performMaintenanceCleanup()
         }
     }
     
-    // MARK: - Public API (DISK ONLY)
+    // MARK: - Public API
     
-    /// Retrieve image from DISK cache only
-    /// Returns nil if not on disk - caller handles memory caching
     func image(for key: String, size: Int) -> UIImage? {
-        // NUR Disk Cache Check
-        if let diskImage = loadImageFromDisk(key: key) {
-            updateLastAccessed(for: key)
-            return diskImage
+        guard let meta = metadata[key] else { return nil }
+        
+        let fileURL = cacheDirectory.appendingPathComponent(meta.filename)
+        
+        // Reading small files on main thread is generally acceptable for cache hits,
+        // but ideally this would be async. Keeping sync for compatibility with sync API.
+        guard fileManager.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              let image = UIImage(data: data) else {
+            metadata.removeValue(forKey: key)
+            scheduleMetadataSave()
+            return nil
         }
         
-        return nil
+        updateLastAccessed(for: key)
+        return image
     }
     
-    /// Store image to DISK only
-    /// Caller handles memory caching
     func store(_ image: UIImage, for key: String, size: Int, quality: CGFloat = 0.92) {
-        
         Task {
-            await saveImageToDisk(image, key: key, quality: quality)
+            await saveImageToDisk(image, key: key, quality: quality, isPNG: false)
+        }
+    }
+    
+    func storeLossless(_ image: UIImage, for key: String, size: Int) {
+        Task {
+            await saveImageToDisk(image, key: key, quality: 1.0, isPNG: true)
         }
     }
 
-    /// Remove image from DISK only
     func removeImage(for key: String) {
-        // ENTFERNT: memoryCache.removeObject(forKey: cacheKey)
-        
         Task {
             await removeImageFromDisk(key: key)
         }
     }
     
-    /// Clear DISK cache only
     func clearCache() {
-        // ENTFERNT: memoryCache.removeAllObjects()
-        
         Task {
             await clearDiskCache()
         }
-        AppLogger.general.info("PersistentImageCache disk cleared")
     }
     
-    /// Get cache statistics (disk only)
     func getCacheStats() -> CacheStats {
         let diskCount = metadata.count
         let diskSize = metadata.values.reduce(0) { $0 + $1.size }
         
         return CacheStats(
-            memoryCount: 0,  // Always 0 - no memory cache
+            memoryCount: 0,
             diskCount: diskCount,
             diskSize: diskSize,
             maxSize: maxCacheSize
@@ -107,7 +118,144 @@ class PersistentImageCache: ObservableObject {
         AppLogger.general.info("PersistentImageCache maintenance completed")
     }
     
-    // MARK: - Cache Stats
+    // MARK: - Private Operations
+    
+    private func saveImageToDisk(_ image: UIImage, key: String, quality: CGFloat, isPNG: Bool) async {
+        let ext = isPNG ? "png" : "jpg"
+        let filename = "\(key.sha256()).\(ext)"
+        let fileURL = cacheDirectory.appendingPathComponent(filename)
+        
+        // Offload heavy compression and I/O
+        guard let result = await performBackgroundWrite(image: image, url: fileURL, quality: quality, isPNG: isPNG) else {
+            return
+        }
+        
+        let meta = CacheMetadata(
+            key: key,
+            filename: filename,
+            createdAt: Date(),
+            size: result.size,
+            lastAccessed: Date()
+        )
+        
+        metadata[key] = meta
+        scheduleMetadataSave()
+        
+        await checkCacheSizeAndCleanup()
+    }
+    
+    // Swift 6: Non-isolated helper for background I/O
+    private nonisolated func performBackgroundWrite(image: UIImage, url: URL, quality: CGFloat, isPNG: Bool) async -> (size: Int64, success: Bool)? {
+        // Use Task.detached to ensure we are off the MainActor
+        return await Task.detached {
+            let data: Data? = isPNG ? image.pngData() : image.jpegData(compressionQuality: quality)
+            guard let data = data else { return nil }
+            
+            do {
+                try data.write(to: url, options: .atomic)
+                return (Int64(data.count), true)
+            } catch {
+                return nil
+            }
+        }.value
+    }
+    
+    private func removeImageFromDisk(key: String) async {
+        guard let meta = metadata[key] else { return }
+        let fileURL = cacheDirectory.appendingPathComponent(meta.filename)
+        
+        // Remove file in background
+        await Task.detached { [fileManager] in
+            try? fileManager.removeItem(at: fileURL)
+        }.value
+        
+        metadata.removeValue(forKey: key)
+        scheduleMetadataSave()
+    }
+    
+    private func clearDiskCache() async {
+        let url = cacheDirectory
+        await Task.detached { [fileManager] in
+            if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                for fileURL in contents {
+                    try? fileManager.removeItem(at: fileURL)
+                }
+            }
+        }.value
+        
+        metadata.removeAll()
+        scheduleMetadataSave()
+        AppLogger.general.info("Disk cache cleared")
+    }
+    
+    private func scheduleMetadataSave() {
+        // Debounce/Batch save
+        Task {
+            // Encode on background
+            let currentMeta = self.metadata
+            let fileURL = self.metadataFile
+            
+            await Task.detached {
+                if let data = try? JSONEncoder().encode(currentMeta) {
+                    try? data.write(to: fileURL)
+                }
+            }.value
+        }
+    }
+    
+    private func updateLastAccessed(for key: String) {
+        guard var meta = metadata[key] else { return }
+        meta.lastAccessed = Date()
+        metadata[key] = meta
+        
+        // Randomly save sometimes to keep access times somewhat fresh without thrashing IO
+        if Int.random(in: 1...20) == 1 {
+            scheduleMetadataSave()
+        }
+    }
+    
+    private func removeExpiredImages() async {
+        let now = Date()
+        let expiredKeys = metadata.filter { now.timeIntervalSince($0.value.createdAt) > maxAge }.map { $0.key }
+        
+        for key in expiredKeys {
+            await removeImageFromDisk(key: key)
+        }
+    }
+    
+    private func checkCacheSizeAndCleanup() async {
+        let currentSize = metadata.values.reduce(0) { $0 + $1.size }
+        guard currentSize > maxCacheSize else { return }
+        
+        let sortedByAccess = metadata.sorted { $0.value.lastAccessed < $1.value.lastAccessed }
+        let targetSize = maxCacheSize * 80 / 100
+        
+        var removedSize: Int64 = 0
+        
+        for (key, meta) in sortedByAccess {
+            await removeImageFromDisk(key: key)
+            removedSize += meta.size
+            if currentSize - removedSize <= targetSize { break }
+        }
+    }
+    
+    private func removeOrphanedFiles() async {
+        let knownFiles = Set(metadata.values.map { $0.filename })
+        let url = cacheDirectory
+        
+        await Task.detached { [fileManager] in
+            guard let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else { return }
+            
+            for fileURL in contents {
+                let filename = fileURL.lastPathComponent
+                if filename == "metadata.json" { continue }
+                
+                if !knownFiles.contains(filename) {
+                    try? fileManager.removeItem(at: fileURL)
+                }
+            }
+        }.value
+    }
     
     struct CacheStats {
         let memoryCount: Int
@@ -117,233 +265,6 @@ class PersistentImageCache: ObservableObject {
         
         var diskSizeFormatted: String {
             ByteCountFormatter.string(fromByteCount: diskSize, countStyle: .file)
-        }
-        
-        var maxSizeFormatted: String {
-            ByteCountFormatter.string(fromByteCount: maxSize, countStyle: .file)
-        }
-        
-        var usagePercentage: Double {
-            guard maxSize > 0 else { return 0 }
-            return Double(diskSize) / Double(maxSize) * 100
-        }
-    }
-    
-    // MARK: - PNG Support (Lossless)
-    
-    func storeLossless(_ image: UIImage, for key: String, size: Int) {
-        
-        Task {
-            await saveImageToDiskPNG(image, key: key)
-        }
-    }
-    
-    // MARK: - Private Implementation
-    
-    private func createCacheDirectoryIfNeeded() {
-        if !fileManager.fileExists(atPath: cacheDirectory.path) {
-            try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-            AppLogger.general.debug("Created cache directory at: \(cacheDirectory.path)")
-        }
-    }
-    
-    private func generateFilename(for key: String) -> String {
-        let hash = key.sha256()
-        return "\(hash).jpg"
-    }
-    
-    private func loadImageFromDisk(key: String) -> UIImage? {
-        guard let meta = metadata[key] else { return nil }
-        
-        let fileURL = cacheDirectory.appendingPathComponent(meta.filename)
-        
-        guard fileManager.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              let image = UIImage(data: data) else {
-            metadata.removeValue(forKey: key)
-            saveMetadata()
-            return nil
-        }
-        
-        return image
-    }
-    
-    private func saveImageToDisk(_ image: UIImage, key: String, quality: CGFloat) async {
-        let filename = generateFilename(for: key)
-        let fileURL = cacheDirectory.appendingPathComponent(filename)
-        
-        guard let data = image.jpegData(compressionQuality: quality) else { return }
-        
-        do {
-            try data.write(to: fileURL, options: .atomic)
-            
-            let meta = CacheMetadata(
-                key: key,
-                filename: filename,
-                createdAt: Date(),
-                size: Int64(data.count),
-                lastAccessed: Date()
-            )
-            
-            await MainActor.run {
-                metadata[key] = meta
-                saveMetadata()
-            }
-            
-            await checkCacheSizeAndCleanup()
-            
-        } catch {
-            AppLogger.general.error("Cache save error: \(error)")
-        }
-    }
-
-    private func saveImageToDiskPNG(_ image: UIImage, key: String) async {
-        let filename = generateFilename(for: key).replacingOccurrences(of: ".jpg", with: ".png")
-        let fileURL = cacheDirectory.appendingPathComponent(filename)
-        
-        guard let data = image.pngData() else { return }
-        
-        do {
-            try data.write(to: fileURL, options: .atomic)
-            
-            let meta = CacheMetadata(
-                key: key,
-                filename: filename,
-                createdAt: Date(),
-                size: Int64(data.count),
-                lastAccessed: Date()
-            )
-            
-            await MainActor.run {
-                metadata[key] = meta
-                saveMetadata()
-            }
-            
-            await checkCacheSizeAndCleanup()
-            
-        } catch {
-            AppLogger.general.error("PNG cache save error: \(error)")
-        }
-    }
-    
-    private func removeImageFromDisk(key: String) async {
-        guard let meta = metadata[key] else { return }
-        
-        let fileURL = cacheDirectory.appendingPathComponent(meta.filename)
-        try? fileManager.removeItem(at: fileURL)
-        
-        await MainActor.run {
-            metadata.removeValue(forKey: key)
-            saveMetadata()
-        }
-    }
-    
-    private func clearDiskCache() async {
-        if let contents = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) {
-            for fileURL in contents {
-                try? fileManager.removeItem(at: fileURL)
-            }
-        }
-        
-        await MainActor.run {
-            metadata.removeAll()
-            saveMetadata()
-        }
-        
-        AppLogger.general.info("Disk cache cleared")
-    }
-    
-    private func loadMetadata() {
-        guard fileManager.fileExists(atPath: metadataFile.path),
-              let data = try? Data(contentsOf: metadataFile),
-              let loadedMetadata = try? JSONDecoder().decode([String: CacheMetadata].self, from: data) else {
-            AppLogger.general.debug("No existing metadata found")
-            return
-        }
-        
-        metadata = loadedMetadata
-        AppLogger.general.info("Loaded metadata for \(metadata.count) cached images")
-    }
-    
-    private func saveMetadata() {
-        guard let data = try? JSONEncoder().encode(metadata) else { return }
-        try? data.write(to: metadataFile)
-    }
-    
-    private func updateLastAccessed(for key: String) {
-        guard var meta = metadata[key] else { return }
-        meta.lastAccessed = Date()
-        metadata[key] = meta
-        
-        if Int.random(in: 1...10) == 1 {
-            saveMetadata()
-        }
-    }
-    
-    private func removeExpiredImages() async {
-        let now = Date()
-        var expiredKeys: [String] = []
-        
-        for (key, meta) in metadata {
-            if now.timeIntervalSince(meta.createdAt) > maxAge {
-                expiredKeys.append(key)
-            }
-        }
-        
-        for key in expiredKeys {
-            await removeImageFromDisk(key: key)
-        }
-        
-        if !expiredKeys.isEmpty {
-            AppLogger.general.info("Removed \(expiredKeys.count) expired cache entries")
-        }
-    }
-    
-    private func checkCacheSizeAndCleanup() async {
-        let currentSize = metadata.values.reduce(0) { $0 + $1.size }
-        
-        guard currentSize > maxCacheSize else { return }
-        
-        let sortedByAccess = metadata.sorted { $0.value.lastAccessed < $1.value.lastAccessed }
-        let targetSize = maxCacheSize * 80 / 100
-        
-        var removedSize: Int64 = 0
-        var removedCount = 0
-        
-        for (key, meta) in sortedByAccess {
-            await removeImageFromDisk(key: key)
-            removedSize += meta.size
-            removedCount += 1
-            
-            if currentSize - removedSize <= targetSize {
-                break
-            }
-        }
-        
-        AppLogger.general.info("Cache cleanup: Removed \(removedCount) items (\(ByteCountFormatter.string(fromByteCount: removedSize, countStyle: .file)))")
-    }
-    
-    private func removeOrphanedFiles() async {
-        guard let contents = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) else {
-            return
-        }
-        
-        let metadataFilenames = Set(metadata.values.map { $0.filename })
-        var orphanedCount = 0
-        
-        for fileURL in contents {
-            let filename = fileURL.lastPathComponent
-            
-            if filename == "metadata.json" { continue }
-            
-            if !metadataFilenames.contains(filename) {
-                try? fileManager.removeItem(at: fileURL)
-                orphanedCount += 1
-            }
-        }
-        
-        if orphanedCount > 0 {
-            AppLogger.general.info("Removed \(orphanedCount) orphaned files")
         }
     }
 }

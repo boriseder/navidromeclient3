@@ -1,23 +1,32 @@
+//
+//  SongRow.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Explicit @MainActor closures for UI actions
+//
 
 import SwiftUI
 
 enum SongContext {
-    case album,favorites
+    case album, favorites
 }
-
 
 struct SongRow: View {
     let song: Song
     let index: Int
     let isPlaying: Bool
-    let action: () -> Void
-    let onMore: () -> Void
-    let favoriteAction: (() -> Void)?
+    
+    // Swift 6: Closures interacting with UI/ViewModels should be @MainActor
+    let action: @MainActor () -> Void
+    let onMore: @MainActor () -> Void
+    let favoriteAction: (@MainActor () -> Void)?
+    
     let context: SongContext
     
     @EnvironmentObject var theme: ThemeManager
     
-    // Interaction states for better UX
+    // Interaction states
     @State private var isPressed = false
     @State private var playIndicatorPhase = 0.0
     
@@ -26,8 +35,8 @@ struct SongRow: View {
     private let animationTimer = Timer.publish(every: 0.8, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        VStack (spacing: DSLayout.elementGap){
-            HStack (spacing: DSLayout.elementGap){
+        VStack(spacing: DSLayout.elementGap) {
+            HStack(spacing: DSLayout.elementGap) {
                 
                 trackNumberSection
                     .padding(.leading, DSLayout.elementGap)
@@ -41,11 +50,10 @@ struct SongRow: View {
                     .padding(.trailing, DSLayout.elementGap)
 
             }
-            .padding(.vertical, DSLayout.contentPadding) // oder 10–12 für bequemes Tappen
+            .padding(.vertical, DSLayout.contentPadding)
             .background(rowBackground)
             .contentShape(Rectangle())
         }
-        
         .scaleEffect(isPressed ? 0.98 : 1.0)
         .animation(DSAnimations.spring, value: isPressed)
         .animation(DSAnimations.ease, value: isPlaying)
@@ -71,12 +79,10 @@ struct SongRow: View {
             withAnimation(DSAnimations.easeQuick) {
                 isPressed = pressing
             }
-        }, perform: {}
-        )
+        }, perform: {})
         .contextMenu {
             enhancedContextMenu
         }
-        // Accessibility
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint(accessibilityHint)
@@ -85,13 +91,12 @@ struct SongRow: View {
         }
     }
     
-    // MARK: - Track Number Section
+    // MARK: - Sections
     
     @ViewBuilder
     private var trackNumberSection: some View {
         ZStack {
-            
-                if isPlaying && showPlayIndicator {
+            if isPlaying && showPlayIndicator {
                 EqualizerBars(
                     isActive: showPlayIndicator,
                     accentColor: DSColor.playing
@@ -100,47 +105,39 @@ struct SongRow: View {
                     insertion: .scale.combined(with: .opacity),
                     removal: .scale.combined(with: .opacity)
                 ))
+            } else {
+                if context == .album {
+                    Text("\(song.track ?? 0).")
+                        .font(DSText.emphasized)
+                        .foregroundStyle(DSColor.onDark)
+                        .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
+                        .transition(.asymmetric(
+                            insertion: .scale.combined(with: .opacity),
+                            removal: .scale.combined(with: .opacity)
+                        ))
                 } else {
-                
-                    if context == .album {
-
-                        Text("\(song.track ?? 0).")                            .font(DSText.emphasized)
-                            .foregroundStyle(DSColor.onDark)
-                            .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
-                            .transition(.asymmetric(
-                                insertion: .scale.combined(with: .opacity),
-                                removal: .scale.combined(with: .opacity)
-                            ))
-                    }
-                    else {
-                        HeartButton.songRow(song: song)
-                            .onTapGesture {
-                                triggerHapticFeedback(.light)
-                                favoriteAction?()
-                            }
-                            .font(DSText.emphasized)
-                            .foregroundStyle(DSColor.onDark)
-                            .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
-                            .transition(.asymmetric(
-                                insertion: .scale.combined(with: .opacity),
-                                removal: .scale.combined(with: .opacity)
-                            ))
-                    }
-                
+                    HeartButton.songRow(song: song)
+                        .onTapGesture {
+                            triggerHapticFeedback(.light)
+                            favoriteAction?()
+                        }
+                        .font(DSText.emphasized)
+                        .foregroundStyle(DSColor.onDark)
+                        .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
+                        .transition(.asymmetric(
+                            insertion: .scale.combined(with: .opacity),
+                            removal: .scale.combined(with: .opacity)
+                        ))
+                }
             }
         }
         .animation(DSAnimations.springSnappy, value: showPlayIndicator)
         .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
         .scaledToFit()
-
     }
-    
-    
-    // MARK: - Song Info Section
     
     private var songInfoSection: some View {
         VStack(alignment: .leading, spacing: DSLayout.tightGap) {
-            // Song title
             Text(song.title)
                 .font(DSText.emphasized)
                 .foregroundStyle(DSColor.onDark)
@@ -151,7 +148,6 @@ struct SongRow: View {
                     .font(DSText.metadata)
                     .foregroundStyle(DSColor.onDark)
                     .lineLimit(1)
-
             }
         }
     }
@@ -163,20 +159,16 @@ struct SongRow: View {
         return DSColor.onDark
     }
     
-    // MARK: - Duration Section
-    
     @ViewBuilder
     private var durationSection: some View {
         if let duration = song.duration, duration > 0 {
             Text(formatDuration(duration))
                 .font(DSText.emphasized)
                 .foregroundStyle(songColor)
-
         }
     }
-    
         
-    // MARK: - Row Background
+    // MARK: - Styling
     
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: DSCorners.tight)
@@ -187,7 +179,6 @@ struct SongRow: View {
             )
     }
     
-    // Dynamic background styling
     private var backgroundColor: Color {
         if isPressed {
             return DSColor.accent.opacity(0.45)
@@ -210,8 +201,6 @@ struct SongRow: View {
         isPlaying ? 1 : 0.5
     }
     
-    // MARK: - Context Menu
-    
     @ViewBuilder
     private var enhancedContextMenu: some View {
         VStack {
@@ -228,7 +217,7 @@ struct SongRow: View {
             }
             
             Button {
-                // Add to playlist functionality could go here
+                // Add to playlist functionality
             } label: {
                 Label("Add to Playlist", systemImage: "plus")
             }
@@ -243,7 +232,7 @@ struct SongRow: View {
         }
     }
     
-    // MARK: - Helper Methods
+    // MARK: - Helpers
     
     private func updatePlayIndicatorAnimation() {
         if isPlaying {
@@ -286,15 +275,15 @@ struct SongRow: View {
     }
 }
 
-// MARK: - Convenience Initializers (unchanged)
+// MARK: - Convenience Initializers
 
 extension SongRow {
     init(
         song: Song,
         index: Int,
         isPlaying: Bool,
-        action: @escaping () -> Void,
-        onMore: @escaping () -> Void,
+        action: @escaping @MainActor () -> Void,
+        onMore: @escaping @MainActor () -> Void,
         context: SongContext
     ) {
         self.init(

@@ -2,15 +2,10 @@
 //  SongManager.swift
 //  NavidromeClient
 //
-//  SIMPLIFIED: Focused on core responsibilities
-//  - In-memory song cache
-//  - Task deduplication for parallel requests
-//  - Smart loading with online/offline fallback
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Removed unsafe deinit access to isolated state
+//  - MainActor isolation for safe dependency usage
 //
-//  REMOVED:
-//  - Legacy fallback logic (DownloadManager provides complete metadata)
-//  - Stream URL pass-through (belongs to MediaService)
-//  - Batch operations (belongs to discovery/content layers)
 
 import Foundation
 import SwiftUI
@@ -38,9 +33,9 @@ class SongManager: ObservableObject {
         setupFactoryResetObserver()
     }
     
-    deinit {
-        loadTasks.values.forEach { $0.cancel() }
-    }
+    // Swift 6: Removed deinit accessing loadTasks.
+    // Tasks are self-contained; if the manager dies, we rely on natural task completion
+    // or explicit cancellation via reset() before destruction if strictly needed.
     
     // MARK: - Setup
     
@@ -66,9 +61,6 @@ class SongManager: ObservableObject {
     // MARK: - Primary API: Smart Song Loading
     
     /// Load songs for an album with intelligent caching and offline fallback
-    /// - Returns cached songs if available
-    /// - Deduplicates parallel requests for the same album
-    /// - Tries online first, falls back to offline if needed
     func loadSongs(for albumId: String) async -> [Song] {
         guard service != nil else {
             AppLogger.general.info("SongManager.loadSongs called before service configured - using offline")
@@ -89,47 +81,61 @@ class SongManager: ObservableObject {
         // Create new load task
         let task = Task {
             defer {
-                loadTasks.removeValue(forKey: albumId)
+                // Safe access on MainActor via the task body
+                // Note: In a real detached task this would need explicit capture,
+                // but this is an actor-isolated task.
+                if !Task.isCancelled {
+                   // We don't remove here to avoid re-entrancy issues if using 'self',
+                   // instead we manage removal in the calling scope logic or let the
+                   // task finish and just rely on the result.
+                   // However, for proper cleanup:
+                   // We let the caller handle the removal key?
+                   // Actually, we can't easily modify `loadTasks` from inside the concurrent execution
+                   // unless we jump back to MainActor.
+                }
             }
             
             guard !Task.isCancelled else {
-                AppLogger.general.info("Load cancelled for album \(albumId)")
                 return [Song]()
             }
             
+            // We use `await` which suspends.
+            // The logic inside `loadWithFallback` is safe.
             let songs = await loadWithFallback(for: albumId)
-            
-            if !songs.isEmpty {
-                albumSongs[albumId] = songs
-            }
             
             return songs
         }
         
         loadTasks[albumId] = task
-        return await task.value
+        
+        let result = await task.value
+        
+        // Cleanup and Store Result (Back on MainActor after await)
+        loadTasks.removeValue(forKey: albumId)
+        
+        if !result.isEmpty {
+            albumSongs[albumId] = result
+        }
+        
+        return result
     }
     
     // MARK: - Cache Management
     
-    /// Get cached songs without loading
     func getCachedSongs(for albumId: String) -> [Song]? {
         return albumSongs[albumId]
     }
     
-    /// Check if songs are cached
     func hasCachedSongs(for albumId: String) -> Bool {
         return albumSongs[albumId] != nil && !albumSongs[albumId]!.isEmpty
     }
     
-    /// Clear cache for specific album
     func clearCache(for albumId: String) {
         albumSongs.removeValue(forKey: albumId)
         loadTasks.removeValue(forKey: albumId)
         AppLogger.general.info("Cleared cache for album \(albumId)")
     }
     
-    /// Clear all cached songs
     func clearSongCache() {
         let cacheSize = albumSongs.count
         albumSongs.removeAll()
@@ -137,7 +143,6 @@ class SongManager: ObservableObject {
         AppLogger.general.info("Cleared song cache (\(cacheSize) albums)")
     }
     
-    /// Preload songs for multiple albums
     func preloadSongs(for albumIds: [String]) async {
         await withTaskGroup(of: Void.self) { group in
             for albumId in albumIds.prefix(5) {
@@ -148,7 +153,6 @@ class SongManager: ObservableObject {
         }
     }
     
-    /// Warm up cache for visible albums
     func warmUpCache(for albumIds: [String]) async {
         let uncachedAlbums = albumIds.filter { !hasCachedSongs(for: $0) }
         
@@ -160,12 +164,10 @@ class SongManager: ObservableObject {
     
     // MARK: - Statistics
     
-    /// Get total number of cached songs
     func getCachedSongCount() -> Int {
         return albumSongs.values.reduce(0) { $0 + $1.count }
     }
     
-    /// Get cache statistics
     func getCacheStats() -> SongCacheStats {
         let totalCachedSongs = getCachedSongCount()
         let cachedAlbums = albumSongs.count
@@ -180,12 +182,10 @@ class SongManager: ObservableObject {
         )
     }
     
-    /// Check if album has offline songs available
     func hasSongsAvailableOffline(for albumId: String) -> Bool {
         return downloadManager.isAlbumDownloaded(albumId)
     }
     
-    /// Get offline song count for album
     func getOfflineSongCount(for albumId: String) -> Int {
         return downloadManager.getDownloadedSongs(for: albumId).count
     }
@@ -222,7 +222,6 @@ class SongManager: ObservableObject {
     
     // MARK: - Private Implementation
     
-    /// Load songs with intelligent fallback strategy
     private func loadWithFallback(for albumId: String) async -> [Song] {
         // Priority 1: Try offline first if album is downloaded
         if downloadManager.isAlbumDownloaded(albumId) {
@@ -247,7 +246,6 @@ class SongManager: ObservableObject {
         return await loadOfflineSongs(for: albumId)
     }
     
-    /// Load songs from server via UnifiedSubsonicService
     private func loadOnlineSongs(for albumId: String) async -> [Song] {
         guard let service = service else {
             AppLogger.general.info("UnifiedSubsonicService not available for online song loading")
@@ -264,7 +262,6 @@ class SongManager: ObservableObject {
         }
     }
     
-    /// Load songs from local downloads
     private func loadOfflineSongs(for albumId: String) async -> [Song] {
         let downloadedSongs = downloadManager.getDownloadedSongs(for: albumId)
         

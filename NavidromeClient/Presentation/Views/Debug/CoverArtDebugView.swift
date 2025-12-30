@@ -2,8 +2,9 @@
 //  CoverArtDebugView.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 16.09.25.
+//  UPDATED: Swift 6 Concurrency Compliance
 //
+
 import SwiftUI
 
 struct CoverArtDebugView: View {
@@ -33,7 +34,7 @@ struct CoverArtDebugView: View {
                     .font(.subheadline)
                     .bold()
                 Text("Entries: \(stats.diskCount)")
-                Text("Size: \(formatBytes(stats.diskSize))")
+                Text("Size: \(stats.diskSizeFormatted)")
                 
                 Divider()
                 
@@ -70,11 +71,5 @@ struct CoverArtDebugView: View {
             }
         }
         .padding()
-    }
-    
-    private func formatBytes(_ bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
     }
 }

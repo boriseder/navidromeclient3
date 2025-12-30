@@ -1,19 +1,16 @@
 //
-//  FavoritesManager.swift - FIXED: Pure Facade Pattern
+//  FavoritesManager.swift
 //  NavidromeClient
 //
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Strictly MainActor
 //
-//  FavoritesManager.swift
-//  Manages user's favorite songs with optimistic updates
-//  Responsibilities: Star/unstar songs, maintain favorites list, sync with server
-
 
 import Foundation
 import SwiftUI
 
 @MainActor
 class FavoritesManager: ObservableObject {
-    // REMOVED: static let shared = FavoritesManager()
     
     // MARK: - Published State
     @Published private(set) var favoriteSongs: [Song] = []

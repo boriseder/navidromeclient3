@@ -1,6 +1,9 @@
 //
-//  ExploreViewContent.swift - FIXED: Preloading triggers after data loads
+//  ExploreView.swift
 //  NavidromeClient
+//
+//  UPDATED: Swift 6 Concurrency
+//  - Checked @MainActor usage in Task modifiers
 //
 
 import SwiftUI
@@ -16,7 +19,7 @@ struct ExploreView: View {
     @EnvironmentObject var exploreManager: ExploreManager
     
     @State private var hasAttemptedInitialLoad = false
-    @State private var hasPreloaded = false  // NEW: Track if preload happened
+    @State private var hasPreloaded = false
     
     private var hasOnlineContent: Bool {
         exploreManager.hasExploreViewData
@@ -45,13 +48,9 @@ struct ExploreView: View {
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 await setupHomeScreenData()
             }
-            // Separate task that triggers AFTER data is loaded
             .task(id: hasOnlineContent) {
                 guard hasOnlineContent, !hasPreloaded else { return }
-                
-                // Wait a bit to let UI settle
                 try? await Task.sleep(nanoseconds: 500_000_000)
-                
                 await preloadVisibleContent()
                 hasPreloaded = true
             }
@@ -84,7 +83,7 @@ struct ExploreView: View {
             }
             .refreshable {
                 await exploreManager.loadExploreData()
-                hasPreloaded = false  // Reset to allow new preload
+                hasPreloaded = false
             }
         }
     }
@@ -94,16 +93,13 @@ struct ExploreView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSLayout.contentGap) {
                 if shouldShowSkeleton {
-                    skeletonContent
-                        .transition(.opacity)
+                    skeletonContent.transition(.opacity)
                 } else {
                     switch networkMonitor.contentLoadingStrategy {
                     case .online:
-                        onlineContent
-                            .transition(.opacity)
+                        onlineContent.transition(.opacity)
                     case .offlineOnly:
-                        offlineContent
-                            .transition(.opacity)
+                        offlineContent.transition(.opacity)
                     case .setupRequired:
                         EmptyView()
                     }
@@ -239,7 +235,6 @@ struct ExploreView: View {
         await preloadVisibleContent()
     }
     
-    // NEW: Intelligent preloading after data is available
     private func preloadVisibleContent() async {
         let allAlbums = exploreManager.recentAlbums +
                        exploreManager.newestAlbums +
@@ -248,19 +243,14 @@ struct ExploreView: View {
         
         guard !allAlbums.isEmpty else { return }
         
-        AppLogger.general.info("🎨 Starting controlled preload for \(allAlbums.count) albums")
-        
-        // Use controlled preload with higher priority
         await coverArtManager.preloadAlbumsControlled(
-            Array(allAlbums.prefix(30)),  // Increased from 20
+            Array(allAlbums.prefix(30)),
             context: .card
         )
-        
-        AppLogger.general.info("✅ Preload completed")
     }
 }
 
-// MARK: - ExploreSection (unchanged)
+// MARK: - ExploreSection
 
 struct ExploreSection: View {
     @EnvironmentObject var theme: ThemeManager
@@ -270,7 +260,9 @@ struct ExploreSection: View {
     let icon: String
     let accentColor: Color
     var showRefreshButton: Bool = false
-    var refreshAction: (() async -> Void)? = nil
+    
+    // Swift 6: Closure is async and operates on MainActor
+    var refreshAction: (@MainActor () async -> Void)? = nil
     
     @State private var isRefreshing = false
     

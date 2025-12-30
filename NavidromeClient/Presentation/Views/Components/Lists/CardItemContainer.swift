@@ -2,7 +2,8 @@
 //  CardItemContainer.swift
 //  NavidromeClient
 //
-//  REFACTORED: Context-aware image display
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - CardContent uses Sendable models
 //
 
 import SwiftUI
@@ -26,7 +27,6 @@ struct CardItemContainer: View {
                 .frame(width: DSLayout.cardCoverNoPadding, height: DSLayout.cardCoverNoPadding)
                 .clipShape(RoundedRectangle(cornerRadius: DSCorners.tight))
                 .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-               // .padding(DSLayout.elementPadding)
                         
             VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                 Text(content.title)
@@ -42,31 +42,10 @@ struct CardItemContainer: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    /*
-                     
-                    Spacer()
-
-                    if let year = content.year {
-                        Text(year)
-                            .font(DSText.fine)
-                            .foregroundColor(appConfig.userBackgroundStyle.dynamicTextColor)
-                    } else {
-                        Text("").hidden()
-                    }
-                     */
             }
             .frame(maxWidth: DSLayout.cardCoverNoPadding, alignment: .leading)
             .padding(.horizontal, DSLayout.tightPadding)
-
         }
-        /*
-        .background(DSMaterial.background)
-        .overlay(
-            RoundedRectangle(cornerRadius: DSCorners.tight)
-                .stroke(Color(.systemGray4), lineWidth: 0.5)
-        )
-         */
         .cornerRadius(DSCorners.element)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(content.title), \(content.subtitle), \(content.year ?? "")")
@@ -104,7 +83,7 @@ struct CardItemContainer: View {
 }
 
 // MARK: - Extension to CardContent
-// This extension handles the presentation logic based on the enum type
+
 extension CardContent {
     var id: String {
         switch self {
@@ -148,35 +127,6 @@ extension CardContent {
         case .album: return "music.note"
         case .artist: return "music.mic"
         case .genre: return "music.note"
-        }
-    }
-    
-    var hasChevron: Bool {
-        switch self {
-        case .album: return false
-        default: return true
-        }
-    }
-    
-    var clipShape: some Shape {
-        switch self {
-        case .artist: return AnyShape(Circle())
-        default: return AnyShape(RoundedRectangle(cornerRadius: 8))
-        }
-    }
-    
-    // A simple helper to allow different shapes for clipShape
-    private struct AnyShape: Shape {
-        private let closure: (CGRect) -> Path
-
-        init<S: Shape>(_ shape: S) {
-            closure = { rect in
-                shape.path(in: rect)
-            }
-        }
-
-        func path(in rect: CGRect) -> Path {
-            closure(rect)
         }
     }
 }

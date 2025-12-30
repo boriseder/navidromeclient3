@@ -2,18 +2,19 @@
 //  ContentLoadingStrategy.swift
 //  NavidromeClient
 //
-//  Defines the content loading strategy based on network and configuration state.
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Added Sendable conformance
 //
 
 import Foundation
 import SwiftUI
 
-enum ContentLoadingStrategy: Equatable {
+enum ContentLoadingStrategy: Equatable, Sendable {
     case online
     case offlineOnly(reason: OfflineReason)
     case setupRequired
     
-    enum OfflineReason: Equatable {
+    enum OfflineReason: Equatable, Sendable {
         case noNetwork
         case serverUnreachable
         case userChoice
@@ -30,22 +31,21 @@ enum ContentLoadingStrategy: Equatable {
     var shouldLoadOnlineContent: Bool {
         switch self {
         case .online: return true
-        case .setupRequired: return true  // Allow network requests during setup/login
+        case .setupRequired: return true
         case .offlineOnly: return false
         }
     }
-
     
     var displayName: String {
         switch self {
         case .online: return "Online"
         case .offlineOnly(let reason): return reason.displayName
-        case .setupRequired: return "Setup Required"  // ADD THIS CASE
+        case .setupRequired: return "Setup Required"
         }
     }
 
     var isEffectivelyOffline: Bool {
-        return !shouldLoadOnlineContent  // This automatically handles setupRequired now
+        return !shouldLoadOnlineContent
     }
 }
 
