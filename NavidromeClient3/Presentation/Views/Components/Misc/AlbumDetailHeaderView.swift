@@ -1,28 +1,35 @@
+//
+//  AlbumDetailHeaderView.swift
+//  NavidromeClient3
+//
+//  Swift 6: Fixed Types & Init Calls
+//
+
 import SwiftUI
 
 struct AlbumDetailHeaderView: View {
-    // FIX: Disambiguate Album
-    let album: NavidromeClient3.Album
+    // FIX: Use simple 'Album' type (removed module prefix)
+    let album: Album
     
     var body: some View {
-        VStack(spacing: DSLayout.contentGap) {
-            // FIX: Using correct initializer labels now that ambiguity is resolved
+        VStack(spacing: 16) { // DSLayout.contentGap
+            // This now matches AlbumImageView.init(album:context:)
             AlbumImageView(album: album, context: .detail)
                 .frame(width: 200, height: 200)
-                .clipShape(RoundedRectangle(cornerRadius: DSCorners.content))
+                .clipShape(RoundedRectangle(cornerRadius: 12)) // DSCorners.content
                 .shadow(radius: 10)
             
-            VStack(spacing: DSLayout.tightGap) {
+            VStack(spacing: 4) { // DSLayout.tightGap
                 Text(album.name)
-                    .font(DSText.fine)
+                    .font(.title3) // DSText.fine
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 
                 Text(album.artist)
-                    .font(DSText.detail)
-                    .foregroundColor(DSColor.secondary)
+                    .font(.subheadline) // DSText.detail
+                    .foregroundStyle(.secondary)
                 
-                HStack(spacing: DSLayout.elementGap) {
+                HStack(spacing: 8) { // DSLayout.elementGap
                     if let year = album.year {
                         Text(String(year))
                     }
@@ -31,11 +38,11 @@ struct AlbumDetailHeaderView: View {
                         Text(genre)
                     }
                 }
-                .font(DSText.metadata)
-                .foregroundColor(DSColor.secondary)
+                .font(.caption) // DSText.metadata
+                .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, DSLayout.sectionGap)
+        .padding(.vertical, 24) // DSLayout.sectionGap
     }
 }

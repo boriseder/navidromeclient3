@@ -1,3 +1,10 @@
+//
+//  AlbumSongsListView.swift
+//  NavidromeClient3
+//
+//  Swift 6: Fixed Player Call and SongRow usage
+//
+
 import SwiftUI
 
 struct AlbumSongsListView: View {
@@ -15,10 +22,12 @@ struct AlbumSongsListView: View {
                     isPlaying: player.currentSong?.id == song.id
                 )
                 .onTapGesture {
-                    Task {
-                        await player.play(song: song, context: songs)
-                    }
+                    // FIX: Use playQueue instead of play(context:) to support gapless/next track
+                    player.playQueue(songs: songs, startIndex: index)
                 }
+                
+                Divider()
+                    .padding(.leading, 40)
             }
         }
     }

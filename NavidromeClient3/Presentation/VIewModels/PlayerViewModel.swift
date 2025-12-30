@@ -2,22 +2,22 @@
 //  PlayerViewModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Added SwiftUI Import for Array Extensions
+//  Swift 6: Added Queue Management (Move/Delete)
 //
 
-import Foundation
+import SwiftUI
 import Observation
-import AVFoundation
 import UIKit
-import SwiftUI // FIX: Required for 'move(fromOffsets:)' and 'remove(atOffsets:)'
+import AVFoundation
 
-enum RepeatMode {
-    case off, all, one
+enum RepeatMode: Equatable, Sendable {
+    case off
+    case all
+    case one
     
     var icon: String {
         switch self {
-        case .off: return "repeat"
-        case .all: return "repeat"
+        case .off, .all: return "repeat"
         case .one: return "repeat.1"
         }
     }
@@ -27,164 +27,150 @@ enum RepeatMode {
 @Observable
 final class PlayerViewModel: PlaybackEngineDelegate {
     
-    // MARK: - Properties
-    var currentSong: Song?
+    // MARK: - Dependencies
+    private var playbackEngine: PlaybackEngine { PlaybackEngine.shared }
+    
+    private var musicLibraryManager: MusicLibraryManager?
+    private var downloadManager: DownloadManager?
+    private var favoritesManager: FavoritesManager?
+    
+    // MARK: - Playback State
     var isPlaying: Bool = false
-    var currentTime: TimeInterval = 0
-    var duration: TimeInterval = 0
+    var playbackProgress: Double = 0.0
+    var duration: Double = 0.0
     var isScrubbing: Bool = false
     
-    // Queue Management
-    var originalQueue: [Song] = []
+    // MARK: - Queue State
+    var currentSong: Song?
     var queue: [Song] = []
-    var currentIndex: Int = -1
+    private var originalQueue: [Song] = [] // For un-shuffle logic
+    var currentIndex: Int = 0
     
-    // State
-    var isShuffleEnabled: Bool = false
+    // MARK: - Modes
     var repeatMode: RepeatMode = .off
+    var isShuffleEnabled: Bool = false
     
-    // Dependencies
-    private var service: UnifiedSubsonicService?
-    private let coverArtManager: CoverArtManager
-    private let engine = PlaybackEngine.shared
-    private let lockScreenManager = LockScreenManager.shared
-    
-    init(coverArtManager: CoverArtManager) {
-        self.coverArtManager = coverArtManager
-        self.engine.delegate = self
-        
-        // Inject self into LockScreenManager
-        self.lockScreenManager.configure(playerVM: self)
+    // MARK: - Computed Properties
+    var currentTime: Double {
+        get { playbackProgress }
+        set { seek(to: newValue) }
     }
     
-    func configure(service: UnifiedSubsonicService) {
-        self.service = service
+    var songTitle: String { currentSong?.title ?? "Not Playing" }
+    var artistName: String { currentSong?.artist ?? "" }
+    var coverArt: UIImage? { return nil }
+    
+    // MARK: - Init
+    init() {
+        PlaybackEngine.shared.delegate = self
     }
     
-    // MARK: - Playback Intentions
+    // MARK: - Configuration
+    func configure(
+        musicLibraryManager: MusicLibraryManager,
+        downloadManager: DownloadManager,
+        favoritesManager: FavoritesManager
+    ) {
+        self.musicLibraryManager = musicLibraryManager
+        self.downloadManager = downloadManager
+        self.favoritesManager = favoritesManager
+        AppLogger.general.info("PlayerViewModel configured with dependencies")
+    }
     
-    func play(song: Song, context: [Song]) async {
-        self.currentSong = song
-        self.originalQueue = context
+    // MARK: - Intents
+    
+    func play(song: Song) {
+        setupQueue(songs: [song], startIndex: 0)
+    }
+    
+    func playQueue(songs: [Song], startIndex: Int) {
+        setupQueue(songs: songs, startIndex: startIndex)
+    }
+    
+    // MARK: - Queue Management (Fix for QueueView)
+    
+    func moveQueueItem(from source: IndexSet, to destination: Int) {
+        // Track the playing song ID so we can update currentIndex after the move
+        let playingId = currentSong?.id
         
-        if isShuffleEnabled {
-            self.queue = [song] + context.filter { $0.id != song.id }.shuffled()
-            self.currentIndex = 0
-        } else {
-            self.queue = context
-            if let index = context.firstIndex(where: { $0.id == song.id }) {
-                self.currentIndex = index
-            } else {
-                self.currentIndex = 0
-                self.queue = [song] + context
-            }
+        queue.move(fromOffsets: source, toOffset: destination)
+        
+        // Restore currentIndex
+        if let playingId, let newIndex = queue.firstIndex(where: { $0.id == playingId }) {
+            self.currentIndex = newIndex
         }
-        
-        await loadAndPlayCurrentSong()
     }
+    
+    func removeQueueItem(at offsets: IndexSet) {
+        let playingId = currentSong?.id
+        
+        queue.remove(atOffsets: offsets)
+        
+        if queue.isEmpty {
+            stop()
+        } else if let playingId, let newIndex = queue.firstIndex(where: { $0.id == playingId }) {
+            self.currentIndex = newIndex
+        } else {
+            // If we deleted the current song, stop or play next available?
+            // Simple approach: stop if confused, or clamp index
+            if currentIndex >= queue.count {
+                currentIndex = 0
+            }
+            // Ideally load the new song at currentIndex if playing
+        }
+    }
+    
+    // MARK: - Controls
+    
+    func resume() { playbackEngine.resume() }
+    func pause() { playbackEngine.pause() }
+    func stop() { playbackEngine.stop() }
     
     func togglePlayPause() {
         if isPlaying { pause() } else { resume() }
     }
     
-    func pause() {
-        engine.pause()
-    }
-    
-    func resume() {
-        engine.resume()
-    }
-    
-    func seek(to time: TimeInterval) {
-        isScrubbing = false
-        engine.seek(to: time)
-        // Update lock screen immediately for responsiveness
-        updateLockScreen()
-    }
-    
     func nextTrack() {
-        guard !queue.isEmpty else { return }
-        
         if repeatMode == .one {
             seek(to: 0)
             return
         }
-        
-        if currentIndex < queue.count - 1 {
-            currentIndex += 1
-            Task { await loadAndPlayCurrentSong() }
-        } else if repeatMode == .all {
-            currentIndex = 0
-            Task { await loadAndPlayCurrentSong() }
+        if currentIndex + 1 < queue.count {
+            advanceTo(index: currentIndex + 1)
+        } else if repeatMode == .all && !queue.isEmpty {
+            advanceTo(index: 0)
         } else {
-            engine.stop()
-            isPlaying = false
-            updateLockScreen()
+            stop()
         }
     }
     
     func previousTrack() {
-        guard !queue.isEmpty else { return }
-        
-        if currentTime > 3 {
+        if playbackProgress > 3.0 {
             seek(to: 0)
-        } else if currentIndex > 0 {
-            currentIndex -= 1
-            Task { await loadAndPlayCurrentSong() }
         } else {
-            seek(to: 0)
-        }
-    }
-    
-    // MARK: - Queue Management
-    
-    func moveQueueItem(from source: IndexSet, to destination: Int) {
-        // FIX: This method requires 'import SwiftUI'
-        queue.move(fromOffsets: source, toOffset: destination)
-        
-        // Recalculate current index based on where the current song moved
-        if let current = currentSong, let newIndex = queue.firstIndex(where: { $0.id == current.id }) {
-            currentIndex = newIndex
-        }
-    }
-    
-    func removeQueueItem(at offsets: IndexSet) {
-        // If we remove the current song, play next or stop
-        let currentRemoved = offsets.contains(currentIndex)
-        
-        // FIX: This method requires 'import SwiftUI' (or Foundation with Collection extensions)
-        queue.remove(atOffsets: offsets)
-        
-        if queue.isEmpty {
-            engine.stop()
-            currentSong = nil
-            updateLockScreen()
-            return
-        }
-        
-        if currentRemoved {
-            // Adjust index to stay within bounds
-            currentIndex = min(currentIndex, queue.count - 1)
-            Task { await loadAndPlayCurrentSong() }
-        } else {
-            // Re-find current index
-            if let current = currentSong, let newIndex = queue.firstIndex(where: { $0.id == current.id }) {
-                currentIndex = newIndex
+            if currentIndex > 0 {
+                advanceTo(index: currentIndex - 1)
+            } else {
+                seek(to: 0)
             }
         }
     }
     
+    func skipToNext() { nextTrack() }
+    func skipToPrevious() { previousTrack() }
+    
     func toggleShuffle() {
         isShuffleEnabled.toggle()
-        guard let current = currentSong else { return }
-        
         if isShuffleEnabled {
-            let rest = originalQueue.filter { $0.id != current.id }.shuffled()
-            queue = [current] + rest
+            originalQueue = queue
+            guard let current = currentSong else { return }
+            var remaining = originalQueue.filter { $0.id != current.id }
+            remaining.shuffle()
+            queue = [current] + remaining
             currentIndex = 0
         } else {
             queue = originalQueue
-            if let index = queue.firstIndex(where: { $0.id == current.id }) {
+            if let current = currentSong, let index = queue.firstIndex(where: { $0.id == current.id }) {
                 currentIndex = index
             }
         }
@@ -198,79 +184,77 @@ final class PlayerViewModel: PlaybackEngineDelegate {
         }
     }
     
-    // MARK: - Internal Logic
-    
-    private func loadAndPlayCurrentSong() async {
-        guard let service = service, currentIndex >= 0, currentIndex < queue.count else { return }
-        
-        let song = queue[currentIndex]
-        self.currentSong = song
-        
-        // 1. Update Lock Screen immediately (loading state)
-        updateLockScreen()
-        
-        // 2. Fetch URL
-        guard let streamURL = await service.streamURL(for: song.id) else {
-            AppLogger.general.error("Failed to get stream URL for \(song.title)")
-            return
-        }
-        
-        // 3. Prepare Queue for Gapless support (future proof)
-        var upcoming: [(String, URL)] = []
-        if currentIndex + 1 < queue.count {
-            let nextSong = queue[currentIndex + 1]
-            if let nextURL = await service.streamURL(for: nextSong.id) {
-                upcoming.append((nextSong.id, nextURL))
-            }
-        }
-        
-        engine.setQueue(primaryURL: streamURL, primaryId: song.id, upcomingURLs: upcoming)
+    func seek(to value: Double) {
+        playbackEngine.seek(to: value)
+        self.playbackProgress = value
     }
     
-    private func updateLockScreen() {
-        guard let song = currentSong else {
-            lockScreenManager.updateNowPlaying(song: nil, image: nil, duration: 0, currentTime: 0, isPlaying: false)
-            return
+    // MARK: - Private Logic
+    
+    private func setupQueue(songs: [Song], startIndex: Int) {
+        self.originalQueue = songs
+        if isShuffleEnabled {
+            let startSong = songs[startIndex]
+            var remaining = songs
+            remaining.remove(at: startIndex)
+            remaining.shuffle()
+            self.queue = [startSong] + remaining
+            self.currentIndex = 0
+        } else {
+            self.queue = songs
+            self.currentIndex = startIndex
         }
-        
-        // Get Cached Image Synchronously if possible
-        var artwork: UIImage?
-        if let albumId = song.albumId {
-            artwork = coverArtManager.getAlbumImage(for: albumId, context: .detail)
-        }
-        
-        lockScreenManager.updateNowPlaying(
-            song: song,
-            image: artwork,
-            duration: duration,
-            currentTime: currentTime,
-            isPlaying: isPlaying
-        )
+        startPlayback(for: self.queue[self.currentIndex])
+    }
+    
+    private func advanceTo(index: Int) {
+        self.currentIndex = index
+        startPlayback(for: queue[index])
+    }
+    
+    private func startPlayback(for song: Song) {
+        self.currentSong = song
+        let serverUrl = UserDefaults.standard.string(forKey: "serverUrl") ?? ""
+        let username = UserDefaults.standard.string(forKey: "username") ?? ""
+        let password = UserDefaults.standard.string(forKey: "password") ?? ""
+        let streamUrlString = "\(serverUrl)/rest/stream?id=\(song.id)&u=\(username)&p=\(password)&v=1.16.1&c=NavidromeClient&f=mp3"
+        guard let url = URL(string: streamUrlString) else { return }
+        playbackEngine.play(url: url, songId: song.id)
     }
     
     // MARK: - PlaybackEngineDelegate
     
-    func playbackEngine(_ engine: PlaybackEngine, didUpdateTime time: TimeInterval) {
-        if !isScrubbing { self.currentTime = time }
+    func playbackEngine(_ engine: PlaybackEngine, didUpdateCurrentSongId songId: String?) {
+        guard let songId = songId else { return }
+        if let index = queue.firstIndex(where: { $0.id == songId }) {
+            self.currentIndex = index
+            self.currentSong = queue[index]
+        }
     }
     
-    func playbackEngine(_ engine: PlaybackEngine, didUpdateDuration duration: TimeInterval) {
+    func playbackEngine(_ engine: PlaybackEngine, didUpdateTime time: Double) {
+        if !isScrubbing { self.playbackProgress = time }
+    }
+    
+    func playbackEngine(_ engine: PlaybackEngine, didUpdateDuration duration: Double) {
         self.duration = duration
-        updateLockScreen() // Update duration once known
     }
     
     func playbackEngine(_ engine: PlaybackEngine, didChangePlayingState isPlaying: Bool) {
         self.isPlaying = isPlaying
-        updateLockScreen()
     }
     
     func playbackEngine(_ engine: PlaybackEngine, didFinishPlaying successfully: Bool) {
-        if successfully { nextTrack() } else { isPlaying = false; updateLockScreen() }
+        if successfully && currentIndex >= queue.count - 1 && repeatMode == .all {
+             nextTrack()
+        } else if successfully && currentIndex >= queue.count - 1 {
+             self.isPlaying = false
+        }
     }
     
     func playbackEngine(_ engine: PlaybackEngine, didEncounterError error: String) {
-        AppLogger.general.error("Playback error: \(error)")
-        isPlaying = false
-        updateLockScreen()
+        self.isPlaying = false
     }
+    
+    func playbackEngineNeedsMoreItems(_ engine: PlaybackEngine) {}
 }

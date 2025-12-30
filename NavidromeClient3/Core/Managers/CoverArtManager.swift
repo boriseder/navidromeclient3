@@ -2,11 +2,12 @@
 //  CoverArtManager.swift
 //  NavidromeClient3
 //
-//  Swift 6: Cleaned - Removed unnecessary Combine import
+//  Swift 6: Accessible Init for Dependency Injection
 //
 
 import SwiftUI
 import Observation
+import UIKit
 
 @MainActor
 @Observable
@@ -23,9 +24,11 @@ final class CoverArtManager {
     private let memoryCache = NSCache<NSString, UIImage>()
     private weak var service: UnifiedSubsonicService?
     
-    private init() {
+    // FIX: Removed 'private' to allow AppDependencies to create it
+    init() {
         memoryCache.countLimit = 200
         setupScenePhaseObserver()
+        AppLogger.general.info("CoverArtManager initialized")
     }
     
     func configure(service: UnifiedSubsonicService) {

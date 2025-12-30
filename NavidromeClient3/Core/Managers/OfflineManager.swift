@@ -2,7 +2,7 @@
 //  OfflineManager.swift
 //  NavidromeClient3
 //
-//  Swift 6: Connected to DownloadManager & NetworkMonitor
+//  Swift 6: Fixed - Removed extra arguments to match V1 Models
 //
 
 import Foundation
@@ -13,114 +13,129 @@ import Observation
 final class OfflineManager {
     static let shared = OfflineManager()
     
-    private let downloadManager = DownloadManager.shared
+    // MARK: - State
+    var isOfflineMode: Bool = false
+    var downloadedSongsCount: Int = 0
     
-    // MARK: - Real Data
-    var offlineAlbums: [Album] {
-        // Map downloaded metadata back to domain Album objects
-        downloadManager.downloadedAlbums.map { dl in
-            Album(
-                id: dl.id,
-                name: dl.title,
-                artist: dl.artist,
-                year: dl.year,
-                genre: dl.genre,
-                coverArt: dl.coverArtId,
-                coverArtId: dl.coverArtId,
-                duration: Int(dl.totalDuration),
-                songCount: dl.songCount,
-                artistId: nil,
-                displayArtist: dl.artist
-            )
-        }
+    // Simple in-memory set of downloaded IDs
+    private var downloadedSongIds: Set<String> = []
+    
+    // MARK: - Init
+    init() {
+        AppLogger.general.info("OfflineManager initialized")
+        loadOfflineIndex()
     }
     
-    private init() {
-        setupFactoryResetObserver()
-    }
+    // MARK: - View Requirements
     
-    // MARK: - Derived Data
-    
-    var offlineArtists: [Artist] {
-        extractUniqueArtists(from: offlineAlbums)
-    }
-    
-    var offlineGenres: [Genre] {
-        extractUniqueGenres(from: offlineAlbums)
-    }
-    
-    // MARK: - Public API
-    
-    var isOfflineMode: Bool {
-        return !NetworkMonitor.shared.shouldLoadOnlineContent
-    }
-    
-    // FIX: Added missing methods required by UI
     func switchToOnlineMode() {
-        NetworkMonitor.shared.setManualOfflineMode(false)
-    }
-    
-    func switchToOfflineMode() {
-        NetworkMonitor.shared.setManualOfflineMode(true)
+        self.isOfflineMode = false
+        AppLogger.general.info("Switched to Online Mode")
     }
     
     func toggleOfflineMode() {
-        // Delegate state management to NetworkMonitor
-        let currentStrategy = NetworkMonitor.shared.contentLoadingStrategy
+        isOfflineMode.toggle()
+        AppLogger.general.info("Offline Mode toggled to: \(isOfflineMode)")
+    }
+    
+    /// Retrieves albums from the DownloadManager to display in Offline Library.
+    func getOfflineAlbums() -> [Album] {
+        let downloads = DownloadManager.shared.downloadedAlbums
         
-        switch currentStrategy {
-        case .online:
-            switchToOfflineMode()
-        case .offlineOnly(let reason):
-            // Only switch back if user previously chose to go offline, or force it
-            if reason == .userChoice {
-                switchToOnlineMode()
-            } else {
-                // If network is down, we can't really switch to online, but we can try
-                switchToOnlineMode()
-            }
-        case .setupRequired:
-            break
+        return downloads.map { dlAlbum in
+            // FIX: strictly match Album.init in AlbumModel.swift
+            Album(
+                id: dlAlbum.id,
+                name: dlAlbum.title,
+                artist: dlAlbum.artist,
+                year: dlAlbum.year,
+                genre: dlAlbum.genre,
+                coverArt: dlAlbum.coverArtId,
+                coverArtId: dlAlbum.coverArtId,
+                duration: nil, // Total duration not strictly tracked in DownloadedAlbum
+                songCount: dlAlbum.songs.count,
+                artistId: nil, // Not available in DownloadedAlbum
+                displayArtist: dlAlbum.artist
+            )
         }
     }
     
-    // MARK: - Queries
-    
-    func getOfflineAlbums(for artist: Artist) -> [Album] {
-        return offlineAlbums.filter { $0.artist == artist.name }
+    /// Retrieves all offline songs.
+    func getOfflineSongs() -> [Song] {
+        let downloads = DownloadManager.shared.downloadedAlbums
+        var songs: [Song] = []
+        
+        for album in downloads {
+            let albumSongs = album.songs.map { dlSong in
+                // FIX: strictly match Song.init in SongModel.swift
+                Song(
+                    id: dlSong.id,
+                    title: dlSong.title,
+                    duration: Int(dlSong.duration),
+                    coverArt: album.coverArtId,
+                    artist: dlSong.artist,
+                    album: album.title,
+                    albumId: album.id,
+                    track: dlSong.trackNumber,
+                    year: album.year,
+                    genre: album.genre,
+                    artistId: nil,
+                    isVideo: false,
+                    contentType: "audio/mpeg", // Assumed for offline
+                    suffix: "mp3",             // Assumed for offline
+                    path: dlSong.localFileName
+                )
+            }
+            songs.append(contentsOf: albumSongs)
+        }
+        return songs
     }
     
-    func getOfflineAlbums(for genre: Genre) -> [Album] {
-        return offlineAlbums.filter { $0.genre == genre.value }
+    // MARK: - Core Logic
+    
+    func hasOfflineCopy(songId: String) -> Bool {
+        return downloadedSongIds.contains(songId)
     }
     
-    // MARK: - Helpers
-    
-    private func extractUniqueArtists(from albums: [Album]) -> [Artist] {
-        let uniqueArtists = Set(albums.map { $0.artist })
-        return uniqueArtists.compactMap { artistName in
-            Artist(
-                id: artistName.replacingOccurrences(of: " ", with: "_"),
-                name: artistName,
-                coverArt: nil,
-                albumCount: albums.filter { $0.artist == artistName }.count,
-                artistImageUrl: nil
-            )
-        }.sorted { $0.name < $1.name }
+    func getLocalUrl(for songId: String) -> URL? {
+        guard hasOfflineCopy(songId: songId) else { return nil }
+        
+        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        let fileURL = documentsURL.appendingPathComponent("\(songId).mp3")
+        
+        return FileManager.default.fileExists(atPath: fileURL.path) ? fileURL : nil
     }
     
-    private func extractUniqueGenres(from albums: [Album]) -> [Genre] {
-        let genreGroups = Dictionary(grouping: albums) { $0.genre ?? "Unknown" }
-        return genreGroups.map { genreName, albumsInGenre in
-            Genre(
-                value: genreName,
-                songCount: albumsInGenre.reduce(0) { $0 + ($1.songCount ?? 0) },
-                albumCount: albumsInGenre.count
-            )
-        }.sorted { $0.value < $1.value }
+    func registerOfflineTrack(songId: String, localUrl: URL) {
+        downloadedSongIds.insert(songId)
+        saveOfflineIndex()
+        AppLogger.general.info("Registered offline track: \(songId)")
     }
     
-    private func setupFactoryResetObserver() {
-        // Observer logic if needed, although DownloadManager handles deletion
+    func removeOfflineTrack(songId: String) {
+        guard hasOfflineCopy(songId: songId) else { return }
+        
+        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let fileURL = documentsURL.appendingPathComponent("\(songId).mp3")
+        
+        try? FileManager.default.removeItem(at: fileURL)
+        
+        downloadedSongIds.remove(songId)
+        saveOfflineIndex()
+    }
+    
+    // MARK: - Persistence
+    
+    private func loadOfflineIndex() {
+        if let savedIds = UserDefaults.standard.array(forKey: "offline_songs_index") as? [String] {
+            self.downloadedSongIds = Set(savedIds)
+            self.downloadedSongsCount = savedIds.count
+        }
+    }
+    
+    private func saveOfflineIndex() {
+        let array = Array(downloadedSongIds)
+        UserDefaults.standard.set(array, forKey: "offline_songs_index")
+        self.downloadedSongsCount = array.count
     }
 }

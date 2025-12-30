@@ -2,7 +2,7 @@
 //  AppConfig.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed method delegation to CredentialStore
+//  Swift 6: Fixed method names to match CredentialStore API
 //
 
 import Foundation
@@ -13,14 +13,15 @@ import Observation
 final class AppConfig {
     static let shared = AppConfig()
     
-    private let credentialStore = CredentialStore()
+    // Use the shared instance to ensure we share state with other components
+    private let credentialStore = CredentialStore.shared
     
-    // Private state is fine; changes to it trigger updates if exposed via computed properties
-    private var credentials: ServerCredentials?
+    // Local cache of credentials
+    private(set) var credentials: ServerCredentials?
 
     private init() {
-        // FIX: Use correct method name from CredentialStore
-        self.credentials = credentialStore.loadCredentials()
+        // CredentialStore loads automatically on init, so we just grab the property
+        self.credentials = credentialStore.currentCredentials
         AppLogger.general.info("[AppConfig] Initialized")
     }
     
@@ -31,21 +32,16 @@ final class AppConfig {
     }
     
     func saveCredentials(_ creds: ServerCredentials) {
-        do {
-            // FIX: Use correct method name
-            try credentialStore.saveCredentials(creds)
-            self.credentials = creds
-            
-            // Notify observers (if any logic depends on this notification)
-            NotificationCenter.default.post(name: .credentialsUpdated, object: creds)
-        } catch {
-            AppLogger.general.error("Failed to save credentials: \(error)")
-        }
+        // CredentialStore.save is non-throwing (handles errors internally/logs them)
+        credentialStore.save(creds)
+        self.credentials = creds
+        
+        // Notify observers
+        NotificationCenter.default.post(name: .credentialsUpdated, object: creds)
     }
     
     func clearCredentials() {
-        // FIX: Use correct method name
-        credentialStore.clearCredentials()
+        credentialStore.clear()
         self.credentials = nil
     }
 }

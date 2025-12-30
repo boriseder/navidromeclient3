@@ -1,12 +1,12 @@
 //
 //  ImageContext.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Swift 6: Full Concurrency Support
+//  Swift 6: Added UIKit import for UITraitCollection/CGFloat support
 //
 
 import Foundation
-import SwiftUI
+import UIKit // <--- REQUIRED for UITraitCollection and CGFloat
 
 enum ImageContext: Sendable {
     // Album Display Contexts
@@ -74,7 +74,6 @@ enum ImageContext: Sendable {
         case .custom(_, let scale):
             return scale
         default:
-            // FIX: Replaced deprecated UIScreen.main.scale with modern trait access
             return UITraitCollection.current.displayScale
         }
     }

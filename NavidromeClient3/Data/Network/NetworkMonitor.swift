@@ -1,8 +1,8 @@
 //
 //  NetworkMonitor.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Swift 6: @Observable & Actor Integration
+//  Swift 6: Added 'isConnected' convenience property
 //
 
 import Foundation
@@ -10,7 +10,6 @@ import Network
 import SwiftUI
 import Observation
 
-// Moved OUTSIDE the class for @Observable visibility
 enum NetworkConnectionType: Sendable {
     case wifi, cellular, ethernet, unknown
     
@@ -33,7 +32,11 @@ final class NetworkMonitor {
     var state: NetworkState
     var connectionType: NetworkConnectionType = .unknown
     
-    // FIX: Added missing computed property required by Managers
+    // FIX: Added convenience property used by Views
+    var isConnected: Bool {
+        state.hasInternet
+    }
+    
     var contentLoadingStrategy: ContentLoadingStrategy {
         state.contentLoadingStrategy
     }

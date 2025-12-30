@@ -2,7 +2,7 @@
 //  DownloadManager.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed Compiler Warnings & Restored Metadata Saving
+//  Swift 6: Accessible Init for Dependency Injection
 //
 
 import Foundation
@@ -16,7 +16,7 @@ final class DownloadManager: NSObject {
     
     // MARK: - State
     var downloadedAlbums: [DownloadedAlbum] = []
-    var activeDownloads: [String: Double] = [:] // SongID -> Progress
+    var activeDownloads: [String: Double] = [:]
     var downloadErrors: [String: String] = [:]
     
     var isDownloading: Bool { !activeDownloads.isEmpty }
@@ -28,17 +28,14 @@ final class DownloadManager: NSObject {
     // MARK: - Infrastructure
     private var session: URLSession!
     private var activeTasks: [String: URLSessionDownloadTask] = [:]
-    
-    // FIX: Store metadata in memory so we can save it when the background task finishes
     private var pendingMetadata: [String: (song: Song, album: Album?)] = [:]
     
     private let fileManager = FileManager.default
     private let downloadsDirectory: URL
     private let metadataFile: URL
     
-    // MARK: - Initialization
-    
-    private override init() {
+    // FIX: Removed 'private' from init
+    override init() {
         let paths = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
         let dir = paths[0].appendingPathComponent("Downloads", isDirectory: true)
         self.downloadsDirectory = dir
@@ -79,7 +76,6 @@ final class DownloadManager: NSObject {
     }
     
     func getLocalFileURL(for songId: String) -> URL? {
-        // Find filename from metadata
         for album in downloadedAlbums {
             if let song = album.songs.first(where: { $0.id == songId }) {
                 let fileURL = downloadsDirectory.appendingPathComponent(song.localFileName)
@@ -89,27 +85,25 @@ final class DownloadManager: NSObject {
         return nil
     }
     
-    // MARK: - Compatibility Extension
-    // Alias for compatibility with older view code
-    func download(song: Song) async {
-        await downloadSong(song)
-    }
-    
+    // Backward compatibility alias
     func isDownloaded(_ songId: String) -> Bool {
         isSongDownloaded(songId)
     }
     
     // MARK: - Actions
     
+    func download(song: Song) async {
+        await downloadSong(song)
+    }
+    
     func downloadAlbum(album: Album, songs: [Song]) async {
-        // FIX: Removed unused 'dlSongs' variable
-        
-        // Cache Cover Art
         if let coverId = album.coverArt {
-            _ = await coverArtManager?.loadAlbumImage(for: coverId, context: .custom(displaySize: 1000, scale: 2))
+            _ = await coverArtManager?.loadAlbumImage(
+                for: coverId,
+                context: ImageContext.custom(displaySize: 1000, scale: 2)
+            )
         }
         
-        // Start Song Downloads
         for song in songs {
             await downloadSong(song, albumInfo: album)
         }
@@ -118,15 +112,10 @@ final class DownloadManager: NSObject {
     func downloadSong(_ song: Song, albumInfo: Album? = nil) async {
         guard !isSongDownloaded(song.id), activeDownloads[song.id] == nil else { return }
         guard let service = service else { return }
-        
         guard let url = await service.downloadURL(for: song.id) else { return }
         
-        // FIX: Removed unused 'fileName' variable
-        
-        // FIX: Store metadata for later saving
         pendingMetadata[song.id] = (song, albumInfo)
         
-        // Register Task
         let task = session.downloadTask(with: url)
         task.taskDescription = song.id
         task.resume()
@@ -139,13 +128,11 @@ final class DownloadManager: NSObject {
         guard let index = downloadedAlbums.firstIndex(where: { $0.id == albumId }) else { return }
         let album = downloadedAlbums[index]
         
-        // Delete files
         for song in album.songs {
             let url = downloadsDirectory.appendingPathComponent(song.localFileName)
             try? fileManager.removeItem(at: url)
         }
         
-        // Update State
         downloadedAlbums.remove(at: index)
         saveMetadata()
     }
@@ -169,7 +156,6 @@ final class DownloadManager: NSObject {
     // MARK: - Internal Helper
     
     fileprivate func registerDownloadedSong(id: String, location: URL, fileSize: Int64) {
-        // 1. Move file to permanent location
         let fileName = "\(id).mp3"
         let destURL = downloadsDirectory.appendingPathComponent(fileName)
         
@@ -181,13 +167,11 @@ final class DownloadManager: NSObject {
             return
         }
         
-        // 2. Retrieve Metadata & Update Manifest
         guard let (song, albumInfo) = pendingMetadata[id] else {
             AppLogger.general.error("Missing metadata for downloaded song \(id)")
             return
         }
         
-        // 3. Create DownloadedSong Entry
         let dlSong = DownloadedSong(
             id: song.id,
             title: song.title,
@@ -199,16 +183,13 @@ final class DownloadManager: NSObject {
             localFileName: fileName
         )
         
-        // 4. Update or Create Album Entry
         let albumId = albumInfo?.id ?? song.albumId ?? "unknown_album"
         
         if let index = downloadedAlbums.firstIndex(where: { $0.id == albumId }) {
-            // Append to existing
             if !downloadedAlbums[index].songs.contains(where: { $0.id == song.id }) {
                 downloadedAlbums[index].songs.append(dlSong)
             }
         } else {
-            // Create new album entry
             let newAlbum = DownloadedAlbum(
                 id: albumId,
                 title: albumInfo?.name ?? song.album ?? "Unknown Album",
@@ -222,7 +203,6 @@ final class DownloadManager: NSObject {
             downloadedAlbums.append(newAlbum)
         }
         
-        // 5. Save & Cleanup
         saveMetadata()
         pendingMetadata.removeValue(forKey: id)
         AppLogger.general.info("Successfully registered download: \(song.title)")
@@ -234,7 +214,6 @@ extension DownloadManager: URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let id = downloadTask.taskDescription else { return }
         
-        // Get file size approximation
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: location.path)[.size] as? Int64) ?? 0
         
         Task { @MainActor in

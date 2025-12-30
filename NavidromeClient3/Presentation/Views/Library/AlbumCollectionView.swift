@@ -13,86 +13,62 @@ enum AlbumCollectionContext {
 }
 
 struct AlbumCollectionView: View {
-    let context: AlbumCollectionContext
+    let albums: [Album] // Online albums passed in
     
-    @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(OfflineManager.self) private var offlineManager
-    @Environment(MusicLibraryManager.self) private var musicLibraryManager
-    @Environment(ThemeManager.self) private var theme
-
-    @State private var albums: [NavidromeClient3.Album] = []
-
-    private var displayedAlbums: [NavidromeClient3.Album] {
-        return networkMonitor.shouldLoadOnlineContent ? albums : availableOfflineAlbums
-    }
+    @Environment(DownloadManager.self) private var downloadManager
     
-    private var availableOfflineAlbums: [NavidromeClient3.Album] {
-        switch context {
-        case .byArtist(let artist):
-            return offlineManager.getOfflineAlbums(for: artist)
-        case .byGenre(let genre):
-            return offlineManager.getOfflineAlbums(for: genre)
+    var displayAlbums: [Album] {
+        if offlineManager.isOfflineMode {
+            // FIX: This method now exists and returns [Album]
+            return offlineManager.getOfflineAlbums()
+        } else {
+            return albums
         }
     }
+    
+    let columns = [
+        GridItem(.adaptive(minimum: 160), spacing: 16)
+    ]
     
     var body: some View {
-        ZStack {
-            theme.backgroundColor.opacity(0.3)
-                .ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    contentView
-                        .padding(.top, DSLayout.contentPadding)
-                }
-                .padding(.horizontal, DSLayout.screenPadding)
-                .padding(.bottom, DSLayout.miniPlayerHeight)
-                .padding(.top, -40)
-            }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            // FIX: Removed .navigationDestination to prevent conflicts with ContentView
-            .scrollIndicators(.hidden)
-            .task {
-                await loadContent()
-            }
-            .refreshable {
-                guard networkMonitor.shouldLoadOnlineContent else { return }
-                await loadContent()
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var contentView: some View {
-        LazyVGrid(columns: GridColumns.two, alignment: .leading, spacing: DSLayout.elementGap) {
-            ForEach(Array(displayedAlbums.enumerated()), id: \.element.id) { index, album in
-                NavigationLink(value: album) {
-                    CardItemContainer(
-                        title: album.name,
-                        subtitle: album.artist,
-                        imageContext: .card
-                    ) {
-                        AlbumImageView(album: album, context: .card)
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 24) {
+                ForEach(displayAlbums) { album in
+                    NavigationLink(destination: AlbumDetailView(album: album)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            // Cover Art
+                            AlbumImageView(album: album, context: .grid)
+                                .frame(height: 160)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .shadow(radius: 4)
+                            
+                            // Text Info
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(album.name)
+                                    .font(.headline)
+                                    .lineLimit(1)
+                                    .foregroundStyle(.primary)
+                                
+                                Text(album.artist)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding()
         }
-    }
-    
-    @MainActor
-    private func loadContent() async {
-        do {
-            switch context {
-            case .byArtist(let artist):
-                if let loaded = try? await musicLibraryManager.loadAlbums(for: artist) {
-                    self.albums = loaded
-                }
-            case .byGenre(let genre):
-                if let loaded = try? await musicLibraryManager.loadAlbums(for: genre) {
-                    self.albums = loaded
-                }
+        .overlay {
+            if displayAlbums.isEmpty {
+                ContentUnavailableView(
+                    offlineManager.isOfflineMode ? "No Offline Albums" : "No Albums Found",
+                    systemImage: "music.note.list",
+                    description: Text(offlineManager.isOfflineMode ? "Download albums to listen offline." : "Try syncing your library.")
+                )
             }
         }
     }

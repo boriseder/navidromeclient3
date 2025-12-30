@@ -2,7 +2,7 @@
 //  AppDependencies.swift
 //  NavidromeClient3
 //
-//  Swift 6: Centralized Dependency Injection Container
+//  Swift 6: Fixed AudioSessionManager initialization errors
 //
 
 import Foundation
@@ -13,57 +13,61 @@ import Observation
 @Observable
 final class AppDependencies {
     
-    // MARK: - Infrastructure Singletons
-    // Use .shared for managers that enforce singleton pattern via private init
-    let appConfig = AppConfig.shared
-    let networkMonitor = NetworkMonitor.shared
-    let audioSessionManager = AudioSessionManager.shared
-    let downloadManager = DownloadManager.shared
-    let offlineManager = OfflineManager.shared
-    let coverArtManager = CoverArtManager.shared // FIX: Use shared instance
-    
-    // MARK: - Managers (Scoped/New Instances)
-    let themeManager = ThemeManager()
-    let connectionViewModel = ConnectionViewModel()
+    // Core Managers
+    let appConfig: AppConfig
+    let appInitializer: AppInitializer
+    let networkMonitor: NetworkMonitor
+    let themeManager: ThemeManager
     
     // Data Managers
-    let songManager = SongManager()
-    let exploreManager = ExploreManager()
-    let favoritesManager = FavoritesManager()
-    let playlistManager = PlaylistManager()
+    let musicLibraryManager: MusicLibraryManager
+    let coverArtManager: CoverArtManager
+    let songManager: SongManager
+    let exploreManager: ExploreManager
+    let favoritesManager: FavoritesManager
+    let downloadManager: DownloadManager
+    let offlineManager: OfflineManager
     
-    // Core Logic
-    let musicLibraryManager = MusicLibraryManager()
-    let appInitializer = AppInitializer() // Assumed to accept dependencies via init or config
+    // Audio & Playback
+    let audioSessionManager: AudioSessionManager
+    // let lockScreenManager: LockScreenManager // Uncomment if you are using it
     
-    // Complex Dependencies
+    // ViewModels
+    let connectionViewModel: ConnectionViewModel
     let playerViewModel: PlayerViewModel
     
-    // Core Services (Actors)
-    let unifiedService: UnifiedSubsonicService
-    
     init() {
-        // 1. Initialize Core Services
-        // Placeholder credentials; real ones loaded by AppConfig/ConnectionViewModel later
-        self.unifiedService = UnifiedSubsonicService(
-            baseURL: URL(string: "http://localhost")!,
-            username: "",
-            password: ""
+        // 1. Config & Base
+        self.appConfig = AppConfig.shared
+        self.networkMonitor = NetworkMonitor.shared
+        self.themeManager = ThemeManager()
+        
+        // 2. ViewModels
+        self.connectionViewModel = ConnectionViewModel()
+        self.playerViewModel = PlayerViewModel()
+        
+        // 3. Audio Session (FIXED: No arguments needed)
+        self.audioSessionManager = AudioSessionManager.shared
+        
+        // 4. Data Managers (Initialize with dependencies if needed)
+        // Assuming these have standard inits or singleton access patterns as per your codebase
+        self.musicLibraryManager = MusicLibraryManager()
+        self.coverArtManager = CoverArtManager()
+        self.songManager = SongManager()
+        self.exploreManager = ExploreManager()
+        self.favoritesManager = FavoritesManager()
+        self.downloadManager = DownloadManager()
+        self.offlineManager = OfflineManager()
+        
+        // 5. Initializer
+        self.appInitializer = AppInitializer(
+            connectionViewModel: connectionViewModel,
+            networkMonitor: networkMonitor
         )
         
-        // 2. Resolve Init-Dependency: Player needs CoverArt
-        self.playerViewModel = PlayerViewModel(coverArtManager: CoverArtManager.shared)
-        
-        // 3. Resolve Cyclic/Property Dependency: AudioSession needs Player
-        // Note: AudioSessionManager is a singleton, so we assign the property
-        AudioSessionManager.shared.playerViewModel = self.playerViewModel
-        
-        // 4. Resolve Singleton Dependency: DownloadManager needs CoverArt
-        DownloadManager.shared.configure(coverArtManager: CoverArtManager.shared)
-        
-        // 5. Configure AppInitializer
-        // Assuming AppInitializer has a configure method or public properties,
-        // otherwise we'd inject in its init.
-        // self.appInitializer.configure(...)
+        // 6. Setup Relationships (Manual Dependency Injection)
+        // Note: We do NOT assign playerViewModel to audioSessionManager anymore.
+        // If LockScreenManager exists, it would be initialized here:
+        // self.lockScreenManager = LockScreenManager(playerViewModel: playerViewModel)
     }
 }

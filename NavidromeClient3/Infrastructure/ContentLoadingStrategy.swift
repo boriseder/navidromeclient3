@@ -1,102 +1,91 @@
 //
 //  ContentLoadingStrategy.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Defines the content loading strategy based on network and configuration state.
+//  Swift 6: Unified Strategy & UI Helpers
 //
 
-import Foundation
 import SwiftUI
 
-enum ContentLoadingStrategy: Equatable {
+enum ContentLoadingStrategy: Equatable, Sendable {
+    /// Load from server, fallback to cache if needed
     case online
+    
+    /// Force load from local database/cache only
     case offlineOnly(reason: OfflineReason)
+    
+    /// App is not configured yet
     case setupRequired
     
-    enum OfflineReason: Equatable {
-        case noNetwork
-        case serverUnreachable
-        case userChoice
-        
-        var displayName: String {
-            switch self {
-            case .noNetwork: return "No Internet"
-            case .serverUnreachable: return "Server Unreachable"
-            case .userChoice: return "Offline Mode"
-            }
-        }
-    }
+    // MARK: - Properties
     
     var shouldLoadOnlineContent: Bool {
         switch self {
         case .online: return true
-        case .setupRequired: return true  // Allow network requests during setup/login
-        case .offlineOnly: return false
+        case .offlineOnly, .setupRequired: return false
         }
     }
-
     
     var displayName: String {
         switch self {
         case .online: return "Online"
-        case .offlineOnly(let reason): return reason.displayName
-        case .setupRequired: return "Setup Required"  // ADD THIS CASE
+        case .offlineOnly(let reason): return "Offline: \(reason.title)"
+        case .setupRequired: return "Setup Required"
         }
     }
-
-    var isEffectivelyOffline: Bool {
-        return !shouldLoadOnlineContent  // This automatically handles setupRequired now
+    
+    // MARK: - Nested Types
+    
+    enum OfflineReason: Equatable, Sendable {
+        case userInitiated      // Modern name for 'userChoice'
+        case noConnection       // Modern name for 'noNetwork'
+        case serverUnreachable
     }
 }
 
-// MARK: - UI Extensions
+// MARK: - UI Helpers
 
 extension ContentLoadingStrategy.OfflineReason {
     var icon: String {
         switch self {
-        case .noNetwork: return "wifi.slash"
-        case .serverUnreachable: return "exclamationmark.triangle"
-        case .userChoice: return "icloud.slash"
+        case .userInitiated: return "wifi.slash"
+        case .noConnection: return "exclamationmark.triangle.fill"
+        case .serverUnreachable: return "server.rack"
         }
     }
     
     var color: Color {
         switch self {
-        case .noNetwork: return .red
-        case .serverUnreachable: return .orange
-        case .userChoice: return .blue
+        case .userInitiated: return .orange
+        case .noConnection: return .red
+        case .serverUnreachable: return .purple
+        }
+    }
+    
+    var title: String {
+        switch self {
+        case .userInitiated: return "Offline Mode"
+        case .noConnection: return "No Internet"
+        case .serverUnreachable: return "Server Error"
         }
     }
     
     var message: String {
         switch self {
-        case .noNetwork: return "No internet connection - showing downloaded content"
-        case .serverUnreachable: return "Server unreachable - showing downloaded content"
-        case .userChoice: return "Offline mode \nshowing downloaded content"
+        case .userInitiated: return "You are currently in offline mode."
+        case .noConnection: return "Check your internet connection."
+        case .serverUnreachable: return "Could not connect to Navidrome."
         }
     }
     
     var canGoOnline: Bool {
         switch self {
-        case .noNetwork, .serverUnreachable: return false
-        case .userChoice: return true
+        case .userInitiated: return true
+        default: return false
         }
     }
     
     var actionTitle: String {
-        switch self {
-        case .userChoice: return "Go Online"
-        default: return ""
-        }
-    }
-    
-    @MainActor
-    func performAction() {
-        switch self {
-        case .userChoice:
-            NetworkMonitor.shared.setManualOfflineMode(false)
-        default:
-            break
-        }
+        return "Go Online"
     }
 }

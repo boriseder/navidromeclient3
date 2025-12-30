@@ -1,18 +1,13 @@
 //
 //  NetworkState.swift
-//  NavidromeClient
+//  NavidromeClient3
 //
-//  Created by Boris Eder on 30.09.25.
-//
-//  REFACTORED: Clear semantic naming
-//  - hasInternet: Device has internet connectivity
-//  - isServerReachable: Navidrome server responds to requests
-//  - isFullyConnected: BOTH internet AND server available
+//  Swift 6: Fixed Enum Naming to match ContentLoadingStrategy
 //
 
 import Foundation
 
-struct NetworkState: Equatable {
+struct NetworkState: Equatable, Sendable {
     let hasInternet: Bool           // Device has internet connection
     let isServerReachable: Bool     // Navidrome server responds
     let isConfigured: Bool          // App has been configured with credentials
@@ -26,7 +21,8 @@ struct NetworkState: Equatable {
     var contentLoadingStrategy: ContentLoadingStrategy {
         // Priority 1: User's explicit choice
         if manualOfflineMode {
-            return .offlineOnly(reason: .userChoice)
+            // FIX: 'userChoice' -> 'userInitiated'
+            return .offlineOnly(reason: .userInitiated)
         }
         
         // Priority 2: Configuration required
@@ -35,14 +31,14 @@ struct NetworkState: Equatable {
         }
         
         // Priority 3: Server reachability (if we have internet)
-        // This check must come BEFORE the general internet check
         if hasInternet && !isServerReachable {
             return .offlineOnly(reason: .serverUnreachable)
         }
         
         // Priority 4: Internet connectivity
         if !hasInternet {
-            return .offlineOnly(reason: .noNetwork)
+            // FIX: 'noNetwork' -> 'noConnection'
+            return .offlineOnly(reason: .noConnection)
         }
         
         // All conditions met: online!
