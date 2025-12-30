@@ -1,47 +1,93 @@
+//
+//  MiniPlayerView.swift
+//  NavidromeClient3
+//
+//  Swift 6: Fixed Compiler Errors & Component Usage
+//
+
 import SwiftUI
 
 struct MiniPlayerView: View {
     @Environment(PlayerViewModel.self) private var playerVM
-    @Environment(AudioSessionManager.self) private var audioSessionManager
     @Environment(CoverArtManager.self) private var coverArtManager
     
     @State private var showFullScreen = false
+    @State private var isDragging = false
     
     var body: some View {
         if let song = playerVM.currentSong {
             VStack(spacing: 0) {
-                // Progress Bar (Custom)
-                ProgressBarView(playerVM: playerVM, isDragging: .constant(false))
+                // Progress Bar
+                ProgressBarView(playerVM: playerVM, isDragging: $isDragging)
                 
-                HStack {
-                    AlbumImageView(albumId: song.albumId ?? "", size: 50)
-                        .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                HStack(spacing: 12) {
+                    // Cover Art
+                    AlbumImageView(albumId: song.albumId ?? "", size: 48)
+                        .frame(width: 48, height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .shadow(radius: 4)
                     
-                    VStack(alignment: .leading) {
+                    // Metadata
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(song.title)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.white)
                             .lineLimit(1)
-                            .font(.subheadline)
-                        Text(song.artist ?? "")
+                        
+                        Text(song.artist ?? "Unknown Artist")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.8))
                             .lineLimit(1)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     
-                    Spacer()
-                    
-                    Button(action: { playerVM.togglePlayPause() }) {
-                        Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title2)
+                    // Controls
+                    HStack(spacing: 16) {
+                        // FIX: Use standard HeartButton initializer
+                        HeartButton(song: song)
+                            .font(.system(size: 20)) // Adjust size manually since we don't have .miniPlayer
+                        
+                        // Play/Pause
+                        Button {
+                            playerVM.togglePlayPause()
+                        } label: {
+                            ZStack {
+                                if playerVM.isPlaying {
+                                    Image(systemName: "pause.fill")
+                                } else {
+                                    Image(systemName: "play.fill")
+                                }
+                            }
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                        }
                     }
-                    .padding(.trailing)
                 }
-                .padding(8)
-                .background(DSColor.surfaceLight)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    // FIX: Use standard DynamicMusicBackground without arguments
+                    DynamicMusicBackground()
+                        .overlay(Color.black.opacity(0.3)) // Add slight dimming for legibility
+                )
+                .contentShape(Rectangle())
                 .onTapGesture {
                     showFullScreen = true
                 }
+                .gesture(
+                    DragGesture()
+                        .onEnded { value in
+                            if value.translation.height < -50 {
+                                showFullScreen = true // Swipe Up -> Expand
+                            } else if value.translation.height > 50 {
+                                playerVM.pause() // Swipe Down -> Pause
+                            }
+                        }
+                )
             }
+            .clipShape(RoundedRectangle(cornerRadius: 0))
+            .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: -5)
             .fullScreenCover(isPresented: $showFullScreen) {
                 FullScreenPlayer()
             }
@@ -49,25 +95,24 @@ struct MiniPlayerView: View {
     }
 }
 
-// MARK: - Progress Bar
+// MARK: - Progress Bar Component
 
 struct ProgressBarView: View {
-    // FIX: Using Observable directly, not ObservedObject
-    let playerVM: PlayerViewModel
+    var playerVM: PlayerViewModel
     @Binding var isDragging: Bool
     
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                // Background track
+                // Track
                 Rectangle()
-                    .fill(Color.gray.opacity(0.4))
+                    .fill(Color.white.opacity(0.2))
                     .frame(height: 2)
                 
-                // Spotify green progress
+                // Progress
                 Rectangle()
-                    .fill(Color.green)
-                    .frame(width: geometry.size.width * progressPercentage, height: 2)
+                    .fill(Color.white)
+                    .frame(width: max(0, geometry.size.width * progressPercentage), height: 2)
                     .animation(isDragging ? nil : .linear(duration: 0.1), value: progressPercentage)
             }
             .contentShape(Rectangle())

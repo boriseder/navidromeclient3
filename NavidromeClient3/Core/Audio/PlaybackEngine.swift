@@ -2,7 +2,7 @@
 //  PlaybackEngine.swift
 //  NavidromeClient3
 //
-//  Swift 6: Cleaned - Removed unnecessary Combine import
+//  Swift 6: Fixed KVO Invalidation & Concurrency Safety
 //
 
 @preconcurrency import AVFoundation
@@ -25,7 +25,10 @@ final class PlaybackEngine: NSObject {
     // MARK: - Properties
     private var player: AVPlayer
     private var timeObserver: Any?
-    private var itemObservers: [NSObjectProtocol] = []
+    
+    // FIX: Separate observers to ensure correct invalidation
+    private var notificationObservers: [NSObjectProtocol] = []
+    private var kvoObservers: [NSKeyValueObservation] = []
     
     // Track current item ID manually
     private var itemToSongId: [AVPlayerItem: String] = [:]
@@ -58,8 +61,17 @@ final class PlaybackEngine: NSObject {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
-        itemObservers.forEach { NotificationCenter.default.removeObserver($0) }
-        itemObservers.removeAll()
+        clearObservers()
+    }
+    
+    private func clearObservers() {
+        // 1. Remove Notification Observers
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        notificationObservers.removeAll()
+        
+        // 2. Explicitly Invalidate KVO Observers
+        kvoObservers.forEach { $0.invalidate() }
+        kvoObservers.removeAll()
     }
     
     private func setupAudioSession() {
@@ -74,9 +86,13 @@ final class PlaybackEngine: NSObject {
     private func setupTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         
+        // FIX: Use 'queue: .main' but ensure strict MainActor isolation in the block
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self = self else { return }
+            
+            // We are on the main queue (guaranteed by queue: .main), so we can call delegate directly
+            // or wrap in Task to be 100% safe with Swift 6 actors.
             Task { @MainActor in
-                guard let self = self else { return }
                 self.delegate?.playbackEngine(self, didUpdateTime: time.seconds)
                 
                 if let duration = self.player.currentItem?.duration.seconds, duration.isFinite, duration > 0 {
@@ -93,16 +109,15 @@ final class PlaybackEngine: NSObject {
     }
     
     func setQueue(primaryURL: URL, primaryId: String, upcomingURLs: [(String, URL)]) {
-        // Reset previous observers
-        itemObservers.forEach { NotificationCenter.default.removeObserver($0) }
-        itemObservers.removeAll()
+        // 1. Clear previous observers properly
+        clearObservers()
         itemToSongId.removeAll()
         
         let item = AVPlayerItem(url: primaryURL)
         self.currentSongId = primaryId
         self.itemToSongId[item] = primaryId
         
-        // Notification Observer (Foundation)
+        // 2. Notification Observer
         let observer = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
@@ -113,16 +128,18 @@ final class PlaybackEngine: NSObject {
                 self?.handleItemDidFinishPlaying(item: object)
             }
         }
-        itemObservers.append(observer)
+        notificationObservers.append(observer)
         
-        // KVO Observer (Foundation)
-        let statusObserver = item.observe(\.status) { [weak self] item, _ in
+        // 3. KVO Observer (Status)
+        let statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            // KVO can fire on background threads, so we MUST hop to MainActor
             Task { @MainActor in
                 self?.handleItemStatusChange(item)
             }
         }
-        itemObservers.append(statusObserver)
+        kvoObservers.append(statusObserver)
         
+        // 4. Update Player
         player.replaceCurrentItem(with: item)
         player.play()
         

@@ -2,39 +2,53 @@
 //  DownloadedModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Fixed imports and conformances
+//  Swift 6: Fixed Song Initializer Order
 //
 
 import Foundation
 
-// FIX: Added 'nonisolated' to structs to prevent MainActor inference
-nonisolated struct DownloadedAlbum: Codable, Identifiable, Equatable, Sendable {
+struct DownloadedAlbum: Codable, Identifiable, Sendable {
     let id: String
     let title: String
     let artist: String
-    let coverArtPath: String?
-    let downloadedAt: Date
+    let year: Int?
+    let genre: String?
+    let coverArtId: String?
     var songs: [DownloadedSong]
+    let downloadedAt: Date
     
-    // Calculated properties that access FileManager are safe as long as they aren't stored
-    var localCoverArtURL: URL? {
-        guard let path = coverArtPath else { return nil }
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documentsPath.appendingPathComponent(path)
-    }
+    var songCount: Int { songs.count }
+    var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
 }
 
-nonisolated struct DownloadedSong: Codable, Identifiable, Equatable, Sendable {
+struct DownloadedSong: Codable, Identifiable, Sendable {
     let id: String
     let title: String
-    let artist: String
-    let album: String
-    let duration: Int?
-    let path: String
-    let downloadedAt: Date
+    let artist: String?
+    let albumId: String
+    let trackNumber: Int
+    let duration: TimeInterval
+    let fileSize: Int64
+    let localFileName: String
     
-    var localURL: URL {
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documentsPath.appendingPathComponent(path)
+    // FIX: Updated argument order to match Song.init
+    func toSong() -> Song {
+        Song(
+            id: id,
+            title: title,
+            duration: Int(duration),    // 3rd argument
+            coverArt: nil,              // 4th
+            artist: artist,             // 5th
+            album: nil,                 // 6th
+            albumId: albumId,           // 7th
+            track: trackNumber,         // 8th
+            year: nil,
+            genre: nil,
+            artistId: nil,
+            isVideo: false,
+            contentType: "audio/mpeg",
+            suffix: "mp3",
+            path: nil
+        )
     }
 }

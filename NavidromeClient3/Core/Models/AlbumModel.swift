@@ -2,7 +2,7 @@
 //  AlbumModel.swift
 //  NavidromeClient3
 //
-//  Swift 6: Full Concurrency Support
+//  Swift 6: Added Memberwise Initializer
 //
 
 import Foundation
@@ -35,6 +35,35 @@ nonisolated struct Album: Codable, Identifiable, Hashable, Sendable {
         case title = "title"
         case coverArt = "coverArt"
         case coverArtId = "albumArt"
+    }
+    
+    // MARK: - Initializers
+    
+    // FIX: Added memberwise initializer for OfflineManager
+    init(
+        id: String,
+        name: String,
+        artist: String,
+        year: Int? = nil,
+        genre: String? = nil,
+        coverArt: String? = nil,
+        coverArtId: String? = nil,
+        duration: Int? = nil,
+        songCount: Int? = nil,
+        artistId: String? = nil,
+        displayArtist: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.artist = artist
+        self.year = year
+        self.genre = genre
+        self.coverArt = coverArt
+        self.coverArtId = coverArtId
+        self.duration = duration
+        self.songCount = songCount
+        self.artistId = artistId
+        self.displayArtist = displayArtist
     }
     
     nonisolated init(from decoder: Decoder) throws {
