@@ -3,7 +3,6 @@ import AVFoundation
 
 // MARK: - PlaybackEngine Delegate Protocol
 
-// Swift 6: Protocol must be @MainActor because implementation (PlayerViewModel) is @MainActor
 @MainActor
 protocol PlaybackEngineDelegate: AnyObject {
     func playbackEngine(_ engine: PlaybackEngine, didUpdateTime time: TimeInterval)
@@ -67,20 +66,9 @@ class PlaybackEngine {
     }
     
     deinit {
-        if let observer = timeObserver {
-            queuePlayer.removeTimeObserver(observer)
-        }
-        
-        currentItemObserver?.invalidate()
-        
-        itemObservers.forEach {
-            NotificationCenter.default.removeObserver($0)
-        }
-        
-        statusObservers.forEach { $0.cancel() }
-        
-        queuePlayer.pause()
-        queuePlayer.removeAllItems()
+        // Swift 6: Cannot access MainActor isolated properties (timeObserver, etc.) here.
+        // Cleanup must be performed explicitly via stop() or shutdown() by the owner (PlayerViewModel).
+        // The AVQueuePlayer itself will be deallocated naturally.
     }
     
     // MARK: - Queue Management

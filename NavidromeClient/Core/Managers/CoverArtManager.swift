@@ -2,9 +2,8 @@
 //  CoverArtManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency
-//  - Removed unsafe deinit
-//  - Added explicit shutdown/cancel methods
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Fixed actor isolation error in semaphore signaling
 //
 
 import Foundation
@@ -22,7 +21,7 @@ class CoverArtManager: ObservableObject {
         static let artistMemory: Int = 60 * 1024 * 1024
     }
     
-    private enum CoverArtType {
+    private enum CoverArtType: Sendable {
         case album
         case artist
         
@@ -69,7 +68,7 @@ class CoverArtManager: ObservableObject {
     
     private var lastPreloadHash: Int = 0
     private var currentPreloadTask: Task<Void, Never>?
-    private let preloadSemaphore = AsyncSemaphore(value: 18)
+    private let preloadSemaphore = AsyncSemaphore(value: 8)
     
     @Published private(set) var loadingStates: [String: Bool] = [:]
     @Published private(set) var errorStates: [String: String] = [:]
@@ -91,8 +90,6 @@ class CoverArtManager: ObservableObject {
         AppLogger.cache.info("[CoverArtManager] Initialized with hybrid multi-size strategy")
     }
     
-    // Swift 6: removed deinit accessing MainActor properties.
-    // Use cancelAllTasks() manually if explicit shutdown is required.
     func cancelAllTasks() {
         activeTasks.values.forEach { $0.cancel() }
         activeTasks.removeAll()
@@ -141,7 +138,7 @@ class CoverArtManager: ObservableObject {
         }
     }
     
-    // MARK: - Context-Aware Image Retrieval (Unchanged)
+    // MARK: - Context-Aware Image Retrieval
     
     func getAlbumImage(for albumId: String, context: ImageContext) -> UIImage? {
         return getCachedImage(for: albumId, cache: albumCache, size: context.size)
@@ -186,7 +183,7 @@ class CoverArtManager: ObservableObject {
         return nil
     }
 
-    // MARK: - Context-Aware Image Loading (Unchanged)
+    // MARK: - Context-Aware Image Loading
     
     func loadAlbumImage(
         for albumId: String,
@@ -238,7 +235,7 @@ class CoverArtManager: ObservableObject {
         return await loadAlbumImage(for: albumId, context: context)
     }
     
-    // MARK: - Core Loading Logic (Concurrency Refactored)
+    // MARK: - Core Loading Logic
     
     private func loadCoverArt(
         id: String,
@@ -265,7 +262,6 @@ class CoverArtManager: ObservableObject {
             return downscaled
         }
 
-        // Deduplication using activeTasks
         if let existingTask = activeTasks[requestKey] {
             return try? await existingTask.value
         }
@@ -289,9 +285,7 @@ class CoverArtManager: ObservableObject {
         }
 
         activeTasks[requestKey] = task
-        // Safe cleanup when task completes
         defer {
-            // Check if this task is still the active one before removing
             if activeTasks[requestKey] == task {
                 activeTasks.removeValue(forKey: requestKey)
             }
@@ -321,7 +315,7 @@ class CoverArtManager: ObservableObject {
         return nil
     }
     
-    // MARK: - Network Loading (Unchanged)
+    // MARK: - Network Loading
     
     private func loadImageFromNetwork(
         id: String,
@@ -372,17 +366,14 @@ class CoverArtManager: ObservableObject {
         let cache = type.getCache(from: self)
         
         let coverArt = AlbumCoverArt(image: image, size: size)
-        let cost = coverArt.memoryFootprint
-        cache.setObject(coverArt, forKey: cacheKey, cost: cost)
+        cache.setObject(coverArt, forKey: cacheKey, cost: coverArt.memoryFootprint)
         
         notifyChange()
     }
     
     private func notifyChange() {
-        Task { @MainActor in
-            self._cacheVersion += 1
-            self.objectWillChange.send()
-        }
+        self._cacheVersion += 1
+        self.objectWillChange.send()
     }
     
     // MARK: - State Queries
@@ -448,19 +439,17 @@ class CoverArtManager: ObservableObject {
         )
     }
     
-    private func preloadCoverArt<T>(
+    private func preloadCoverArt<T: Sendable>(
         items: [T],
         type: CoverArtType,
         context: ImageContext,
         priority: PreloadPriority = .immediate,
-        getId: @escaping (T) -> String
+        getId: @escaping @Sendable (T) -> String
     ) async {
         let itemIds = Set(items.map(getId))
         let currentHash = itemIds.hashValue
         
-        guard currentHash != lastPreloadHash else {
-            return
-        }
+        guard currentHash != lastPreloadHash else { return }
         
         currentPreloadTask?.cancel()
         lastPreloadHash = currentHash
@@ -475,4 +464,143 @@ class CoverArtManager: ObservableObject {
                 await withTaskGroup(of: Void.self) { group in
                     for (index, item) in items.enumerated().prefix(5) {
                         let id = getId(item)
-                        if getCachedImage(for: id, cache: type.getCache
+                        if getCachedImage(for: id, cache: type.getCache(from: self), size: size) == nil {
+                            group.addTask {
+                                _ = await self.loadCoverArt(id: id, type: type, size: size, staggerIndex: index)
+                            }
+                        }
+                    }
+                }
+                
+            case .userInitiated:
+                await withTaskGroup(of: Void.self) { group in
+                    for item in items {
+                        guard !Task.isCancelled else { break }
+                        let id = getId(item)
+                        
+                        if getCachedImage(for: id, cache: type.getCache(from: self), size: size) == nil {
+                            group.addTask {
+                                await self.preloadSemaphore.wait()
+                                
+                                // SWIFT 6 FIX: Signal must be awaited because AsyncSemaphore is an actor
+                                defer {
+                                    Task {
+                                        await self.preloadSemaphore.signal()
+                                    }
+                                }
+                                
+                                _ = await self.loadCoverArt(id: id, type: type, size: size)
+                            }
+                        }
+                    }
+                }
+                
+            case .background:
+                for (index, item) in items.enumerated() {
+                    guard !Task.isCancelled else { break }
+                    let id = getId(item)
+                    if getCachedImage(for: id, cache: type.getCache(from: self), size: size) == nil {
+                        _ = await self.loadCoverArt(id: id, type: type, size: size)
+                        if index < items.count - 1 {
+                            try? await Task.sleep(nanoseconds: 300_000_000)
+                        }
+                    }
+                }
+            }
+        }
+        
+        await currentPreloadTask?.value
+    }
+        
+    // MARK: - Cache Management
+    
+    func clearMemoryCache() {
+        albumCache.removeAllObjects()
+        artistCache.removeAllObjects()
+        loadingStates.removeAll()
+        errorStates.removeAll()
+        incrementCacheGeneration()
+        persistentCache.clearCache()
+ 
+        AppLogger.cache.info("[CoverArtManager] All caches cleared")
+    }
+
+    // MARK: - Diagnostics
+    
+    func getCacheStats() -> CoverArtCacheStats {
+        let persistentStats = persistentCache.getCacheStats()
+        
+        return CoverArtCacheStats(
+            diskCount: persistentStats.diskCount,
+            diskSize: persistentStats.diskSize,
+            activeRequests: activeTasks.count,
+            errorCount: errorStates.count
+        )
+    }
+    
+    func getHealthStatus() -> CoverArtHealthStatus {
+        let stats = getCacheStats()
+        
+        let totalActivity = stats.activeRequests + stats.errorCount
+        let errorRate = totalActivity > 0 ? Double(stats.errorCount) / Double(totalActivity) : 0.0
+        let isHealthy = errorRate < 0.1 && stats.activeRequests < 50
+        
+        let statusDescription: String
+        if errorRate < 0.05 && stats.activeRequests < 10 {
+            statusDescription = "Excellent"
+        } else if errorRate < 0.1 && stats.activeRequests < 30 {
+            statusDescription = "Good"
+        } else {
+            statusDescription = "Poor"
+        }
+        
+        return CoverArtHealthStatus(isHealthy: isHealthy, statusDescription: statusDescription)
+    }
+    
+    func resetPerformanceStats() {
+        loadingStates.removeAll()
+        errorStates.removeAll()
+        AppLogger.cache.info("[CoverArtManager] Performance stats reset")
+    }
+    
+    func printDiagnostics() {
+        let stats = getCacheStats()
+        let health = getHealthStatus()
+        
+        AppLogger.cache.info("""
+        [CoverArtManager] DIAGNOSTICS:
+        Health: \(health.statusDescription)
+        \(stats.summary)
+        Albums: \(CacheLimits.albumCount) entries, \(CacheLimits.albumMemory / 1024 / 1024)MB
+        Artists: \(CacheLimits.artistCount) entries, \(CacheLimits.artistMemory / 1024 / 1024)MB
+        Generation: \(cacheGeneration)
+        Service: \(service != nil ? "Available" : "Not Available")
+        """)
+    }
+}
+
+// MARK: - Supporting Types
+
+struct CoverArtCacheStats: Sendable {
+    let diskCount: Int
+    let diskSize: Int64
+    let activeRequests: Int
+    let errorCount: Int
+    
+    var diskSizeFormatted: String {
+        ByteCountFormatter.string(fromByteCount: diskSize, countStyle: .file)
+    }
+    
+    var usagePercentage: Double {
+        return 0.0 // Placeholder
+    }
+    
+    var summary: String {
+        return "Active: \(activeRequests) | Errors: \(errorCount) | Disk: \(diskCount) (\(diskSizeFormatted))"
+    }
+}
+
+struct CoverArtHealthStatus: Sendable {
+    let isHealthy: Bool
+    let statusDescription: String
+}

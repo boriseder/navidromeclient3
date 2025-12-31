@@ -3,8 +3,8 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Offloaded blocking disk I/O to background
-//  - Strict MainActor state management
+//  - Fixed "Sending closure" warnings by removing FileManager capture
+//  - Uses local FileManager instances in detached tasks
 //
 
 import Foundation
@@ -15,6 +15,7 @@ import CryptoKit
 class PersistentImageCache: ObservableObject {
     static let shared = PersistentImageCache()
     
+    // Kept for MainActor usage, but NOT captured in background tasks
     private let fileManager = FileManager.default
     private let cacheDirectory: URL
     private let metadataFile: URL
@@ -61,8 +62,7 @@ class PersistentImageCache: ObservableObject {
         
         let fileURL = cacheDirectory.appendingPathComponent(meta.filename)
         
-        // Reading small files on main thread is generally acceptable for cache hits,
-        // but ideally this would be async. Keeping sync for compatibility with sync API.
+        // Reading small files on main thread is generally acceptable for cache hits
         guard fileManager.fileExists(atPath: fileURL.path),
               let data = try? Data(contentsOf: fileURL),
               let image = UIImage(data: data) else {
@@ -164,9 +164,9 @@ class PersistentImageCache: ObservableObject {
         guard let meta = metadata[key] else { return }
         let fileURL = cacheDirectory.appendingPathComponent(meta.filename)
         
-        // Remove file in background
-        await Task.detached { [fileManager] in
-            try? fileManager.removeItem(at: fileURL)
+        // Fix: Use local FileManager instance in detached task, DO NOT capture [fileManager]
+        await Task.detached {
+            try? FileManager.default.removeItem(at: fileURL)
         }.value
         
         metadata.removeValue(forKey: key)
@@ -175,10 +175,13 @@ class PersistentImageCache: ObservableObject {
     
     private func clearDiskCache() async {
         let url = cacheDirectory
-        await Task.detached { [fileManager] in
-            if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+        
+        // Fix: Use local FileManager instance in detached task, DO NOT capture [fileManager]
+        await Task.detached {
+            let fm = FileManager.default
+            if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
                 for fileURL in contents {
-                    try? fileManager.removeItem(at: fileURL)
+                    try? fm.removeItem(at: fileURL)
                 }
             }
         }.value
@@ -189,12 +192,12 @@ class PersistentImageCache: ObservableObject {
     }
     
     private func scheduleMetadataSave() {
+        // Capture data safely for background write
+        let currentMeta = self.metadata
+        let fileURL = self.metadataFile
+        
         // Debounce/Batch save
         Task {
-            // Encode on background
-            let currentMeta = self.metadata
-            let fileURL = self.metadataFile
-            
             await Task.detached {
                 if let data = try? JSONEncoder().encode(currentMeta) {
                     try? data.write(to: fileURL)
@@ -243,21 +246,24 @@ class PersistentImageCache: ObservableObject {
         let knownFiles = Set(metadata.values.map { $0.filename })
         let url = cacheDirectory
         
-        await Task.detached { [fileManager] in
-            guard let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else { return }
+        // Fix: Use local FileManager instance in detached task, DO NOT capture [fileManager]
+        await Task.detached {
+            let fm = FileManager.default
+            guard let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else { return }
             
             for fileURL in contents {
                 let filename = fileURL.lastPathComponent
                 if filename == "metadata.json" { continue }
                 
                 if !knownFiles.contains(filename) {
-                    try? fileManager.removeItem(at: fileURL)
+                    try? fm.removeItem(at: fileURL)
                 }
             }
         }.value
     }
     
-    struct CacheStats {
+    // MARK: - CacheStats
+    struct CacheStats: Sendable {
         let memoryCount: Int
         let diskCount: Int
         let diskSize: Int64
@@ -265,6 +271,11 @@ class PersistentImageCache: ObservableObject {
         
         var diskSizeFormatted: String {
             ByteCountFormatter.string(fromByteCount: diskSize, countStyle: .file)
+        }
+        
+        var usagePercentage: Double {
+            guard maxSize > 0 else { return 0 }
+            return Double(diskSize) / Double(maxSize) * 100.0
         }
     }
 }

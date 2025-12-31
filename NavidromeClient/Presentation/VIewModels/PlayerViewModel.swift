@@ -23,7 +23,6 @@ class PlayerViewModel: NSObject, ObservableObject {
     @Published var playlistManager = PlaylistManager()
     
     // MARK: - Combine Storage
-    // Swift 6: Replaces NSObjectProtocol observers to avoid deinit isolation issues
     private var cancellables = Set<AnyCancellable>()
     private var playlistObserver: AnyCancellable?
 
@@ -69,8 +68,6 @@ class PlayerViewModel: NSObject, ObservableObject {
     private func setupPlaylistObserver() {
         playlistObserver = playlistManager.objectWillChange.sink { [weak self] _ in
             guard let self = self else { return }
-            
-            // Forward playlist changes to PlayerViewModel observers
             Task { @MainActor in
                 self.objectWillChange.send()
             }
@@ -84,8 +81,6 @@ class PlayerViewModel: NSObject, ObservableObject {
         AppLogger.general.info("PlayerViewModel configured with UnifiedSubsonicService")
     }
     
-    // Swift 6: removed deinit accessing MainActor properties.
-    // Cancellables will clean themselves up automatically.
     func shutdown() {
         cancellables.removeAll()
         playbackEngine.stop()
@@ -245,7 +240,7 @@ class PlayerViewModel: NSObject, ObservableObject {
         return nil
     }
     
-    // MARK: - Notifications Setup (Combine)
+    // MARK: - Notifications Setup
     
     private func setupCombineObservers() {
         let center = NotificationCenter.default
@@ -383,21 +378,138 @@ extension PlayerViewModel: PlaybackEngineDelegate {
         }
         
         let itemsNeeded = 3 - currentQueueSize
-        AppLogger.general.info("PlayerViewModel: Need \(itemsNeeded) more items for queue")
         
         let nextSongs = playlistManager.getUpcoming(count: itemsNeeded)
         
         guard !nextSongs.isEmpty else {
-            AppLogger.general.info("PlayerViewModel: No more songs available in playlist")
             return
         }
         
-        AppLogger.general.info("PlayerViewModel: Loading \(nextSongs.count) upcoming songs")
         let urls = await resolveUpcomingURLs(for: nextSongs)
         
         guard !urls.isEmpty else {
-            AppLogger.general.info("PlayerViewModel: Failed to resolve URLs for upcoming songs")
             return
         }
         
-        await playbackEngine.addItemsToQueue(urls
+        await playbackEngine.addItemsToQueue(urls)
+    }
+    
+}
+
+// MARK: - Queue Management Extension
+extension PlayerViewModel {
+    
+    func jumpToSong(at index: Int) async {
+        guard currentPlaylist.indices.contains(index) else { return }
+        playlistManager.jumpToSong(at: index)
+        await playCurrent()
+    }
+    
+    func removeQueueSongs(at indices: [Int]) async {
+        guard !indices.isEmpty else { return }
+        
+        let wasCurrentSongRemoved = indices.contains(playlistManager.currentIndex)
+        playlistManager.removeSongs(at: indices)
+        
+        if wasCurrentSongRemoved {
+            if playlistManager.currentPlaylist.isEmpty {
+                stop()
+            } else {
+                await playCurrent()
+            }
+        }
+    }
+    
+    func moveQueueSongs(from sourceIndices: [Int], to destinationIndex: Int) async {
+        guard !sourceIndices.isEmpty else { return }
+        
+        let wasCurrentSongMoved = sourceIndices.contains(playlistManager.currentIndex)
+        playlistManager.moveSongs(from: sourceIndices, to: destinationIndex)
+        
+        if wasCurrentSongMoved {
+            await playCurrent()
+        }
+    }
+    
+    func shuffleUpNext() {
+        playlistManager.shuffleUpNext()
+    }
+    
+    func clearQueue() {
+        playlistManager.clearUpNext()
+    }
+    
+    func addToQueue(_ songs: [Song]) {
+        playlistManager.addToQueue(songs)
+    }
+    
+    func playNext(_ songs: [Song]) {
+        playlistManager.playNext(songs)
+    }
+    
+    func getQueueStats() -> QueueStats {
+        return QueueStats(
+            totalSongs: playlistManager.currentPlaylist.count,
+            currentIndex: playlistManager.currentIndex,
+            upNextCount: playlistManager.getUpNextSongs().count,
+            totalDuration: playlistManager.getTotalDuration(),
+            remainingDuration: playlistManager.getRemainingDuration(),
+            isShuffling: playlistManager.isShuffling,
+            repeatMode: playlistManager.repeatMode
+        )
+    }
+}
+
+// MARK: - Download Status
+extension PlayerViewModel {
+    func isAlbumDownloaded(_ albumId: String) -> Bool {
+        downloadManager.isAlbumDownloaded(albumId)
+    }
+    func isAlbumDownloading(_ albumId: String) -> Bool {
+        downloadManager.isAlbumDownloading(albumId)
+    }
+    func isSongDownloaded(_ songId: String) -> Bool {
+        downloadManager.isSongDownloaded(songId)
+    }
+    func getDownloadProgress(albumId: String) -> Double {
+        downloadManager.downloadProgress[albumId] ?? 0.0
+    }
+    func deleteAlbum(albumId: String) {
+        downloadManager.deleteAlbum(albumId: albumId)
+    }
+}
+
+// MARK: - Supporting Types
+
+struct QueueStats {
+    let totalSongs: Int
+    let currentIndex: Int
+    let upNextCount: Int
+    let totalDuration: Int
+    let remainingDuration: Int
+    let isShuffling: Bool
+    let repeatMode: PlaylistManager.RepeatMode
+    
+    var currentPosition: String {
+        "\(currentIndex + 1) of \(totalSongs)"
+    }
+    
+    var formattedTotalDuration: String {
+        formatDuration(totalDuration)
+    }
+    
+    var formattedRemainingDuration: String {
+        formatDuration(remainingDuration)
+    }
+    
+    private func formatDuration(_ seconds: Int) -> String {
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        
+        if hours > 0 {
+            return String(format: "%d:%02d:00", hours, minutes)
+        } else {
+            return String(format: "%d:00", minutes)
+        }
+    }
+}

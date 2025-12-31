@@ -3,8 +3,8 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Removed unsafe background queue usage for observer cleanup
-//  - Enforced MainActor isolation for lifecycle methods
+//  - Fixed data races by extracting Sendable data from Notifications
+//  - Removed unsafe background queue usage
 //
 
 import Foundation
@@ -35,19 +35,12 @@ class AudioSessionManager: NSObject, ObservableObject {
     }
         
     deinit {
-        // Swift 6: Deinit isolation is tricky.
-        // We rely on explicit cleanup calls (handleAppWillTerminate) for safety.
-        // However, if deinit triggers, we attempt a safe cleanup.
-        Task { @MainActor [weak self] in
-            self?.performCleanup()
-        }
+        // Deinit is strictly non-isolated. We rely on explicit cleanup calls.
     }
 
     // MARK: - Cleanup
 
     func performCleanup() {
-        // Swift 6 Fix: Accessing `audioObservers` must happen on MainActor.
-        // NotificationCenter itself is thread-safe, so we don't need a background queue here.
         let observers = self.audioObservers
         self.audioObservers.removeAll()
         
@@ -84,7 +77,14 @@ class AudioSessionManager: NSObject, ObservableObject {
             object: audioSession,
             queue: .main
         ) { [weak self] notification in
-            self?.handleInterruptionNotification(notification)
+            // Swift 6: Extract values safely here (Sendable)
+            guard let userInfo = notification.userInfo,
+                  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else {
+                return
+            }
+            // Pass values, not the Notification object
+            self?.handleInterruption(typeValue: typeValue, optionsValue: optionsValue)
         }
         audioObservers.append(interruptionObserver)
         
@@ -94,7 +94,20 @@ class AudioSessionManager: NSObject, ObservableObject {
             object: audioSession,
             queue: .main
         ) { [weak self] notification in
-            self?.handleRouteChangeNotification(notification)
+            guard let userInfo = notification.userInfo,
+                  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt else {
+                return
+            }
+            
+            // Extract previous route details safely if needed
+            var wasHeadphones = false
+            if let previousRoute = userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {
+                wasHeadphones = previousRoute.outputs.contains { output in
+                    output.portType == .headphones || output.portType == .bluetoothA2DP
+                }
+            }
+            
+            self?.handleRouteChange(reasonValue: reasonValue, wasHeadphones: wasHeadphones)
         }
         audioObservers.append(routeObserver)
         
@@ -113,8 +126,8 @@ class AudioSessionManager: NSObject, ObservableObject {
             forName: AVAudioSession.silenceSecondaryAudioHintNotification,
             object: audioSession,
             queue: .main
-        ) { [weak self] notification in
-            self?.handleSilenceSecondaryAudioNotification(notification)
+        ) { [weak self] _ in
+            self?.handleSilenceSecondaryAudioNotification()
         }
         audioObservers.append(silenceObserver)
         
@@ -212,38 +225,45 @@ class AudioSessionManager: NSObject, ObservableObject {
     // MARK: - Now Playing Info (Lock Screen Display)
 
     func updateNowPlayingInfo(
-        title: String,
-        artist: String,
-        album: String? = nil,
-        artwork: UIImage? = nil,
-        duration: TimeInterval,
-        currentTime: TimeInterval,
-        playbackRate: Float = 1.0
-    ) {
-        var nowPlayingInfo: [String: Any] = [
-            MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyArtist: artist,
-            MPMediaItemPropertyPlaybackDuration: duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: playbackRate
-        ]
-        
-        if let album = album {
-            nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = album
-        }
-        
-        if let artwork = artwork {
-            let artworkItem = MPMediaItemArtwork(boundsSize: CGSize(width: 300, height: 300)) { _ in
-                return artwork
+            title: String,
+            artist: String,
+            album: String? = nil,
+            artwork: UIImage? = nil,
+            duration: TimeInterval,
+            currentTime: TimeInterval,
+            playbackRate: Float = 1.0
+        ) {
+            // 1. Prepare base info on MainActor
+            var nowPlayingInfo: [String: Any] = [
+                MPMediaItemPropertyTitle: title,
+                MPMediaItemPropertyArtist: artist,
+                MPMediaItemPropertyPlaybackDuration: duration,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+                MPNowPlayingInfoPropertyPlaybackRate: playbackRate
+            ]
+            
+            if let album = album {
+                nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = album
             }
-            nowPlayingInfo[MPMediaItemPropertyArtwork] = artworkItem
+            
+            // 2. Handle Artwork in a non-isolated way to prevent MainActor-capture
+            if let artwork = artwork {
+                nowPlayingInfo[MPMediaItemPropertyArtwork] = createNonIsolatedArtwork(from: artwork)
+            }
+            
+            // 3. Update the center (thread-safe)
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+            AppLogger.audio.info("📱 Updated Now Playing Info: \(title) - \(artist)")
         }
         
-        // Direct assignment on MainActor (Class is @MainActor)
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-        AppLogger.audio.info("📱 Updated Now Playing Info: \(title) - \(artist)")
-    }
-    
+        /// Helper to create artwork without MainActor isolation capture
+        private nonisolated func createNonIsolatedArtwork(from image: UIImage) -> MPMediaItemArtwork {
+            // By creating this inside a nonisolated function, the provider closure
+            // below is not isolated to the MainActor.
+            return MPMediaItemArtwork(boundsSize: image.size) { _ in
+                return image
+            }
+        }
     func clearNowPlayingInfo() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         AppLogger.audio.info("🔇 Cleared Now Playing Info")
@@ -334,12 +354,9 @@ class AudioSessionManager: NSObject, ObservableObject {
     
     // MARK: - Notification Handlers
     
-    private func handleInterruptionNotification(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
-            return
-        }
+    // Changed signature to accept Sendable types instead of Notification
+    private func handleInterruption(typeValue: UInt, optionsValue: UInt) {
+        guard let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
         
         switch type {
         case .began:
@@ -351,15 +368,13 @@ class AudioSessionManager: NSObject, ObservableObject {
             AppLogger.audio.info("🟢 Audio Interruption ENDED")
             isAudioSessionActive = true
             
-            if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
-                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-                if options.contains(.shouldResume) {
-                    AppLogger.audio.info("▶️ Should resume playback")
-                    NotificationCenter.default.post(name: .audioInterruptionEndedShouldResume, object: nil)
-                } else {
-                    AppLogger.audio.info("⏸️ Should NOT resume playback")
-                    NotificationCenter.default.post(name: .audioInterruptionEnded, object: nil)
-                }
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            if options.contains(.shouldResume) {
+                AppLogger.audio.info("▶️ Should resume playback")
+                NotificationCenter.default.post(name: .audioInterruptionEndedShouldResume, object: nil)
+            } else {
+                AppLogger.audio.info("⏸️ Should NOT resume playback")
+                NotificationCenter.default.post(name: .audioInterruptionEnded, object: nil)
             }
             
         @unknown default:
@@ -367,27 +382,18 @@ class AudioSessionManager: NSObject, ObservableObject {
         }
     }
     
-    private func handleRouteChangeNotification(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
-            return
-        }
+    // Changed signature to accept Sendable types
+    private func handleRouteChange(reasonValue: UInt, wasHeadphones: Bool) {
+        guard let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
         
         checkAudioRoute()
         
         switch reason {
         case .oldDeviceUnavailable:
             AppLogger.audio.info("🔌 Audio device disconnected")
-            if let previousRoute = info[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {
-                let wasHeadphones = previousRoute.outputs.contains { output in
-                    output.portType == .headphones || output.portType == .bluetoothA2DP
-                }
-                
-                if wasHeadphones {
-                    AppLogger.audio.info("⏸️ Headphones removed - pausing playback")
-                    NotificationCenter.default.post(name: .audioDeviceDisconnected, object: nil)
-                }
+            if wasHeadphones {
+                AppLogger.audio.info("⏸️ Headphones removed - pausing playback")
+                NotificationCenter.default.post(name: .audioDeviceDisconnected, object: nil)
             }
         default:
             break
@@ -400,7 +406,7 @@ class AudioSessionManager: NSObject, ObservableObject {
         setupRemoteCommandCenter()
     }
     
-    private func handleSilenceSecondaryAudioNotification(_ notification: Notification) {
+    private func handleSilenceSecondaryAudioNotification() {
         // Logging only
     }
     

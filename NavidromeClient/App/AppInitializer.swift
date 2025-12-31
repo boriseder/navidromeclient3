@@ -2,8 +2,8 @@
 //  AppInitializer.swift
 //  NavidromeClient
 //
-//  Master coordinator for app lifecycle
-//  Owns initialization state and service management
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Fixed data race by extracting Sendable data from Notification before Task capture
 //
 
 import Foundation
@@ -33,7 +33,6 @@ final class AppInitializer: ObservableObject {
 
     // MARK: - Initialization
 
-    // Swift 6: Marked nonisolated to allow initialization from App init
     nonisolated init() {
         setupNotificationObservers()
     }
@@ -45,8 +44,11 @@ final class AppInitializer: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            // Swift 6 Fix: Extract Sendable data (ServerCredentials) synchronously
+            // Do NOT capture the 'notification' object inside the Task
+            guard let credentials = notification.object as? ServerCredentials else { return }
+            
             Task { @MainActor in
-                guard let credentials = notification.object as? ServerCredentials else { return }
                 try? await self?.reinitializeAfterConfiguration()
             }
         }
@@ -181,7 +183,7 @@ final class AppInitializer: ObservableObject {
         // 4. Reset local state but keep .completed (triggers WelcomeView)
         unifiedService = nil
         isConfigured = false
-        state = .completed  // ✅ Bleibt .completed, aber unconfigured
+        state = .completed
         NetworkMonitor.shared.configureService(nil)
         
         AppLogger.general.info("[AppInitializer] === Factory Reset Complete ===")

@@ -3,7 +3,8 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Strictly MainActor
+//  - Replaced unsafe Timer with Task
+//  - Removed deinit to fix isolation errors
 //
 
 import Foundation
@@ -11,19 +12,25 @@ import SwiftUI
 
 @MainActor
 final class Debouncer: ObservableObject {
-    private var timer: Timer?
+    private var task: Task<Void, Never>?
     
     func debounce(interval: TimeInterval = 0.5, action: @escaping @MainActor () -> Void) {
-        timer?.invalidate()
-        // Scheduled on the current RunLoop (Main) because class is @MainActor
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { _ in
-            Task { @MainActor in
-                action()
+        // Cancel the previous task if it's still running
+        task?.cancel()
+        
+        // Start a new task
+        task = Task {
+            do {
+                // Convert seconds to nanoseconds
+                try await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                
+                // Only execute if not cancelled
+                if !Task.isCancelled {
+                    action()
+                }
+            } catch {
+                // Task cancelled, ignore
             }
         }
-    }
-    
-    deinit {
-        timer?.invalidate()
     }
 }

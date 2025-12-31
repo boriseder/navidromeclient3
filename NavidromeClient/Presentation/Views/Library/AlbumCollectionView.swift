@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum AlbumCollectionContext {
+enum AlbumCollectionContext: Sendable {
     case byArtist(Artist)
     case byGenre(Genre)
 }
@@ -160,11 +160,13 @@ struct AlbumCollectionView: View {
     @ViewBuilder
     private var artistHeroHeader: some View {
         VStack {
-            if let artist = (contextTitle as? String).flatMap({ _ in artist }) {
+            // FIX: Correctly extract artist from context enum
+            if case .byArtist(let artist) = context {
                 ArtistImageView(artist: artist, context: .detail)
                     .shadow(color: .black.opacity(0.6), radius: 20, x: 0, y: 10)
                     .shadow(color: .black.opacity(0.3), radius: 40, x: 0, y: 20)
             }
+            
             VStack(spacing: DSLayout.elementGap) {
                 Text(contextTitle).font(DSText.pageTitle).foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.center)
                 Text(albumCountText).font(DSText.detail).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
