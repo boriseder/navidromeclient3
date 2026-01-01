@@ -311,39 +311,41 @@ class DownloadManager: ObservableObject {
     // MARK: - UI State Management
     
     private func setupStateObservation() {
-        NotificationCenter.default.addObserver(
-            forName: .downloadCompleted,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let albumId = notification.object as? String {
-                self?.updateDownloadState(for: albumId)
+            NotificationCenter.default.addObserver(
+                forName: .downloadCompleted,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let albumId = notification.object as? String else { return }
+                Task { @MainActor in
+                    self?.updateDownloadState(for: albumId)
+                }
+            }
+            
+            NotificationCenter.default.addObserver(
+                forName: .downloadFailed,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let albumId = notification.object as? String else { return }
+                Task { @MainActor in
+                    self?.downloadStates[albumId] = .error("Download failed")
+                    self?.objectWillChange.send()
+                }
+            }
+            
+            NotificationCenter.default.addObserver(
+                forName: .factoryResetRequested,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.deleteAllDownloads()
+                    AppLogger.general.info("DownloadManager: Deleted all downloads on factory reset")
+                }
             }
         }
-        
-        NotificationCenter.default.addObserver(
-            forName: .downloadFailed,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let albumId = notification.object as? String {
-                self?.downloadStates[albumId] = .error("Download failed")
-                self?.objectWillChange.send()
-            }
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .factoryResetRequested,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.deleteAllDownloads()
-                AppLogger.general.info("DownloadManager: Deleted all downloads on factory reset")
-            }
-        }
-    }
-
+    
     func getDownloadState(for albumId: String) -> DownloadState {
         return downloadStates[albumId] ?? determineDownloadState(for: albumId)
     }

@@ -4,6 +4,7 @@
 //
 //  UPDATED: Swift 6 Concurrency Compliance
 //  - Safe Task execution for playback and downloads
+//  - Fixed Shuffle Logic (prevent double-shuffling)
 //
 
 import SwiftUI
@@ -179,12 +180,18 @@ struct AlbumHeaderView: View {
 
     private func shuffleAlbum() async {
         guard !songs.isEmpty else { return }
+        
+        // 1. Manually shuffle the songs locally
         let shuffledSongs = songs.shuffled()
+        
+        // 2. Set the playlist to these shuffled songs (Index 0 is the start of our random list)
         await playerVM.setPlaylist(shuffledSongs, startIndex: 0, albumId: album.id)
         
-        // Ensure shuffle mode is active for UI consistency
+        // 3. Ensure the Player knows we are in Shuffle mode, WITHOUT triggering a second reshuffle.
+        // We set the state flag directly on the manager to update the UI (orange icon)
+        // without disturbing the playlist order we just set.
         if !playerVM.isShuffling {
-            playerVM.toggleShuffle()
+            playerVM.playlistManager.isShuffling = true
         }
     }
 

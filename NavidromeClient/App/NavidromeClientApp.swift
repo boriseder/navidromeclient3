@@ -183,7 +183,11 @@ struct NavidromeClientApp: App {
             object: nil,
             queue: .main
         ) { [weak audioSessionManager] _ in
-            audioSessionManager?.handleAppWillTerminate()
+            // FIX: We requested queue: .main, so we can assume MainActor isolation
+            // to call synchronous cleanup methods.
+            MainActor.assumeIsolated {
+                audioSessionManager?.handleAppWillTerminate()
+            }
         }
     }
     
@@ -201,7 +205,7 @@ struct NavidromeClientApp: App {
         await audioSessionManager.handleAppBecameActive()
         await networkMonitor.recheckConnection()
         
-        if await !musicLibraryManager.isDataFresh {
+        if !musicLibraryManager.isDataFresh {
              await musicLibraryManager.handleNetworkChange(isOnline: networkMonitor.canLoadOnlineContent)
         }
     }

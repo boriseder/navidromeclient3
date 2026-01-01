@@ -35,7 +35,7 @@ class AlbumCoverArt {
             // For purely async scaling, use preloadSize.
             let scaled = scaleImageHighQuality(sourceImage, to: requestedSize)
             
-            Task { await cacheVariant(scaled, size: requestedSize) }
+            cacheVariant(scaled, size: requestedSize)
             return scaled
         }
         
@@ -53,7 +53,7 @@ class AlbumCoverArt {
             return self.scaleImageHighQuality(source, to: requestedSize)
         }.value
         
-        await cacheVariant(scaled, size: requestedSize)
+        cacheVariant(scaled, size: requestedSize)
     }
     
     private func cacheVariant(_ image: UIImage, size: Int) {

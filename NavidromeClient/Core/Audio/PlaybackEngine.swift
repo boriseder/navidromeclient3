@@ -66,9 +66,7 @@ class PlaybackEngine {
     }
     
     deinit {
-        // Swift 6: Cannot access MainActor isolated properties (timeObserver, etc.) here.
-        // Cleanup must be performed explicitly via stop() or shutdown() by the owner (PlayerViewModel).
-        // The AVQueuePlayer itself will be deallocated naturally.
+        // Cleanup must be performed explicitly via stop() or shutdown() by the owner.
     }
     
     // MARK: - Queue Management
@@ -234,16 +232,18 @@ class PlaybackEngine {
             forInterval: CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC)),
             queue: .main
         ) { [weak self] time in
-            guard let self = self else { return }
-            self.delegate?.playbackEngine(self, didUpdateTime: time.seconds)
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.delegate?.playbackEngine(self, didUpdateTime: time.seconds)
+            }
         }
     }
     
     private func setupCurrentItemObserver() {
         currentItemObserver = queuePlayer.observe(\.currentItem, options: [.new]) { [weak self] player, change in
-            guard let self = self else { return }
-            
             Task { @MainActor in
+                guard let self = self else { return }
+                
                 if let newItem = change.newValue as? AVPlayerItem {
                     let itemId = ObjectIdentifier(newItem)
                     if let songId = self.itemToSongId[itemId] {
@@ -279,19 +279,24 @@ class PlaybackEngine {
             object: item,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self,
-                  let finishedItem = notification.object as? AVPlayerItem else { return }
+            // FIX: Extract the object synchronously before entering the Task
+            // The notification.object IS the item (AVPlayerItem), which is what we need.
+            guard let finishedItem = notification.object as? AVPlayerItem else { return }
             
-            let itemId = ObjectIdentifier(finishedItem)
-            if let songId = self.itemToSongId[itemId] {
-                AppLogger.general.info("PlaybackEngine: Item finished playing: \(songId)")
-            }
-            
-            self.unregisterItem(finishedItem)
-            
-            if self.queuePlayer.items().isEmpty {
-                AppLogger.general.info("PlaybackEngine: Queue finished")
-                self.delegate?.playbackEngine(self, didFinishPlaying: true)
+            Task { @MainActor in
+                guard let self = self else { return }
+                
+                let itemId = ObjectIdentifier(finishedItem)
+                if let songId = self.itemToSongId[itemId] {
+                    AppLogger.general.info("PlaybackEngine: Item finished playing: \(songId)")
+                }
+                
+                self.unregisterItem(finishedItem)
+                
+                if self.queuePlayer.items().isEmpty {
+                    AppLogger.general.info("PlaybackEngine: Queue finished")
+                    self.delegate?.playbackEngine(self, didFinishPlaying: true)
+                }
             }
         }
         

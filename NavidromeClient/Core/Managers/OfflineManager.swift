@@ -141,10 +141,12 @@ class OfflineManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.performCompleteReset()
+            Task { @MainActor in
+                self?.performCompleteReset()
+            }
         }
     }
-    
+
     // MARK: - Private Implementation
     
     private func extractUniqueArtists(from albums: [Album]) -> [Artist] {

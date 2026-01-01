@@ -3,7 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed data race by extracting Sendable data from Notification before Task capture
+//  - Fixed unused value warning
 //
 
 import Foundation
@@ -44,9 +44,8 @@ final class AppInitializer: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            // Swift 6 Fix: Extract Sendable data (ServerCredentials) synchronously
-            // Do NOT capture the 'notification' object inside the Task
-            guard let credentials = notification.object as? ServerCredentials else { return }
+            // Check type existence without capturing the unused variable
+            guard notification.object is ServerCredentials else { return }
             
             Task { @MainActor in
                 try? await self?.reinitializeAfterConfiguration()

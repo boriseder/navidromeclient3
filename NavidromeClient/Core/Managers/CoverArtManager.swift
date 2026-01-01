@@ -3,7 +3,9 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed actor isolation error in semaphore signaling
+//  - Strictly MainActor
+//  - Safe image loading with proper actor isolation
+//  - Fixed "unused result" warnings by assigning to '_'
 //
 
 import Foundation
@@ -269,7 +271,8 @@ class CoverArtManager: ObservableObject {
         let task = Task { [weak self] () throws -> UIImage? in
             guard let self = self else { throw CancellationError() }
             
-            await MainActor.run { self.loadingStates[requestKey] = true }
+            // FIX: Explicitly discard unused result
+            _ = await MainActor.run { self.loadingStates[requestKey] = true }
             
             let image = await self.loadImageFromNetwork(
                 id: id,
@@ -279,7 +282,8 @@ class CoverArtManager: ObservableObject {
                 staggerIndex: staggerIndex
             )
 
-            await MainActor.run { self.loadingStates.removeValue(forKey: requestKey) }
+            // FIX: Explicitly discard unused result
+            _ = await MainActor.run { self.loadingStates.removeValue(forKey: requestKey) }
             
             return image
         }
@@ -325,7 +329,8 @@ class CoverArtManager: ObservableObject {
         staggerIndex: Int
     ) async -> UIImage? {
         guard let service = service else {
-            await MainActor.run {
+            // FIX: Explicitly discard unused result
+            _ = await MainActor.run {
                 errorStates[requestKey] = "Service unavailable"
             }
             AppLogger.cache.error("[CoverArtManager] Network failed: No service")
@@ -339,7 +344,8 @@ class CoverArtManager: ObservableObject {
         if let image = await service.getCoverArt(for: id, size: size) {
             storeImage(image, forId: id, type: type, size: size)
             
-            await MainActor.run {
+            // FIX: Explicitly discard unused result
+            _ = await MainActor.run {
                 _ = errorStates.removeValue(forKey: requestKey)
             }
             
@@ -347,7 +353,8 @@ class CoverArtManager: ObservableObject {
             persistentCache.store(image, for: diskCacheKey, size: size)
             return image
         } else {
-            await MainActor.run {
+            // FIX: Explicitly discard unused result
+            _ = await MainActor.run {
                 errorStates[requestKey] = "Failed to load"
             }
             return nil
@@ -482,7 +489,6 @@ class CoverArtManager: ObservableObject {
                             group.addTask {
                                 await self.preloadSemaphore.wait()
                                 
-                                // SWIFT 6 FIX: Signal must be awaited because AsyncSemaphore is an actor
                                 defer {
                                     Task {
                                         await self.preloadSemaphore.signal()
