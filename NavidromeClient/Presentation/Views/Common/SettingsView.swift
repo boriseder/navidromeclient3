@@ -2,33 +2,83 @@
 //  SettingsView.swift
 //  NavidromeClient
 //
-//  Updated: Swift 6 Concurrency
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Fully Migrated to @Observable
+//  - Fixed Bindable type passing
 //
 
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject var connectionVM: ConnectionViewModel
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var appInitializer: AppInitializer
-    @EnvironmentObject var theme: ThemeManager
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var songManager: SongManager
-    @EnvironmentObject var downloadManager: DownloadManager
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var networkMonitor: NetworkMonitor
+    // MARK: - Environments
+    @Environment(AppConfig.self) var appConfig
+    @Environment(AppInitializer.self) var appInitializer
+    @Environment(ThemeManager.self) var theme
+    
+    @Environment(ConnectionViewModel.self) var connectionVM
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(SongManager.self) var songManager
+    @Environment(DownloadManager.self) var downloadManager
+    @Environment(OfflineManager.self) var offlineManager
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(NetworkMonitor.self) var networkMonitor
+    
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Local State
     @State private var showingFactoryResetConfirmation = false
     @State private var isPerformingReset = false
 
     var body: some View {
+        // Create Bindable scope for theme to allow Picker bindings
+        @Bindable var bindableTheme = theme
+        
         NavigationStack {
             List {
-                GeneralSettingsSection
+                // Inline the section to avoid Bindable passing issues
+                Section(header: Text("Debug")) {
+                    NavigationLink(destination: CoverArtDebugView()) {
+                        Label("Cover Art Debug", systemImage: "photo.artframe")
+                    }
+                }
+                
+                Section(header: Text("Appearance")) {
+                    Picker("Select Theme", selection: $bindableTheme.backgroundStyle) {
+                        ForEach(UserBackgroundStyle.allCases, id: \.self) { option in
+                            Text(option.rawValue.capitalized).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    HStack {
+                        Text("Accent Color")
+                        Spacer()
+                        Menu {
+                            ForEach(UserAccentColor.allCases) { colorOption in
+                                Button {
+                                    theme.accentColor = colorOption
+                                } label: {
+                                    Label(colorOption.rawValue.capitalized, systemImage: "circle.fill")
+                                    if theme.accentColor == colorOption {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                                .tint(colorOption.color)
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "circle.fill")
+                                    .foregroundStyle(theme.accent)
+                                Text(theme.accentColor.rawValue.capitalized)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                
                 NavidromeSection
                 NetworkDebugSection
+                
                 if appInitializer.isConfigured {
                     CacheSection
                     ServerDetailsSection
@@ -59,7 +109,7 @@ struct SettingsView: View {
 
     private var NavidromeSection: some View {
         Section {
-            if let creds = AppConfig.shared.getCredentials() {
+            if let creds = appConfig.getCredentials() {
                 SettingsRow(title: "Server:", value: creds.baseURL.absoluteString)
                 SettingsRow(title: "User:", value: creds.username)
             }
@@ -81,49 +131,6 @@ struct SettingsView: View {
             SettingsRow(title: "Download Cache", value: downloadManager.totalDownloadSize())
         } header: {
             Text("Cache & Downloads")
-        }
-    }
-
-    private var GeneralSettingsSection: some View {
-        Group {
-            Section(header: Text("Debug")) {
-                NavigationLink(destination: CoverArtDebugView()) {
-                    Label("Cover Art Debug", systemImage: "photo.artframe")
-                }
-            }
-            Section(header: Text("Appearance")) {
-                Picker("Select Theme", selection: $theme.backgroundStyle) {
-                    ForEach(UserBackgroundStyle.allCases, id: \.self) { option in
-                        Text(option.rawValue.capitalized).tag(option)
-                    }
-                }
-                .pickerStyle(.menu)
-                
-                HStack {
-                    Text("Accent Color")
-                    Spacer()
-                    Menu {
-                        ForEach(UserAccentColor.allCases) { colorOption in
-                            Button {
-                                theme.accentColor = colorOption
-                            } label: {
-                                Label(colorOption.rawValue.capitalized, systemImage: "circle.fill")
-                                if theme.accentColor == colorOption {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                            .tint(colorOption.color)
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "circle.fill")
-                                .foregroundStyle(theme.accent)
-                            Text(theme.accentColor.rawValue.capitalized)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
         }
     }
     
@@ -172,10 +179,7 @@ struct SettingsView: View {
         isPerformingReset = true
         defer { isPerformingReset = false }
         
-        // This is nonisolated/async, but safe to call from MainActor
         await appInitializer.performFactoryReset()
-        
-        // Views and ObservableObjects are MainActor, so simple calls are fine
         songManager.reset()
         dismiss()
     }
@@ -214,9 +218,10 @@ struct FactoryResetOverlayView: View {
 }
 
 // MARK: - CacheSettingsView
+
 struct CacheSettingsView: View {
-    @EnvironmentObject var downloadManager: DownloadManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(DownloadManager.self) var downloadManager
+    @Environment(CoverArtManager.self) var coverArtManager
 
     @State private var cacheStats = PersistentImageCache.shared.getCacheStats()
     @State private var showingClearConfirmation = false

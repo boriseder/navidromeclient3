@@ -2,18 +2,22 @@
 //  AppConfig.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - MainActor isolation for configuration state
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Observable
 //
 
 import Foundation
+import Observation
 
 @MainActor
-final class AppConfig: ObservableObject {
+@Observable
+final class AppConfig {
     static let shared = AppConfig()
     
-    private let credentialStore = CredentialStore()
-    private var credentials: ServerCredentials?
+    @ObservationIgnored private let credentialStore = CredentialStore()
+    
+    // Changed to private(set) so the observation system can track access
+    private(set) var credentials: ServerCredentials?
 
     // MARK: - Initialization
     

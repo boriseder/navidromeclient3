@@ -2,363 +2,90 @@
 //  ExploreView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency
-//  - Checked @MainActor usage in Task modifiers
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
 
 struct ExploreView: View {
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var theme: ThemeManager
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var downloadManager: DownloadManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var exploreManager: ExploreManager
+    @Environment(ExploreManager.self) var exploreManager
+    @Environment(NetworkMonitor.self) var networkMonitor
+    @Environment(ThemeManager.self) var theme
     
-    @State private var hasAttemptedInitialLoad = false
-    @State private var hasPreloaded = false
-    
-    private var hasOnlineContent: Bool {
-        exploreManager.hasExploreViewData
-    }
-
-    private var hasOfflineContent: Bool {
-        !offlineManager.offlineAlbums.isEmpty
-    }
-    
-    private var shouldShowSkeleton: Bool {
-        !exploreManager.hasCompletedInitialLoad && !hasOnlineContent
-    }
-
     var body: some View {
         NavigationStack {
             ZStack {
-                if theme.backgroundStyle == .dynamic {
-                    DynamicMusicBackground()
-                }
-                contentView
-            }
-            .task {
-                guard !hasAttemptedInitialLoad else { return }
-                hasAttemptedInitialLoad = true
+                theme.backgroundColor.ignoresSafeArea()
                 
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                await setupHomeScreenData()
+                ScrollView {
+                    VStack(spacing: DSLayout.sectionGap) {
+                        if exploreManager.isLoading {
+                            ProgressView()
+                                .padding()
+                        } else if let error = exploreManager.error {
+                            ContentUnavailableView("Error loading content", systemImage: "exclamationmark.triangle", description: Text(error))
+                        } else {
+                            if !exploreManager.recentAlbums.isEmpty {
+                                HorizontalAlbumSection(title: "Recently Played", albums: exploreManager.recentAlbums)
+                            }
+                            
+                            if !exploreManager.newestAlbums.isEmpty {
+                                HorizontalAlbumSection(title: "Newly Added", albums: exploreManager.newestAlbums)
+                            }
+                            
+                            if !exploreManager.frequentAlbums.isEmpty {
+                                HorizontalAlbumSection(title: "Most Played", albums: exploreManager.frequentAlbums)
+                            }
+                            
+                            if !exploreManager.randomAlbums.isEmpty {
+                                HorizontalAlbumSection(title: "Random Picks", albums: exploreManager.randomAlbums)
+                            }
+                        }
+                    }
+                    .padding(.vertical, DSLayout.contentPadding)
+                    .padding(.bottom, DSLayout.miniPlayerHeight)
+                }
+                .refreshable {
+                    await exploreManager.loadExploreData()
+                }
             }
-            .task(id: hasOnlineContent) {
-                guard hasOnlineContent, !hasPreloaded else { return }
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                await preloadVisibleContent()
-                hasPreloaded = true
-            }
-            .navigationTitle("Explore & listen")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationTitle("Explore")
             .navigationDestination(for: Album.self) { album in
                 AlbumDetailViewContent(album: album)
             }
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.clear, for: .navigationBar)
-            .toolbarColorScheme(theme.colorScheme, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        if networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent {
-                            Button {
-                                Task { await refreshRandomAlbums() }
-                            } label: {
-                                Label("Refresh random albums", systemImage: "arrow.clockwise")
-                            }
-                            Divider()
-                        }
-                        NavigationLink(destination: SettingsView()) {
-                            Label("Settings", systemImage: "person.crop.circle.fill")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                }
-            }
-            .refreshable {
+        }
+        .task {
+            if exploreManager.recentAlbums.isEmpty {
                 await exploreManager.loadExploreData()
-                hasPreloaded = false
             }
         }
-    }
-    
-    @ViewBuilder
-    private var contentView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: DSLayout.contentGap) {
-                if shouldShowSkeleton {
-                    skeletonContent.transition(.opacity)
-                } else {
-                    switch networkMonitor.contentLoadingStrategy {
-                    case .online:
-                        onlineContent.transition(.opacity)
-                    case .offlineOnly:
-                        offlineContent.transition(.opacity)
-                    case .setupRequired:
-                        EmptyView()
-                    }
-                }
-            }
-            .padding(.bottom, DSLayout.miniPlayerHeight)
-        }
-        .scrollIndicators(.hidden)
-        .padding(.horizontal, DSLayout.screenPadding)
-        .animation(.easeInOut(duration: 0.3), value: shouldShowSkeleton)
-    }
-    
-    // MARK: - Skeleton View
-    
-    private var skeletonContent: some View {
-        LazyVStack(alignment: .leading, spacing: DSLayout.contentGap) {
-            VStack(alignment: .leading, spacing: 12) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 200, height: 32)
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.gray.opacity(0.15))
-                    .frame(width: 150, height: 20)
-            }
-            .padding(.top, DSLayout.sectionGap)
-            
-            ForEach(0..<4, id: \.self) { _ in
-                VStack(alignment: .leading, spacing: DSLayout.elementGap) {
-                    HStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 150, height: 24)
-                        Spacer()
-                    }
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: DSLayout.contentGap) {
-                            ForEach(0..<5, id: \.self) { _ in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color.gray.opacity(0.2))
-                                        .frame(width: 160, height: 160)
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.gray.opacity(0.15))
-                                        .frame(width: 120, height: 16)
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.gray.opacity(0.1))
-                                        .frame(width: 80, height: 12)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(.top, DSLayout.sectionGap)
-            }
-        }
-        .redacted(reason: .placeholder)
-        .shimmering()
-    }
-
-    private var onlineContent: some View {
-        LazyVStack(spacing: DSLayout.elementGap) {
-            WelcomeHeader(
-                username: appConfig.getCredentials()?.username ?? "User",
-                nowPlaying: playerVM.currentSong
-            )
-            
-            if !exploreManager.recentAlbums.isEmpty {
-                ExploreSection(
-                    title: "Recently played",
-                    albums: exploreManager.recentAlbums,
-                    icon: "clock.fill",
-                    accentColor: .orange
-                )
-            }
-            
-            if !exploreManager.newestAlbums.isEmpty {
-                ExploreSection(
-                    title: "Newly added",
-                    albums: exploreManager.newestAlbums,
-                    icon: "sparkles",
-                    accentColor: .green
-                )
-            }
-            
-            if !exploreManager.frequentAlbums.isEmpty {
-                ExploreSection(
-                    title: "Often played",
-                    albums: exploreManager.frequentAlbums,
-                    icon: "chart.bar.fill",
-                    accentColor: .purple
-                )
-            }
-            
-            if !exploreManager.randomAlbums.isEmpty {
-                ExploreSection(
-                    title: "Explore",
-                    albums: exploreManager.randomAlbums,
-                    icon: "dice.fill",
-                    accentColor: .blue,
-                    showRefreshButton: true,
-                    refreshAction: { await refreshRandomAlbums() }
-                )
-            }
-        }
-    }
-    
-    private var offlineContent: some View {
-        LazyVStack(alignment: .leading, spacing: DSLayout.screenGap) {
-            OfflineWelcomeHeader(
-                downloadedAlbums: downloadManager.downloadedAlbums.count,
-                isConnected: networkMonitor.canLoadOnlineContent
-            )
-            
-            if !offlineManager.offlineAlbums.isEmpty {
-                ExploreSection(
-                    title: "Downloaded Albums",
-                    albums: Array(offlineManager.offlineAlbums.prefix(10)),
-                    icon: "arrow.down.circle.fill",
-                    accentColor: .green
-                )
-            }
-        }
-    }
-    
-    // MARK: - Business Logic
-    
-    private func setupHomeScreenData() async {
-        await exploreManager.loadExploreData()
-    }
-    
-    private func refreshRandomAlbums() async {
-        await exploreManager.refreshRandomAlbums()
-        await preloadVisibleContent()
-    }
-    
-    private func preloadVisibleContent() async {
-        let allAlbums = exploreManager.recentAlbums +
-                       exploreManager.newestAlbums +
-                       exploreManager.frequentAlbums +
-                       exploreManager.randomAlbums
-        
-        guard !allAlbums.isEmpty else { return }
-        
-        await coverArtManager.preloadAlbumsControlled(
-            Array(allAlbums.prefix(30)),
-            context: .card
-        )
     }
 }
 
-// MARK: - ExploreSection
-
-struct ExploreSection: View {
-    @EnvironmentObject var theme: ThemeManager
-
+struct HorizontalAlbumSection: View {
     let title: String
     let albums: [Album]
-    let icon: String
-    let accentColor: Color
-    var showRefreshButton: Bool = false
-    
-    // Swift 6: Closure is async and operates on MainActor
-    var refreshAction: (@MainActor () async -> Void)? = nil
-    
-    @State private var isRefreshing = false
     
     var body: some View {
-        VStack(alignment: .leading) {
-            HStack {
-                Label(title, systemImage: icon)
-                    .font(DSText.prominent)
-                    .foregroundColor(theme.textColor)
-
-                Spacer()
-                
-                if showRefreshButton, let refreshAction = refreshAction {
-                    Button {
-                        Task {
-                            isRefreshing = true
-                            await refreshAction()
-                            isRefreshing = false
-                        }
-                    } label: {
-                        if isRefreshing {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .frame(width: 16, height: 16)
-                                .padding(.trailing, DSLayout.elementPadding)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(DSText.emphasized)
-                                .foregroundColor(theme.textColor)
-                                .padding(.trailing, DSLayout.elementPadding)
-                        }
-                    }
-                    .disabled(isRefreshing)
-                    .foregroundColor(accentColor)
-                } else {
-                    Image(systemName: "arrow.right")
-                        .font(DSText.emphasized)
-                        .foregroundColor(theme.textColor)
-                        .padding(.trailing, DSLayout.elementPadding)
-                }
-            }
+        VStack(alignment: .leading, spacing: DSLayout.elementGap) {
+            Text(title)
+                .font(DSText.sectionTitle)
+                .foregroundStyle(DSColor.onLight)
+                .padding(.horizontal, DSLayout.screenPadding)
             
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: DSLayout.contentGap) {
-                    ForEach(albums.indices, id: \.self) { index in
-                        let album = albums[index]
+                LazyHStack(spacing: DSLayout.elementGap) {
+                    ForEach(albums) { album in
                         NavigationLink(value: album) {
-                            CardItemContainer(content: .album(album), index: index)
+                            CardItemContainer(content: .album(album), index: 0)
+                                .frame(width: 140)
                         }
+                        .buttonStyle(PlainButtonStyle())
                     }
                 }
+                .padding(.horizontal, DSLayout.screenPadding)
             }
-            .scrollIndicators(.hidden)
         }
-        .padding(.top, DSLayout.sectionGap)
-    }
-}
-
-// MARK: - Shimmer Effect
-
-extension View {
-    @ViewBuilder
-    func shimmering(active: Bool = true) -> some View {
-        if active {
-            self.modifier(ShimmerModifier())
-        } else {
-            self
-        }
-    }
-}
-
-struct ShimmerModifier: ViewModifier {
-    @State private var phase: CGFloat = 0
-    
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        .clear,
-                        Color.white.opacity(0.3),
-                        .clear
-                    ]),
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .offset(x: phase)
-                .mask(content)
-            )
-            .onAppear {
-                withAnimation(
-                    Animation.linear(duration: 1.5)
-                        .repeatForever(autoreverses: false)
-                ) {
-                    phase = 400
-                }
-            }
     }
 }

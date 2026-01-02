@@ -2,9 +2,7 @@
 //  AlbumDetailHeaderView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Safe Task execution for playback and downloads
-//  - Fixed Shuffle Logic (prevent double-shuffling)
+//  UPDATED: Swift 6 Concurrency & @Observable
 //
 
 import SwiftUI
@@ -14,9 +12,11 @@ struct AlbumHeaderView: View {
     let songs: [Song]
     let isOfflineAlbum: Bool
 
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var downloadManager: DownloadManager
+    @Environment(AppConfig.self) var appConfig
+    
+    // Fixed: Use @Environment for Observable classes
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(DownloadManager.self) var downloadManager
 
     @State private var isDownloaded = false
     @State private var isDownloading = false
@@ -28,17 +28,7 @@ struct AlbumHeaderView: View {
         .onAppear {
             updateDownloadState()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .downloadCompleted)) { notification in
-            if let albumId = notification.object as? String, albumId == album.id {
-                updateDownloadState()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .downloadDeleted)) { notification in
-            if let albumId = notification.object as? String, albumId == album.id {
-                updateDownloadState()
-            }
-        }
-        .onReceive(downloadManager.objectWillChange) { _ in
+        .onChange(of: downloadManager.downloadStates[album.id]) { _, _ in
             updateDownloadState()
         }
     }
@@ -87,7 +77,6 @@ struct AlbumHeaderView: View {
     @ViewBuilder
     private var actionButtonsFloating: some View {
         HStack(spacing: 12) {
-            // Play Button
             Button {
                 Task {
                     if isAlbumCurrentlyLoaded {
@@ -114,10 +103,8 @@ struct AlbumHeaderView: View {
                 .overlay(Capsule().stroke(.green, lineWidth: 1.5))
             }
 
-            // Shuffle Button
             Button {
                 Task {
-                    // Logic: If loading new album, shuffle it. If existing, toggle shuffle mode.
                     if isAlbumCurrentlyLoaded {
                         playerVM.toggleShuffle()
                     } else {
@@ -142,7 +129,6 @@ struct AlbumHeaderView: View {
                 )
             }
 
-            // Download Button
             Button {
                 Task { await downloadAlbum() }
             } label: {
@@ -180,16 +166,8 @@ struct AlbumHeaderView: View {
 
     private func shuffleAlbum() async {
         guard !songs.isEmpty else { return }
-        
-        // 1. Manually shuffle the songs locally
         let shuffledSongs = songs.shuffled()
-        
-        // 2. Set the playlist to these shuffled songs (Index 0 is the start of our random list)
         await playerVM.setPlaylist(shuffledSongs, startIndex: 0, albumId: album.id)
-        
-        // 3. Ensure the Player knows we are in Shuffle mode, WITHOUT triggering a second reshuffle.
-        // We set the state flag directly on the manager to update the UI (orange icon)
-        // without disturbing the playlist order we just set.
         if !playerVM.isShuffling {
             playerVM.playlistManager.isShuffling = true
         }
@@ -197,7 +175,6 @@ struct AlbumHeaderView: View {
 
     private func downloadAlbum() async {
         guard !isDownloading else { return }
-
         if isDownloaded {
             downloadManager.deleteAlbum(albumId: album.id)
         } else {

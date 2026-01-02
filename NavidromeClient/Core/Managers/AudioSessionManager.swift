@@ -2,26 +2,31 @@
 //  AudioSessionManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed data races by extracting Sendable data
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Observable
 //
 
 import Foundation
 import AVFoundation
 import MediaPlayer
+import Observation
 
 @MainActor
-class AudioSessionManager: NSObject, ObservableObject {
+@Observable
+class AudioSessionManager: NSObject {
     static let shared = AudioSessionManager()
     
-    @Published var isAudioSessionActive = false
-    @Published var isHeadphonesConnected = false
-    @Published var audioRoute: String = ""
+    // Observable Properties
+    var isAudioSessionActive = false
+    var isHeadphonesConnected = false
+    var audioRoute: String = ""
     
-    private var audioObservers: [NSObjectProtocol] = []
-    private let audioSession = AVAudioSession.sharedInstance()
-    
+    // Dependencies
     weak var playerViewModel: PlayerViewModel?
+    
+    // Internal
+    @ObservationIgnored private var audioObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private let audioSession = AVAudioSession.sharedInstance()
     
     private override init() {
         super.init()
@@ -72,14 +77,12 @@ class AudioSessionManager: NSObject, ObservableObject {
             object: audioSession,
             queue: .main
         ) { [weak self] notification in
-            // FIX: Extract Sendable data synchronously
             guard let userInfo = notification.userInfo,
                   let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else {
                 return
             }
             
-            // FIX: Dispatch to MainActor
             Task { @MainActor in
                 self?.handleInterruption(typeValue: typeValue, optionsValue: optionsValue)
             }
@@ -92,7 +95,6 @@ class AudioSessionManager: NSObject, ObservableObject {
             object: audioSession,
             queue: .main
         ) { [weak self] notification in
-            // FIX: Extract Sendable data
             guard let userInfo = notification.userInfo,
                   let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt else {
                 return
@@ -105,7 +107,6 @@ class AudioSessionManager: NSObject, ObservableObject {
                 }
             }
             
-            // FIX: Dispatch to MainActor
             Task { @MainActor in
                 self?.handleRouteChange(reasonValue: reasonValue, wasHeadphones: wasHeadphones)
             }
@@ -251,7 +252,6 @@ class AudioSessionManager: NSObject, ObservableObject {
         AppLogger.audio.info("📱 Updated Now Playing Info: \(title) - \(artist)")
     }
     
-    /// Helper to create artwork without MainActor isolation capture
     private nonisolated func createNonIsolatedArtwork(from image: UIImage) -> MPMediaItemArtwork {
         return MPMediaItemArtwork(boundsSize: image.size) { _ in
             return image
@@ -263,7 +263,7 @@ class AudioSessionManager: NSObject, ObservableObject {
         AppLogger.audio.info("🔇 Cleared Now Playing Info")
     }
     
-    // MARK: - App Lifecycle
+    // MARK: - Lifecycle Handlers
     
     func handleAppBecameActive() async {
         AppLogger.audio.info("🟢 App became active - reactivating audio session")
@@ -299,7 +299,7 @@ class AudioSessionManager: NSObject, ObservableObject {
             title: song.title,
             artist: song.artist ?? "Unknown Artist",
             album: song.album,
-            artwork: nil,
+            artwork: nil, // Artwork usually managed by system cache if already set
             duration: player.duration,
             currentTime: player.currentTime,
             playbackRate: player.isPlaying ? 1.0 : 0.0
@@ -396,9 +396,7 @@ class AudioSessionManager: NSObject, ObservableObject {
         setupRemoteCommandCenter()
     }
     
-    private func handleSilenceSecondaryAudioNotification() {
-        // Logging only
-    }
+    private func handleSilenceSecondaryAudioNotification() {}
     
     // MARK: - Remote Command Handlers
     

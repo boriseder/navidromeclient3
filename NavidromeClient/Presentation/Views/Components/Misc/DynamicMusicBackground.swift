@@ -2,13 +2,13 @@
 //  DynamicMusicBackground.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
+//  UPDATED: Swift 6 Concurrency & @Observable
 //
 
 import SwiftUI
 
 struct DynamicMusicBackground: View {
-    @EnvironmentObject var theme: ThemeManager
+    @Environment(ThemeManager.self) var theme
 
     var body: some View {
         ZStack {

@@ -3,22 +3,32 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed "Sending closure" warnings by removing FileManager capture
-//  - Uses local FileManager instances in detached tasks
+//  - Fixed String extension visibility
 //
 
 import Foundation
 import UIKit
 import CryptoKit
+import Observation
+
+// MARK: - String Extension (Moved to top for visibility)
+extension String {
+    func sha256() -> String {
+        let inputData = Data(self.utf8)
+        let hashedData = SHA256.hash(data: inputData)
+        return hashedData.compactMap { String(format: "%02x", $0) }.joined()
+    }
+}
 
 @MainActor
-class PersistentImageCache: ObservableObject {
+@Observable
+class PersistentImageCache {
     static let shared = PersistentImageCache()
     
     // Kept for MainActor usage, but NOT captured in background tasks
-    private let fileManager = FileManager.default
-    private let cacheDirectory: URL
-    private let metadataFile: URL
+    @ObservationIgnored private let fileManager = FileManager.default
+    @ObservationIgnored private let cacheDirectory: URL
+    @ObservationIgnored private let metadataFile: URL
     
     struct CacheMetadata: Codable, Sendable {
         let key: String
@@ -29,8 +39,10 @@ class PersistentImageCache: ObservableObject {
     }
     
     private var metadata: [String: CacheMetadata] = [:]
-    private let maxCacheSize: Int64 = 200 * 1024 * 1024 // 200MB
-    private let maxAge: TimeInterval = 30 * 24 * 60 * 60 // 30 days
+    
+    // Constants are ignored by Observation
+    @ObservationIgnored private let maxCacheSize: Int64 = 200 * 1024 * 1024 // 200MB
+    @ObservationIgnored private let maxAge: TimeInterval = 30 * 24 * 60 * 60 // 30 days
     
     private init() {
         let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -146,7 +158,6 @@ class PersistentImageCache: ObservableObject {
     
     // Swift 6: Non-isolated helper for background I/O
     private nonisolated func performBackgroundWrite(image: UIImage, url: URL, quality: CGFloat, isPNG: Bool) async -> (size: Int64, success: Bool)? {
-        // Use Task.detached to ensure we are off the MainActor
         return await Task.detached {
             let data: Data? = isPNG ? image.pngData() : image.jpegData(compressionQuality: quality)
             guard let data = data else { return nil }
@@ -164,7 +175,7 @@ class PersistentImageCache: ObservableObject {
         guard let meta = metadata[key] else { return }
         let fileURL = cacheDirectory.appendingPathComponent(meta.filename)
         
-        // Fix: Use local FileManager instance in detached task, DO NOT capture [fileManager]
+        // Fix: Use local FileManager instance in detached task
         await Task.detached {
             try? FileManager.default.removeItem(at: fileURL)
         }.value
@@ -176,7 +187,7 @@ class PersistentImageCache: ObservableObject {
     private func clearDiskCache() async {
         let url = cacheDirectory
         
-        // Fix: Use local FileManager instance in detached task, DO NOT capture [fileManager]
+        // Fix: Use local FileManager instance in detached task
         await Task.detached {
             let fm = FileManager.default
             if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
@@ -196,7 +207,6 @@ class PersistentImageCache: ObservableObject {
         let currentMeta = self.metadata
         let fileURL = self.metadataFile
         
-        // Debounce/Batch save
         Task {
             await Task.detached {
                 if let data = try? JSONEncoder().encode(currentMeta) {
@@ -211,7 +221,6 @@ class PersistentImageCache: ObservableObject {
         meta.lastAccessed = Date()
         metadata[key] = meta
         
-        // Randomly save sometimes to keep access times somewhat fresh without thrashing IO
         if Int.random(in: 1...20) == 1 {
             scheduleMetadataSave()
         }
@@ -246,7 +255,6 @@ class PersistentImageCache: ObservableObject {
         let knownFiles = Set(metadata.values.map { $0.filename })
         let url = cacheDirectory
         
-        // Fix: Use local FileManager instance in detached task, DO NOT capture [fileManager]
         await Task.detached {
             let fm = FileManager.default
             guard let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else { return }
@@ -277,13 +285,5 @@ class PersistentImageCache: ObservableObject {
             guard maxSize > 0 else { return 0 }
             return Double(diskSize) / Double(maxSize) * 100.0
         }
-    }
-}
-
-extension String {
-    func sha256() -> String {
-        let inputData = Data(utf8)
-        let hashedData = SHA256.hash(data: inputData)
-        return hashedData.compactMap { String(format: "%02x", $0) }.joined()
     }
 }

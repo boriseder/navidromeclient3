@@ -200,6 +200,13 @@ class ConnectionService: ObservableObject {
         return components.url
     }
 
+    func getAuthHeader() -> [String: String] {
+        let loginString = "\(username):\(password)"
+        guard let loginData = loginString.data(using: .utf8) else { return [:] }
+        let base64LoginString = loginData.base64EncodedString()
+        return ["Authorization": "Basic \(base64LoginString)"]
+    }
+
     // MARK: - HEALTH MONITORING
     
     func performHealthCheck() async -> ConnectionHealth {

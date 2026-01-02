@@ -3,7 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Proper state observation on MainActor
+//  - Proper state observation with @Observable
 //
 
 import SwiftUI
@@ -12,7 +12,7 @@ struct DownloadButton: View {
     let album: Album
     let songs: [Song]
     
-    @EnvironmentObject var downloadManager: DownloadManager
+    @Environment(DownloadManager.self) var downloadManager
     @State private var showingDeleteConfirmation = false
     @State private var isProcessing = false
     
@@ -29,18 +29,15 @@ struct DownloadButton: View {
         .onAppear {
             updateState()
         }
-        .onReceive(downloadManager.objectWillChange) { _ in
+        // In @Observable, body re-evaluates automatically when properties accessed in updateState change.
+        // We can use .onChange to sync local state if needed, or just compute directly in body.
+        // For performance, computing in body or using a computed property wrapper is better,
+        // but to keep logic similar:
+        .onChange(of: downloadManager.downloadStates[album.id]) { _, _ in
             updateState()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .downloadCompleted)) { notification in
-            if let albumId = notification.object as? String, albumId == album.id {
-                updateState()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .downloadDeleted)) { notification in
-            if let albumId = notification.object as? String, albumId == album.id {
-                updateState()
-            }
+        .onChange(of: downloadManager.downloadProgress[album.id]) { _, _ in
+            updateState()
         }
         .confirmationDialog(
             "Delete Downloaded Album?",

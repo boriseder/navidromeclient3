@@ -1,10 +1,16 @@
 //
-//  Song+Extensions.swift - Simple Initializer for Downloaded Songs
+//  SongModel.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Compliance
+//  - Added Hashable
+//  - Added manual initializer
+//  - Optimized createFromDownload
 //
 
 import Foundation
 
-struct Song: Codable, Identifiable, Sendable {
+struct Song: Codable, Identifiable, Sendable, Hashable {
     let id: String
     let title: String
     let duration: Int?
@@ -26,6 +32,42 @@ struct Song: Codable, Identifiable, Sendable {
         case track, year, genre, artistId, isVideo, contentType, suffix, path
     }
     
+    // Manual memberwise init (required because init(from:) hides the default one)
+    init(
+        id: String,
+        title: String,
+        duration: Int? = nil,
+        coverArt: String? = nil,
+        artist: String? = nil,
+        album: String? = nil,
+        albumId: String? = nil,
+        track: Int? = nil,
+        year: Int? = nil,
+        genre: String? = nil,
+        artistId: String? = nil,
+        isVideo: Bool? = false,
+        contentType: String? = nil,
+        suffix: String? = nil,
+        path: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.duration = duration
+        self.coverArt = coverArt
+        self.artist = artist
+        self.album = album
+        self.albumId = albumId
+        self.track = track
+        self.year = year
+        self.genre = genre
+        self.artistId = artistId
+        self.isVideo = isVideo
+        self.contentType = contentType
+        self.suffix = suffix
+        self.path = path
+    }
+    
+    // Decodable init
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
@@ -45,9 +87,8 @@ struct Song: Codable, Identifiable, Sendable {
         suffix = try container.decodeIfPresent(String.self, forKey: .suffix)
         path = try container.decodeIfPresent(String.self, forKey: .path)
     }
-}
-
-extension Song {
+    
+    // Factory method for downloads
     static func createFromDownload(
         id: String,
         title: String,
@@ -61,31 +102,22 @@ extension Song {
         genre: String? = nil,
         contentType: String? = nil
     ) -> Song {
-        let songData: [String: Any?] = [
-            "id": id,
-            "title": title,
-            "duration": duration,
-            "coverArt": coverArt,
-            "artist": artist,
-            "album": album,
-            "albumId": albumId,
-            "track": track,
-            "year": year,
-            "genre": genre,
-            "artistId": nil,
-            "isVideo": false,
-            "contentType": contentType ?? "audio/mpeg",
-            "suffix": "mp3",
-            "path": nil
-        ]
-        
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: songData.compactMapValues { $0 })
-            let song = try JSONDecoder().decode(Song.self, from: jsonData)
-            return song
-        } catch {
-            AppLogger.ui.error("❌ Failed to create Song from download data: \(error)")
-            fatalError("Could not create Song object")
-        }
+        return Song(
+            id: id,
+            title: title,
+            duration: duration,
+            coverArt: coverArt,
+            artist: artist,
+            album: album,
+            albumId: albumId,
+            track: track,
+            year: year,
+            genre: genre,
+            artistId: nil,
+            isVideo: false,
+            contentType: contentType ?? "audio/mpeg",
+            suffix: "mp3",
+            path: nil
+        )
     }
 }

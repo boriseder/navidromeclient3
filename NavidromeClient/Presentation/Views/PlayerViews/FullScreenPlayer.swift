@@ -2,18 +2,18 @@
 //  FullScreenPlayer.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Removed redundant MainActor.run calls (View methods are isolated)
-//  - Replaced DispatchQueue with Task.sleep
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
+//  - Uses @Bindable for UI bindings
 //
 
 import SwiftUI
 import AVKit
 
 struct FullScreenPlayerView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var audioSessionManager: AudioSessionManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(AudioSessionManager.self) var audioSessionManager
+    @Environment(CoverArtManager.self) var coverArtManager
     @Environment(\.dismiss) private var dismiss
     
     @State private var dragOffset: CGFloat = 0
@@ -85,8 +85,10 @@ struct FullScreenPlayerView: View {
         .animation(.interactiveSpring(), value: dragOffset)
         .sheet(isPresented: $showingQueue) {
             QueueView()
-                .environmentObject(playerVM)
-                .environmentObject(coverArtManager)
+                // Environment cascades automatically in new observation,
+                // but explicit injection ensures safety if sheet creates new hierarchy context
+                .environment(playerVM)
+                .environment(coverArtManager)
         }
         .task(id: "\(playerVM.currentSong?.albumId ?? "")_\(coverArtManager.cacheGeneration)") {
             await loadFullscreenImage()
@@ -94,7 +96,6 @@ struct FullScreenPlayerView: View {
         }
     }
     
-    // Swift 6: Method is implicitly @MainActor because struct is a View
     private func loadFullscreenImage() async {
         guard let albumId = playerVM.currentSong?.albumId else {
             fullscreenImage = nil
@@ -102,7 +103,6 @@ struct FullScreenPlayerView: View {
             return
         }
         
-        // Fast path: Check cache
         if let cached = coverArtManager.getAlbumImage(for: albumId, context: .fullscreen) {
             fullscreenImage = cached
             isLoadingFullscreen = false
@@ -111,11 +111,7 @@ struct FullScreenPlayerView: View {
         }
         
         isLoadingFullscreen = true
-        
-        // Await background work
         let image = await coverArtManager.loadAlbumImage(for: albumId, context: .fullscreen)
-        
-        // Resume on MainActor automatically
         fullscreenImage = image
         isLoadingFullscreen = false
         
@@ -208,9 +204,8 @@ struct FullScreenPlayerView: View {
                 horizontalDragOffset = snapDistance
             }
             
-            // Swift 6: Use Task + Sleep instead of DispatchQueue to stay in concurrency domain
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                try? await Task.sleep(nanoseconds: 500_000_000)
                 
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
@@ -227,7 +222,6 @@ struct FullScreenPlayerView: View {
                 await playerVM.playPrevious()
                 animatingTrackChange = false
                 
-                // Reload covers for new position
                 let playlist = playerVM.currentPlaylist
                 let currentIdx = playerVM.currentIndex
                 
@@ -293,7 +287,7 @@ struct FullScreenPlayerView: View {
     }
 }
 
-// MARK: - Subcomponents (Unchanged but verified)
+// MARK: - Subcomponents
 
 struct SpotifyStackedAlbumArt: View {
     let currentCover: UIImage?
@@ -430,7 +424,9 @@ struct SpotifySongInfoView: View {
 }
 
 struct ProgressSection: View {
-    @ObservedObject var playerVM: PlayerViewModel
+    // Regular var for Observable object when no binding needed
+    var playerVM: PlayerViewModel
+    
     let screenWidth: CGFloat
     @State private var isDragging = false
     @State private var dragValue: Double = 0
@@ -501,7 +497,7 @@ struct ProgressSection: View {
 }
 
 struct MainControls: View {
-    @ObservedObject var playerVM: PlayerViewModel
+    var playerVM: PlayerViewModel
     
     var body: some View {
         HStack(spacing: 30) {
@@ -572,8 +568,8 @@ struct MainControls: View {
 }
 
 struct BottomControls: View {
-    @ObservedObject var playerVM: PlayerViewModel
-    let audioSessionManager: AudioSessionManager
+    var playerVM: PlayerViewModel
+    var audioSessionManager: AudioSessionManager
     let screenWidth: CGFloat
     
     var body: some View {

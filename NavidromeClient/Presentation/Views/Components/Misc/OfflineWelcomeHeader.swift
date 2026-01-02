@@ -2,28 +2,37 @@
 //  OfflineWelcomeHeader.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
+//  UPDATED: Swift 6 & iOS 17+ Modernization
 //
 
 import SwiftUI
 
 struct OfflineWelcomeHeader: View {
-    let downloadedAlbums: Int
-    let isConnected: Bool
-    
     var body: some View {
-        VStack(alignment: .leading, spacing: DSLayout.elementGap) {
-            Text(statusText)
-                .font(DSText.body)
-                .foregroundColor(DSColor.onDark)
+        VStack(spacing: 16) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 50))
+                .foregroundStyle(.white.opacity(0.8))
+            
+            Text("Offline Mode")
+                .font(.title)
+                .fontWeight(.bold)
+                .foregroundStyle(.white)
+            
+            Text("You are currently offline. Accessing your downloaded library.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.horizontal)
         }
-    }
-    
-    private var statusText: String {
-        if downloadedAlbums == 0 {
-            return "No downloaded music available"
-        } else {
-            return "\(downloadedAlbums) album\(downloadedAlbums != 1 ? "s" : "") available offline"
-        }
+        .padding(.vertical, 30)
+        .frame(maxWidth: .infinity)
+        .background(
+            LinearGradient(
+                colors: [.black.opacity(0.6), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 }

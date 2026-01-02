@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ArtistImageView: View {
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
     
     let artist: Artist
     let context: ImageContext

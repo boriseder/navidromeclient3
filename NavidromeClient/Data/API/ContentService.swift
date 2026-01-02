@@ -41,7 +41,8 @@ class ContentService {
             type: SubsonicResponse<AlbumListContainer>.self
         )
         
-        return decoded.subsonicResponse.albumList2.album
+        // Fixed: safely unwrap optional chain
+        return decoded.subsonicResponse.albumList2?.album ?? []
     }
     
     func getAlbumsByArtist(artistId: String) async throws -> [Album] {
@@ -75,8 +76,8 @@ class ContentService {
                 type: SubsonicResponse<AlbumListContainer>.self
             )
             
-            let albums = decoded.subsonicResponse.albumList2.album
-            return albums
+            // Fixed: safely unwrap
+            return decoded.subsonicResponse.albumList2?.album ?? []
             
         } catch {
             AppLogger.ui.error("❌ getAlbumsByGenre failed with error: \(error)")
@@ -85,6 +86,7 @@ class ContentService {
             AppLogger.general.debug(" DEBUG: Trying fallback method...")
             
             let emptyAlbumList = AlbumList(album: [])
+            // Fixed: explicit init parameters (no longer missing argument error due to update in AlbumModel)
             let emptyContainer = AlbumListContainer(albumList2: emptyAlbumList)
             let fallbackResponse = SubsonicResponse<AlbumListContainer>(subsonicResponse: emptyContainer)
             
@@ -94,8 +96,8 @@ class ContentService {
                 type: SubsonicResponse<AlbumListContainer>.self,
                 fallback: fallbackResponse
             )
-            return result.subsonicResponse.albumList2.album
-
+            // Fixed: safely unwrap
+            return result.subsonicResponse.albumList2?.album ?? []
         }
     }
     

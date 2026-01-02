@@ -1,3 +1,11 @@
+//
+//  AlbumCollectionView.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
+//
+
 import SwiftUI
 
 enum AlbumCollectionContext: Sendable {
@@ -8,13 +16,13 @@ enum AlbumCollectionContext: Sendable {
 struct AlbumCollectionView: View {
     let context: AlbumCollectionContext
     
-    @EnvironmentObject var songManager: SongManager
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var musicLibraryManager: MusicLibraryManager
-    @EnvironmentObject var theme: ThemeManager
+    @Environment(SongManager.self) var songManager
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(NetworkMonitor.self) var networkMonitor
+    @Environment(OfflineManager.self) var offlineManager
+    @Environment(MusicLibraryManager.self) var musicLibraryManager
+    @Environment(ThemeManager.self) var theme
 
     @State private var albums: [Album] = []
     @State private var backgroundImageLoaded = false
@@ -90,6 +98,7 @@ struct AlbumCollectionView: View {
                 NavigationLink(value: album) {
                     CardItemContainer(content: .album(album), index: index)
                 }
+                .buttonStyle(PlainButtonStyle())
             }
         }
     }
@@ -127,7 +136,7 @@ struct AlbumCollectionView: View {
         guard !allSongs.isEmpty else { return }
         let shuffledSongs = allSongs.shuffled()
         await playerVM.setPlaylist(shuffledSongs, startIndex: 0, albumId: nil)
-        if !playerVM.isShuffling { playerVM.toggleShuffle() }
+        if !playerVM.isShuffling { playerVM.playlistManager.isShuffling = true }
     }
     
     private var albumCountText: String {
@@ -160,7 +169,6 @@ struct AlbumCollectionView: View {
     @ViewBuilder
     private var artistHeroHeader: some View {
         VStack {
-            // FIX: Correctly extract artist from context enum
             if case .byArtist(let artist) = context {
                 ArtistImageView(artist: artist, context: .detail)
                     .shadow(color: .black.opacity(0.6), radius: 20, x: 0, y: 10)

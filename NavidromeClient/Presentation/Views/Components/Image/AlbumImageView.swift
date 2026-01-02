@@ -9,7 +9,7 @@
 import SwiftUI
 
 struct AlbumImageView: View {
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
 
     let album: Album
     let context: ImageContext

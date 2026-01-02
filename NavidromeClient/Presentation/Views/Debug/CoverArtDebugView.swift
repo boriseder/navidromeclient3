@@ -2,13 +2,14 @@
 //  CoverArtDebugView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
 
 struct CoverArtDebugView: View {
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
     
     var body: some View {
         let stats = coverArtManager.getCacheStats()

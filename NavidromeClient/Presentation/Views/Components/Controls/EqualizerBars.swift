@@ -3,6 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
+//  - Safe animation loop
 //
 
 import SwiftUI
@@ -11,49 +12,52 @@ struct EqualizerBars: View {
     let isActive: Bool
     let accentColor: Color
     
-    @State private var barScales: [CGFloat] = [0.3, 0.5, 0.8]
+    @State private var animationState1: CGFloat = 0.4
+    @State private var animationState2: CGFloat = 0.6
+    @State private var animationState3: CGFloat = 0.5
     
-    // Timer is safe on main thread
-    private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    // Timer is replaced by a Task loop for cleaner concurrency
     
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<3, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(accentColor)
-                    .frame(width: 3, height: maxHeight)
-                    .scaleEffect(y: barScales[index], anchor: .bottom)
-                    .animation(
-                        .interpolatingSpring(stiffness: 100, damping: 12)
-                        .delay(Double(index) * 0.1),
-                        value: barScales[index]
-                    )
+        HStack(spacing: 2) {
+            bar(height: animationState1)
+            bar(height: animationState2)
+            bar(height: animationState3)
+        }
+        .frame(width: 18, height: 14)
+        .task(id: isActive) {
+            if isActive {
+                await animate()
+            } else {
+                stopAnimation()
             }
-        }
-        .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
-        .background(
-            Circle()
-                .fill(accentColor.opacity(0.15))
-                .overlay(Circle().stroke(accentColor.opacity(0.3), lineWidth: 1))
-        )
-        .onReceive(timer) { _ in
-            updateBars()
-        }
-        .onAppear {
-            if isActive { updateBars() }
         }
     }
     
-    private var maxHeight: CGFloat { 14 }
+    private func bar(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(accentColor)
+            .frame(width: 3)
+            .frame(height: height * 14)
+    }
     
-    private func updateBars() {
-        guard isActive else {
-            barScales = [0.3, 0.3, 0.3]
-            return
+    @MainActor
+    private func animate() async {
+        while !Task.isCancelled {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                animationState1 = CGFloat.random(in: 0.3...1.0)
+                animationState2 = CGFloat.random(in: 0.3...1.0)
+                animationState3 = CGFloat.random(in: 0.3...1.0)
+            }
+            try? await Task.sleep(nanoseconds: 300_000_000)
         }
-        
-        barScales = (0..<3).map { _ in
-            CGFloat.random(in: 0.2...1.0)
+    }
+    
+    private func stopAnimation() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            animationState1 = 0.3
+            animationState2 = 0.3
+            animationState3 = 0.3
         }
     }
 }

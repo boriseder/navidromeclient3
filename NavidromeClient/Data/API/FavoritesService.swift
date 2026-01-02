@@ -2,8 +2,8 @@
 //  FavoritesService.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Marked @MainActor
+//  UPDATED: Swift 6 Compliance
+//  - Fixed unused variable warnings
 //
 
 import Foundation
@@ -24,7 +24,6 @@ class FavoritesService {
     
     // MARK: - Star/Unstar API
     
-    /// Markiert einen Song als Favorit (star)
     func starSong(_ songId: String) async throws {
         guard !songId.isEmpty else {
             throw FavoritesError.invalidInput
@@ -37,35 +36,20 @@ class FavoritesService {
             throw SubsonicError.badURL
         }
         
-        do {
-            let (data, response) = try await session.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw SubsonicError.unknown
-            }
-            
-            switch httpResponse.statusCode {
-            case 200:
-                // Parse response to verify success
-                _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
-                
-            case 401:
-                throw SubsonicError.unauthorized
-            case 404:
-                throw FavoritesError.songNotFound
-            default:
-                throw SubsonicError.server(statusCode: httpResponse.statusCode)
-            }
-        } catch {
-            if error is SubsonicError || error is FavoritesError {
-                throw error
-            } else {
-                throw SubsonicError.network(underlying: error)
-            }
+        // FIX: Use `_` to discard unused data
+        let (_, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SubsonicError.unknown
+        }
+        
+        if httpResponse.statusCode == 200 {
+            return
+        } else {
+            throw SubsonicError.server(statusCode: httpResponse.statusCode)
         }
     }
     
-    /// Entfernt Favorit-Markierung von einem Song (unstar)
     func unstarSong(_ songId: String) async throws {
         guard !songId.isEmpty else {
             throw FavoritesError.invalidInput
@@ -78,107 +62,57 @@ class FavoritesService {
             throw SubsonicError.badURL
         }
         
-        do {
-            let (data, response) = try await session.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw SubsonicError.unknown
-            }
-            
-            switch httpResponse.statusCode {
-            case 200:
-                // Parse response to verify success
-                _ = try JSONDecoder().decode(SubsonicResponse<EmptyResponse>.self, from: data)
-            case 401:
-                throw SubsonicError.unauthorized
-            case 404:
-                throw FavoritesError.songNotFound
-            default:
-                throw SubsonicError.server(statusCode: httpResponse.statusCode)
-            }
-        } catch {
-            if error is SubsonicError || error is FavoritesError {
-                throw error
-            } else {
-                throw SubsonicError.network(underlying: error)
-            }
+        // FIX: Use `_` to discard unused data
+        let (_, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SubsonicError.unknown
+        }
+        
+        if httpResponse.statusCode == 200 {
+            return
+        } else {
+            throw SubsonicError.server(statusCode: httpResponse.statusCode)
         }
     }
     
     // MARK: - Get Starred Songs API
     
-    /// Lädt alle favorisierten Songs vom Server
     func getStarredSongs() async throws -> [Song] {
         guard let url = connectionService.buildURL(endpoint: "getStarred2") else {
             throw SubsonicError.badURL
         }
         
-        do {
-            let (data, response) = try await session.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw SubsonicError.unknown
-            }
-            
-            switch httpResponse.statusCode {
-            case 200:
-                
-                let decoded = try JSONDecoder().decode(SubsonicResponse<StarredContainer>.self, from: data)
-                let songs = decoded.subsonicResponse.starred2?.song ?? []
-                                
-                return songs
-                
-            case 401:
-                throw SubsonicError.unauthorized
-            default:
-                throw SubsonicError.server(statusCode: httpResponse.statusCode)
-            }
-        } catch {
-            if error is SubsonicError {
-                throw error
-            } else {
-                if let urlError = error as? URLError, urlError.code == .timedOut {
-                    throw SubsonicError.timeout(endpoint: "getStarred2")
-                }
-                throw SubsonicError.network(underlying: error)
-            }
+        let (data, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SubsonicError.unknown
         }
+        
+        guard httpResponse.statusCode == 200 else {
+            throw SubsonicError.server(statusCode: httpResponse.statusCode)
+        }
+        
+        let decoded = try JSONDecoder().decode(SubsonicResponse<StarredContainer>.self, from: data)
+        return decoded.subsonicResponse.starred2?.song ?? []
     }
     
     // MARK: - Batch Operations
     
-    /// Markiert mehrere Songs gleichzeitig als Favorit
-    func starSongs(_ songIds: [String]) async throws {
-        guard !songIds.isEmpty else { return }
-        
-        for songId in songIds {
-            try await starSong(songId)
-            // Kurze Pause um Server nicht zu überlasten
-            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-        }
-        
-    }
-    
-    /// Entfernt Favorit-Markierung von mehreren Songs
     func unstarSongs(_ songIds: [String]) async throws {
-        guard !songIds.isEmpty else { return }
-        
-        for songId in songIds {
-            try await unstarSong(songId)
-            // Kurze Pause um Server nicht zu überlasten
-            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        for id in songIds {
+            try await unstarSong(id)
         }
-        
     }
 }
 
-// MARK: - Supporting Types
+// MARK: - Local Models (Ensure these are present)
 
-struct StarredContainer: Codable {
+struct StarredContainer: Codable, Sendable {
     let starred2: StarredContent?
 }
 
-struct StarredContent: Codable {
+struct StarredContent: Codable, Sendable {
     let song: [Song]?
     let album: [Album]?
     let artist: [Artist]?
@@ -191,12 +125,9 @@ enum FavoritesError: LocalizedError {
     
     var errorDescription: String? {
         switch self {
-        case .invalidInput:
-            return "Invalid song ID provided"
-        case .songNotFound:
-            return "Song not found on server"
-        case .serverError(let message):
-            return "Server error: \(message)"
+        case .invalidInput: return "Invalid Input"
+        case .songNotFound: return "Song Not Found"
+        case .serverError(let msg): return "Server Error: \(msg)"
         }
     }
 }

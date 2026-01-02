@@ -2,8 +2,8 @@
 //  CardItemContainer.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - CardContent uses Sendable models
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
@@ -11,122 +11,63 @@ import SwiftUI
 enum CardContent {
     case album(Album)
     case artist(Artist)
-    case genre(Genre)
+    case playlist // Placeholder
 }
 
 struct CardItemContainer: View {
     let content: CardContent
     let index: Int
     
-    @EnvironmentObject var theme: ThemeManager
-
+    @Environment(CoverArtManager.self) var coverArtManager
+    
     var body: some View {
-        VStack(alignment: .leading) {
-            imageView
-                .scaledToFill()
-                .frame(width: DSLayout.cardCoverNoPadding, height: DSLayout.cardCoverNoPadding)
-                .clipShape(RoundedRectangle(cornerRadius: DSCorners.tight))
-                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-                        
-            VStack(alignment: .leading, spacing: DSLayout.tightGap) {
-                Text(content.title)
-                    .font(DSText.metadata)
-                    .fontWeight(.bold)
-                    .foregroundColor(theme.textColor)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                Text(content.subtitle)
-                    .font(DSText.fine)
-                    .foregroundColor(theme.textColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxWidth: DSLayout.cardCoverNoPadding, alignment: .leading)
-            .padding(.horizontal, DSLayout.tightPadding)
+        VStack(alignment: .leading, spacing: 8) {
+            imageSection
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: DSCorners.element))
+                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+            
+            textSection
         }
-        .cornerRadius(DSCorners.element)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(content.title), \(content.subtitle), \(content.year ?? "")")
+        .padding(.bottom, 8)
     }
     
     @ViewBuilder
-    private var imageView: some View {
+    private var imageSection: some View {
         switch content {
         case .album(let album):
             AlbumImageView(album: album, context: .card)
         case .artist(let artist):
             ArtistImageView(artist: artist, context: .artistCard)
-        case .genre:
-            staticGenreIcon
+        case .playlist:
+            Color.gray // Placeholder
         }
     }
     
     @ViewBuilder
-    private var staticGenreIcon: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: DSCorners.tight)
-                .fill(LinearGradient(
-                    colors: [DSColor.accent.opacity(0.3), DSColor.accent.opacity(0.1)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
-            
-            Image(systemName: "music.note.list")
-                .font(.system(size: DSLayout.largeIcon))
-                .foregroundColor(DSColor.primary.opacity(0.7))
-        }
-        .frame(width: DSLayout.cardCover, height: DSLayout.cardCover)
-        .clipShape(RoundedRectangle(cornerRadius: DSCorners.tight))
-    }
-}
-
-// MARK: - Extension to CardContent
-
-extension CardContent {
-    var id: String {
-        switch self {
-        case .album(let album): return album.id
-        case .artist(let artist): return artist.id
-        case .genre(let genre): return genre.id
-        }
-    }
-    
-    var title: String {
-        switch self {
-        case .album(let album): return album.name
-        case .artist(let artist): return artist.name
-        case .genre(let genre): return genre.value
-        }
-    }
-    
-    var year: String? {
-        switch self {
+    private var textSection: some View {
+        switch content {
         case .album(let album):
-            return album.year.map { String($0) }
-        case .artist, .genre:
-            return nil
-        }
-    }
-    
-    var subtitle: String {
-        switch self {
-        case .album(let album): return album.artist
+            VStack(alignment: .leading, spacing: 2) {
+                Text(album.name)
+                    .font(DSText.body)
+                    .foregroundStyle(DSColor.onLight)
+                    .lineLimit(1)
+                
+                Text(album.artist)
+                    .font(DSText.metadata)
+                    .foregroundStyle(DSColor.secondary)
+                    .lineLimit(1)
+            }
         case .artist(let artist):
-            guard let count = artist.albumCount else { return "" }
-            return "\(count) Album\(count != 1 ? "s" : "")"
-        case .genre(let genre):
-            let count = genre.albumCount
-            return "\(count) Album\(count != 1 ? "s" : "")"
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .album: return "music.note"
-        case .artist: return "music.mic"
-        case .genre: return "music.note"
+            Text(artist.name)
+                .font(DSText.body)
+                .foregroundStyle(DSColor.onLight)
+                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        case .playlist:
+            EmptyView()
         }
     }
 }

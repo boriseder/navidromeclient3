@@ -1,14 +1,24 @@
-// ContentView.swift - Navigation to MainTabView
+//
+//  ContentView.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Fully Migrated to @Observable
+//  - No legacy EnvironmentObjects
+//
+
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var appInitializer: AppInitializer
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var downloadManager: DownloadManager
-    @EnvironmentObject var theme: ThemeManager
+    // MARK: - Environments
+    @Environment(AppConfig.self) var appConfig
+    @Environment(AppInitializer.self) var appInitializer
+    @Environment(ThemeManager.self) var theme
+    
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(NetworkMonitor.self) var networkMonitor
+    @Environment(OfflineManager.self) var offlineManager
+    @Environment(DownloadManager.self) var downloadManager
     
     @State private var showingSettings = false
     @State private var isInitialSetup = false
@@ -64,13 +74,13 @@ struct ContentView: View {
                 .overlay(networkStatusOverlay, alignment: .top)
                 .overlay(alignment: .bottom) {
                     MiniPlayerView()
-                        .environmentObject(playerVM)
+                        .environment(playerVM)
                         .padding(.bottom, DSLayout.miniPlayerHeight)
                 }
             }
         }
         .sheet(isPresented: $showingSettings) {
-            NavigationView {
+            NavigationStack {
                 ServerEditView(dismissParent: {
                     if isInitialSetup {
                         showingSettings = false
@@ -91,10 +101,8 @@ struct ContentView: View {
         
         serviceInitError = nil
         
-        // AppInitializer handles notifications internally
         try? await appInitializer.reinitializeAfterConfiguration()
         
-        // Wait for initialization with timeout
         for _ in 0..<10 {
             try? await Task.sleep(nanoseconds: 500_000_000)
             if appInitializer.areServicesReady {

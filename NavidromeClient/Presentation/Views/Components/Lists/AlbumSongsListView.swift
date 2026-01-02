@@ -2,33 +2,39 @@
 //  AlbumSongsListView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
 
 struct AlbumSongsListView: View {
     let songs: [Song]
-    let album: Album
+    let albumId: String
     
-    @EnvironmentObject var playerVM: PlayerViewModel
+    @Environment(PlayerViewModel.self) var playerVM
     
     var body: some View {
-        ForEach(songs.indices, id: \.self) { index in
-            let song = songs[index]
-            
-            SongRow(
-                song: song,
-                index: index + 1,
-                isPlaying: playerVM.currentSong?.id == song.id && playerVM.isPlaying,
-                action: {
-                    Task { await playerVM.setPlaylist(songs, startIndex: index, albumId: album.id) }
-                },
-                onMore: {
-                    playerVM.stop()
-                },
-                context: .album
-            )
+        LazyVStack(spacing: 0) {
+            ForEach(songs.indices, id: \.self) { index in
+                let song = songs[index]
+                
+                Button {
+                    Task {
+                        await playerVM.setPlaylist(songs, startIndex: index, albumId: albumId)
+                    }
+                } label: {
+                    SongRow(song: song, context: .album)
+                        .padding(.horizontal, DSLayout.contentPadding)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                if index < songs.count - 1 {
+                    Divider()
+                        .padding(.leading, 40)
+                        .opacity(0.5)
+                }
+            }
         }
     }
 }

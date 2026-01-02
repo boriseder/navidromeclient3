@@ -2,16 +2,16 @@
 //  NetworkDebugBanner.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Aligned with ConnectionViewModel capabilities
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
 
 struct NetworkDebugBanner: View {
-    @EnvironmentObject private var networkMonitor: NetworkMonitor
-    @EnvironmentObject private var offlineManager: OfflineManager
-    @EnvironmentObject private var connectionManager: ConnectionViewModel
+    @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(OfflineManager.self) private var offlineManager
+    @Environment(ConnectionViewModel.self) private var connectionManager
 
     @State private var health: ConnectionHealth?
     
@@ -21,9 +21,7 @@ struct NetworkDebugBanner: View {
             // MARK: - Network State Display
             HStack(spacing: DSLayout.tightGap) {
                 Button {
-                    Task {
-                        offlineManager.toggleOfflineMode()
-                    }
+                    offlineManager.toggleOfflineMode()
                 } label: {
                     Image(systemName: networkMonitor.state.contentLoadingStrategy.isEffectivelyOffline ? "wifi.slash" : "wifi")
                         .font(DSText.subsectionTitle)
@@ -46,7 +44,6 @@ struct NetworkDebugBanner: View {
                 VStack(spacing: DSLayout.contentGap) {
                     Button {
                         Task {
-                            // Updated to use the available method in ConnectionViewModel
                             await connectionManager.testConnection()
                         }
                     } label: {

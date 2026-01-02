@@ -2,14 +2,16 @@
 //  AppInitializer.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed unused value warning
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Observable
 //
 
 import Foundation
+import Observation
 
 @MainActor
-final class AppInitializer: ObservableObject {
+@Observable
+final class AppInitializer {
 
     // MARK: - Initialization State
     
@@ -20,8 +22,8 @@ final class AppInitializer: ObservableObject {
         case failed(String)
     }
 
-    @Published private(set) var state: InitializationState = .notStarted
-    @Published private(set) var isConfigured: Bool = false
+    private(set) var state: InitializationState = .notStarted
+    private(set) var isConfigured: Bool = false
 
     private(set) var unifiedService: UnifiedSubsonicService?
     

@@ -101,7 +101,8 @@ class DiscoveryService {
             type: SubsonicResponse<AlbumListContainer>.self
         )
         
-        return decoded.subsonicResponse.albumList2.album
+        // Fixed: safely unwrap
+        return decoded.subsonicResponse.albumList2?.album ?? []
     }
     
     func getPopularGenres(limit: Int = 10) async throws -> [GenreWithAlbumCount] {
@@ -150,6 +151,7 @@ class DiscoveryService {
         
         // Create fallback for empty responses
         let emptyAlbumList = AlbumList(album: [])
+        // Fixed: init matches AlbumModel update
         let emptyContainer = AlbumListContainer(albumList2: emptyAlbumList)
         let fallbackResponse = SubsonicResponse<AlbumListContainer>(subsonicResponse: emptyContainer)
         
@@ -160,7 +162,8 @@ class DiscoveryService {
             fallback: fallbackResponse
         )
         
-        let albums = decoded.subsonicResponse.albumList2.album
+        // Fixed: safely unwrap
+        let albums = decoded.subsonicResponse.albumList2?.album ?? []
         AppLogger.general.info(" Loaded \(albums.count) \(type.rawValue) albums")
         return albums
     }

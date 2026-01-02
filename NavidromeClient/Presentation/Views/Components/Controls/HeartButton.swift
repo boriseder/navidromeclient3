@@ -2,8 +2,8 @@
 //  HeartButton.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Tasks are safely isolated
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
@@ -14,7 +14,7 @@ struct HeartButton: View {
     let style: HeartButtonStyle
     let unfavoriteColor: Color
     
-    @EnvironmentObject var favoritesManager: FavoritesManager
+    @Environment(FavoritesManager.self) var favoritesManager
     @State private var isAnimating = false
     
     enum HeartButtonSize {
@@ -87,7 +87,7 @@ struct HeartButton: View {
     }
     
     private var heartColor: Color {
-        return Color.white
+        return isFavorite ? DSColor.error : unfavoriteColor
     }
     
     private func toggleFavorite() {

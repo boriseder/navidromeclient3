@@ -1,14 +1,16 @@
 import SwiftUI
+import Observation
 
 @MainActor
-final class ThemeManager: ObservableObject {
-    @Published var backgroundStyle: UserBackgroundStyle {
+@Observable
+final class ThemeManager {
+    var backgroundStyle: UserBackgroundStyle {
         didSet {
             UserDefaults.standard.set(backgroundStyle.rawValue, forKey: "userBackgroundStyle")
         }
     }
 
-    @Published var accentColor: UserAccentColor {
+    var accentColor: UserAccentColor {
         didSet {
             UserDefaults.standard.set(accentColor.rawValue, forKey: "userAccentColor")
         }

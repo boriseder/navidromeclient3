@@ -1,10 +1,10 @@
 //
-//  UnifiedSubsonicService.swift - COMPLETE FACADE PATTERN
+//  UnifiedSubsonicService.swift
 //  NavidromeClient
 //
-//  COMPLETE: All operations delegated to private specialists
-//  ADDED: FavoritesService integration
-//  CLEAN: No direct specialist access from outside
+//  UPDATED: Swift 6 Compliance
+//  - Restored Content Operations (getAllAlbums, getArtists, etc.)
+//  - SearchService disabled
 //
 
 import Foundation
@@ -13,62 +13,65 @@ import UIKit
 @MainActor
 class UnifiedSubsonicService: ObservableObject {
     
-    // MARK: - Private Specialists
+    // MARK: - Properties
     
-    private let connectionService: ConnectionService
-    private let contentService: ContentService
-    private let mediaService: MediaService
+    let baseURL: URL
+    let connectionService: ConnectionService
+    let authHeader: [String: String]
+    
+    // Internal Services
     private let discoveryService: DiscoveryService
+    private let mediaService: MediaService
+    private let contentService: ContentService
     private let favoritesService: FavoritesService
-
-    // -------- SearchService disabled -------- //
-    /*
-    private let searchService: SearchService
-    */
-    // -------- SearchService disabled -------- //
+    
+    // Search is currently disabled
+    // private let searchService: SearchService
     
     // MARK: - Initialization
     
-    // Swift 6: Explicitly @MainActor to safely initialize connectionService (which is @MainActor)
     init(baseURL: URL, username: String, password: String) {
-        self.connectionService = ConnectionService(
-            baseURL: baseURL,
-            username: username,
-            password: password
-        )
+        self.baseURL = baseURL
+        let connection = ConnectionService(baseURL: baseURL, username: username, password: password)
+        self.connectionService = connection
+        self.authHeader = connection.getAuthHeader()
         
-        self.contentService = ContentService(connectionService: connectionService)
-        self.mediaService = MediaService(connectionService: connectionService)
-        self.discoveryService = DiscoveryService(connectionService: connectionService)
-        self.favoritesService = FavoritesService(connectionService: connectionService)
-        //  ---
-        /*
-        self.searchService = SearchService(connectionService: connectionService)
-        */
-        // ---
+        self.discoveryService = DiscoveryService(connectionService: connection)
+        self.mediaService = MediaService(connectionService: connection)
+        self.contentService = ContentService(connectionService: connection)
+        self.favoritesService = FavoritesService(connectionService: connection)
         
-        AppLogger.general.info("UnifiedSubsonicService: Facade initialized with all specialists including favorites")
+        // self.searchService = SearchService(connectionService: connection)
+        
+        AppLogger.general.info("UnifiedSubsonicService: Facade initialized")
     }
     
-    // MARK: - Connection Operations
-    
-    func testConnection() async -> ConnectionTestResult {
-        return await connectionService.testConnection()
-    }
+    // MARK: - Connection
     
     func ping() async -> Bool {
         return await connectionService.ping()
     }
     
-    func performHealthCheck() async -> ConnectionHealth {
-        return await connectionService.performHealthCheck()
+    // MARK: - Discovery (Explore)
+    
+    func getRecentAlbums() async throws -> [Album] {
+        return try await discoveryService.getRecentAlbums()
     }
     
-    func buildURL(endpoint: String, params: [String: String] = [:]) -> URL? {
-        return connectionService.buildURL(endpoint: endpoint, params: params)
+    func getRandomAlbums() async throws -> [Album] {
+        return try await discoveryService.getRandomAlbums()
     }
     
-    // MARK: - Content Operations: Albums
+    func getFrequentAlbums() async throws -> [Album] {
+        return try await discoveryService.getFrequentAlbums()
+    }
+    
+    func getNewestAlbums(size: Int = 20) async throws -> [Album] {
+        return try await discoveryService.getNewestAlbums(size: size)
+    }
+    
+    // MARK: - Content (Library Operations)
+    // Restored methods for MusicLibraryManager
     
     func getAllAlbums(
         sortBy: ContentService.AlbumSortType = .alphabetical,
@@ -82,316 +85,71 @@ class UnifiedSubsonicService: ObservableObject {
         )
     }
     
-    func getAlbumsByArtist(artistId: String) async throws -> [Album] {
-        guard !artistId.isEmpty else { return [] }
-        return try await contentService.getAlbumsByArtist(artistId: artistId)
-    }
-    
-    func getAlbumsByGenre(genre: String) async throws -> [Album] {
-        guard !genre.isEmpty else { return [] }
-        return try await contentService.getAlbumsByGenre(genre: genre)
-    }
-    
-    // MARK: - Content Operations: Artists
-    
     func getArtists() async throws -> [Artist] {
         return try await contentService.getArtists()
     }
-    
-    // MARK: - Content Operations: Songs
-    
-    func getSongs(for albumId: String) async throws -> [Song] {
-        guard !albumId.isEmpty else { return [] }
-        return try await contentService.getSongs(for: albumId)
-    }
-    
-    // MARK: - Content Operations: Genres
     
     func getGenres() async throws -> [Genre] {
         return try await contentService.getGenres()
     }
     
-    // MARK: - Media Operations: Cover Art
-    
-    func getCoverArt(for coverId: String, size: Int = 300) async -> UIImage? {
-        guard !coverId.isEmpty else { return nil }
-        return await mediaService.getCoverArt(for: coverId, size: size)
+    func getAlbumsByArtist(artistId: String) async throws -> [Album] {
+        return try await contentService.getAlbumsByArtist(artistId: artistId)
     }
     
-    func preloadCoverArt(for albums: [Album], size: Int = 200) async {
-        guard !albums.isEmpty else { return }
-        await mediaService.preloadCoverArt(for: albums, size: size)
+    func getAlbumsByGenre(genre: String) async throws -> [Album] {
+        return try await contentService.getAlbumsByGenre(genre: genre)
     }
     
-    func getCoverArtBatch(
-        items: [(id: String, size: Int)],
-        maxConcurrent: Int = 3
-    ) async -> [String: UIImage] {
-        guard !items.isEmpty else { return [:] }
-        return await mediaService.getCoverArtBatch(
-            items: items,
-            maxConcurrent: maxConcurrent
-        )
+    func getAlbumDetails(id: String) async throws -> [Song] {
+        return try await contentService.getSongs(for: id)
     }
     
-    func clearCoverArtCache() {
-        mediaService.clearCoverArtCache()
+    // Alias for getAlbumsByArtist if needed by other components
+    func getArtistAlbums(id: String) async throws -> [Album] {
+        return try await contentService.getAlbumsByArtist(artistId: id)
     }
     
-    func getCoverArtCacheStats() -> MediaCacheStats {
-        return mediaService.getCacheStats()
+    // MARK: - Media
+    
+    func getCoverArt(for id: String, size: Int) async -> UIImage? {
+        return await mediaService.getCoverArt(for: id, size: size)
     }
     
-    // MARK: - Media Operations: Streaming
-    
-    func streamURL(for songId: String) -> URL? {
-        guard !songId.isEmpty else { return nil }
-        return mediaService.streamURL(for: songId)
+    func streamURL(for id: String) -> URL? {
+        return mediaService.streamURL(for: id)
     }
     
-    func downloadURL(for songId: String, maxBitRate: Int? = nil) -> URL? {
-        guard !songId.isEmpty else { return nil }
-        return mediaService.downloadURL(for: songId, maxBitRate: maxBitRate)
+    // MARK: - Favorites
+    
+    func star(id: String) async throws {
+        try await favoritesService.starSong(id)
     }
     
-    /*
-    func getOptimalStreamURL(
-        for songId: String,
-        preferredBitRate: Int? = nil,
-        connectionQuality: ConnectionService.ConnectionQuality
-    ) -> URL? {
-        guard !songId.isEmpty else { return nil }
-        return mediaService.getOptimalStreamURL(
-            for: songId,
-            preferredBitRate: preferredBitRate,
-            connectionQuality: connectionQuality
-        )
-    }
-    */
-    
-    func getMediaInfo(for songId: String) async throws -> MediaInfo? {
-        guard !songId.isEmpty else { return nil }
-        return try await mediaService.getMediaInfo(for: songId)
+    func unstar(id: String) async throws {
+        try await favoritesService.unstarSong(id)
     }
     
-    // MARK: - Discovery Operations: Home Screen
-    
-    func getRecentAlbums(size: Int = 20) async throws -> [Album] {
-        return try await discoveryService.getRecentAlbums(size: size)
+    func starSong(_ id: String) async throws {
+        try await favoritesService.starSong(id)
     }
     
-    func getNewestAlbums(size: Int = 20) async throws -> [Album] {
-        return try await discoveryService.getNewestAlbums(size: size)
+    func unstarSong(_ id: String) async throws {
+        try await favoritesService.unstarSong(id)
     }
     
-    func getFrequentAlbums(size: Int = 20) async throws -> [Album] {
-        return try await discoveryService.getFrequentAlbums(size: size)
-    }
-    
-    func getRandomAlbums(size: Int = 20) async throws -> [Album] {
-        return try await discoveryService.getRandomAlbums(size: size)
-    }
-    
-    func refreshRandomAlbums(size: Int = 20) async throws -> [Album] {
-        return try await discoveryService.getRandomAlbums(size: size)
-    }
-    
-    // MARK: - Discovery Operations: Discovery Mix
-    
-    func getDiscoveryMix(size: Int = 20) async throws -> DiscoveryMix {
-        return try await discoveryService.getDiscoveryMix(size: size)
-    }
-    
-    // MARK: - Discovery Operations: Recommendations
-    
-    func getRecommendationsFor(artist: Artist, limit: Int = 10) async throws -> [Album] {
-        return try await discoveryService.getRecommendationsFor(
-            artist: artist,
-            limit: limit
-        )
-    }
-    
-    func getRecommendationsFor(album: Album, limit: Int = 10) async throws -> [Album] {
-        return try await discoveryService.getRecommendationsFor(
-            album: album,
-            limit: limit
-        )
-    }
-    
-    // MARK: - Discovery Operations: Genre-Based
-    
-    func getAlbumsByGenreForDiscovery(genre: String, limit: Int = 20) async throws -> [Album] {
-        guard !genre.isEmpty else { return [] }
-        return try await discoveryService.getAlbumsByGenre(genre: genre, limit: limit)
-    }
-    
-    func getPopularGenres(limit: Int = 10) async throws -> [GenreWithAlbumCount] {
-        return try await discoveryService.getPopularGenres(limit: limit)
-    }
-    
-    // MARK: - Discovery Operations: Time-Based
-    
-    func getAlbumsFromYear(year: Int, limit: Int = 20) async throws -> [Album] {
-        return try await discoveryService.getAlbumsFromYear(year: year, limit: limit)
-    }
-    
-    func getAlbumsFromDecade(decade: Int, limit: Int = 20) async throws -> [Album] {
-        return try await discoveryService.getAlbumsFromDecade(decade: decade, limit: limit)
-    }
-    
-    // MARK: - Search Operations: Basic Search
-    // disbaled
-    /* ---
-
-    func search(query: String, maxResults: Int = 50) async throws -> SearchResult {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else {
-            return SearchResult(artists: [], albums: [], songs: [])
-        }
-        
-        return try await searchService.search(query: trimmedQuery, maxResults: maxResults)
-    }
-    
-    // MARK: - Search Operations: Advanced Search
-    func searchByCategory(
-        query: String,
-        category: SearchCategory,
-        maxResults: Int = 50
-    ) async throws -> SearchResult {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else {
-            return SearchResult(artists: [], albums: [], songs: [])
-        }
-        
-        return try await searchService.searchByCategory(
-            query: trimmedQuery,
-            category: category,
-            maxResults: maxResults
-        )
-    }
-    
-    func searchWithFilters(
-        query: String,
-        filters: SearchFilters,
-        maxResults: Int = 50
-    ) async throws -> SearchResult {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else {
-            return SearchResult(artists: [], albums: [], songs: [])
-        }
-        
-        return try await searchService.searchWithFilters(
-            query: trimmedQuery,
-            filters: filters,
-            maxResults: maxResults
-        )
-    }
-    
-    // MARK: - Search Operations: Suggestions
-    
-    func getSearchSuggestions(for partialQuery: String, limit: Int = 5) async -> [String] {
-        let trimmedQuery = partialQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmedQuery.count >= 2 else { return [] }
-        
-        return await searchService.getSearchSuggestions(for: trimmedQuery, limit: limit)
-    }
-    
-    // MARK: - Search Operations: Ranking
-    
-    func rankSearchResults(_ results: SearchResult, for query: String) -> SearchResult {
-        return searchService.rankSearchResults(results, for: query)
-    }
-    
-    --- */
-    
-    // MARK: - Favorites Operations
-    
-    func starSong(_ songId: String) async throws {
-        guard !songId.isEmpty else { return }
-        try await favoritesService.starSong(songId)
-    }
-    
-    func unstarSong(_ songId: String) async throws {
-        guard !songId.isEmpty else { return }
-        try await favoritesService.unstarSong(songId)
+    func unstarSongs(_ ids: [String]) async throws {
+        try await favoritesService.unstarSongs(ids)
     }
     
     func getStarredSongs() async throws -> [Song] {
         return try await favoritesService.getStarredSongs()
     }
     
-    func unstarSongs(_ songIds: [String]) async throws {
-        guard !songIds.isEmpty else { return }
-        try await favoritesService.unstarSongs(songIds)
-    }
-    
-    // MARK: - Health & Diagnostics
-    
-    func clearAllCaches() {
-        mediaService.clearCoverArtCache()
-        AppLogger.general.info("All service caches cleared")
-    }
-    
-    func getServiceDiagnostics() async -> ServiceDiagnostics {
-        let connectionHealth = await connectionService.performHealthCheck()
-        let mediaCacheStats = mediaService.getCacheStats()
-        
-        return ServiceDiagnostics(
-            isHealthy: connectionHealth.isConnected,
-            connectionHealth: connectionHealth,
-            mediaCacheStats: mediaCacheStats,
-            timestamp: Date()
-        )
-    }
-    
-    struct ServiceDiagnostics {
-        let isHealthy: Bool
-        let connectionHealth: ConnectionHealth
-        let mediaCacheStats: MediaCacheStats
-        let timestamp: Date
-        
-        var summary: String {
-            return """
-            SERVICE DIAGNOSTICS
-            Status: \(isHealthy ? "Healthy" : "Unhealthy")
-            Connection: \(connectionHealth.statusDescription)
-            Media Cache: \(mediaCacheStats.summary)
-            Timestamp: \(timestamp)
-            """
-        }
-    }
-}
-
-// MARK: - Internal Service Access (For Managers Only)
-
-extension UnifiedSubsonicService {
-     
-    private func getConnectionService() -> ConnectionService {
-        return connectionService
-    }
-    
-    private func getContentService() -> ContentService {
-        return contentService
-    }
-    
-    private func getMediaService() -> MediaService {
-        return mediaService
-    }
-    
-    private func getDiscoveryService() -> DiscoveryService {
-        return discoveryService
-    }
-    // ---
     /*
-    private func getSearchService() -> SearchService {
-        return searchService
+    // MARK: - Search (Disabled)
+    func search(_ query: String) async throws -> SearchResult3 {
+        return try await searchService.search(query)
     }
     */
-    // ---
-    private func getFavoritesService() -> FavoritesService {
-        return favoritesService
-    }
 }
-
-// MARK: - Legacy Type Alias
-typealias SubsonicService = UnifiedSubsonicService

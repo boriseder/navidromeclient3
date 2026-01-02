@@ -2,298 +2,115 @@
 //  SongRow.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Explicit @MainActor closures for UI actions
+//  UPDATED: Swift 6 Compliance
 //
 
 import SwiftUI
 
-enum SongContext {
-    case album, favorites
-}
-
 struct SongRow: View {
     let song: Song
-    let index: Int
-    let isPlaying: Bool
+    var context: SongRowContext = .album
+    var showCover: Bool = false
     
-    // Swift 6: Closures interacting with UI/ViewModels should be @MainActor
-    let action: @MainActor () -> Void
-    let onMore: @MainActor () -> Void
-    let favoriteAction: (@MainActor () -> Void)?
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(CoverArtManager.self) var coverArtManager
     
-    let context: SongContext
+    enum SongRowContext {
+        case album
+        case playlist
+        case search
+        case favorites
+    }
     
-    @EnvironmentObject var theme: ThemeManager
-    
-    // Interaction states
-    @State private var isPressed = false
-    @State private var playIndicatorPhase = 0.0
-    
-    // Animation states
-    @State private var showPlayIndicator = false
-    private let animationTimer = Timer.publish(every: 0.8, on: .main, in: .common).autoconnect()
+    private var isPlaying: Bool {
+        return playerVM.currentSong?.id == song.id
+    }
     
     var body: some View {
-        VStack(spacing: DSLayout.elementGap) {
-            HStack(spacing: DSLayout.elementGap) {
-                
-                trackNumberSection
-                    .padding(.leading, DSLayout.elementGap)
-
-                songInfoSection
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer()
-                
-                durationSection
-                    .padding(.trailing, DSLayout.elementGap)
-
+        HStack(spacing: DSLayout.contentGap) {
+            if isPlaying {
+                EqualizerBars(isActive: playerVM.isPlaying, accentColor: DSColor.primary)
+                    .frame(width: 20)
+            } else if showCover {
+                AlbumImageView(
+                    album: Album(
+                        id: song.albumId ?? "",
+                        parent: nil,
+                        album: song.album ?? "",
+                        title: song.album ?? "",
+                        name: song.album ?? "",
+                        isDir: false,
+                        coverArt: song.coverArt,
+                        artist: song.artist ?? "",
+                        artistId: nil,
+                        created: nil,
+                        duration: 0,
+                        playCount: 0,
+                        songCount: 0,
+                        year: nil,
+                        genre: nil,
+                        song: nil
+                    ),
+                    context: .list
+                )
+                .frame(width: 40, height: 40)
+            } else if let track = song.track {
+                Text("\(track)")
+                    .font(DSText.metadata.monospacedDigit())
+                    .foregroundStyle(DSColor.secondary)
+                    .frame(width: 20, alignment: .center)
             }
-            .padding(.vertical, DSLayout.contentPadding)
-            .background(rowBackground)
-            .contentShape(Rectangle())
-        }
-        .scaleEffect(isPressed ? 0.98 : 1.0)
-        .animation(DSAnimations.spring, value: isPressed)
-        .animation(DSAnimations.ease, value: isPlaying)
-        .onReceive(animationTimer) { _ in
-            updatePlayIndicatorAnimation()
-        }
-        .onAppear {
-            if isPlaying { showPlayIndicator = true }
-        }
-        .onChange(of: isPlaying) { _, newValue in
-            withAnimation(DSAnimations.springSnappy) {
-                showPlayIndicator = newValue
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(song.title)
+                    .font(DSText.body)
+                    .foregroundStyle(isPlaying ? DSColor.primary : DSColor.onLight)
+                    .lineLimit(1)
+                
+                if context != .album {
+                    Text(song.artist ?? "Unknown Artist")
+                        .font(DSText.metadata)
+                        .foregroundStyle(DSColor.secondary)
+                        .lineLimit(1)
+                }
+            }
+            
+            Spacer()
+            
+            if let duration = song.duration {
+                Text(formatDuration(duration))
+                    .font(DSText.metadata)
+                    .foregroundStyle(DSColor.secondary)
+            }
+            
+            Menu {
+                Button {
+                    // Fixed: No await needed for synchronous method
+                    playerVM.playNext([song])
+                } label: {
+                    Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                }
+                
+                Button {
+                    playerVM.addToQueue([song])
+                } label: {
+                    Label("Add to Queue", systemImage: "text.append")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 16))
+                    .foregroundStyle(DSColor.secondary)
+                    .padding(8)
+                    .contentShape(Rectangle())
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            triggerHapticFeedback()
-            withAnimation(DSAnimations.easeQuick) {
-                action()
-            }
-        }
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            withAnimation(DSAnimations.easeQuick) {
-                isPressed = pressing
-            }
-        }, perform: {})
-        .contextMenu {
-            enhancedContextMenu
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint(accessibilityHint)
-        .accessibilityAction {
-            action()
-        }
-    }
-    
-    // MARK: - Sections
-    
-    @ViewBuilder
-    private var trackNumberSection: some View {
-        ZStack {
-            if isPlaying && showPlayIndicator {
-                EqualizerBars(
-                    isActive: showPlayIndicator,
-                    accentColor: DSColor.playing
-                )
-                .transition(.asymmetric(
-                    insertion: .scale.combined(with: .opacity),
-                    removal: .scale.combined(with: .opacity)
-                ))
-            } else {
-                if context == .album {
-                    Text("\(song.track ?? 0).")
-                        .font(DSText.emphasized)
-                        .foregroundStyle(DSColor.onDark)
-                        .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
-                        .transition(.asymmetric(
-                            insertion: .scale.combined(with: .opacity),
-                            removal: .scale.combined(with: .opacity)
-                        ))
-                } else {
-                    HeartButton.songRow(song: song)
-                        .onTapGesture {
-                            triggerHapticFeedback(.light)
-                            favoriteAction?()
-                        }
-                        .font(DSText.emphasized)
-                        .foregroundStyle(DSColor.onDark)
-                        .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
-                        .transition(.asymmetric(
-                            insertion: .scale.combined(with: .opacity),
-                            removal: .scale.combined(with: .opacity)
-                        ))
-                }
-            }
-        }
-        .animation(DSAnimations.springSnappy, value: showPlayIndicator)
-        .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
-        .scaledToFit()
-    }
-    
-    private var songInfoSection: some View {
-        VStack(alignment: .leading, spacing: DSLayout.tightGap) {
-            Text(song.title)
-                .font(DSText.emphasized)
-                .foregroundStyle(DSColor.onDark)
-                .lineLimit(1)
-            
-            if context == .favorites && !(song.artist?.isEmpty ?? true) {
-                Text(song.artist ?? "")
-                    .font(DSText.metadata)
-                    .foregroundStyle(DSColor.onDark)
-                    .lineLimit(1)
-            }
-        }
-    }
-      
-    private var songColor: Color {
-        if isPlaying {
-            return DSColor.playing
-        }
-        return DSColor.onDark
-    }
-    
-    @ViewBuilder
-    private var durationSection: some View {
-        if let duration = song.duration, duration > 0 {
-            Text(formatDuration(duration))
-                .font(DSText.emphasized)
-                .foregroundStyle(songColor)
-        }
-    }
-        
-    // MARK: - Styling
-    
-    private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: DSCorners.tight)
-            .fill(backgroundColor)
-            .overlay(
-                RoundedRectangle(cornerRadius: DSCorners.tight)
-                    .stroke(borderColor, lineWidth: borderWidth)
-            )
-    }
-    
-    private var backgroundColor: Color {
-        if isPressed {
-            return DSColor.accent.opacity(0.45)
-        } else if isPlaying {
-            return DSColor.background
-        } else {
-            return theme.backgroundContrastColor.opacity(0.12)
-        }
-    }
-    
-    private var borderColor: Color {
-        if isPlaying {
-            return DSColor.playing.opacity(0.2)
-        } else {
-            return DSColor.quaternary.opacity(0.3)
-        }
-    }
-    
-    private var borderWidth: CGFloat {
-        isPlaying ? 1 : 0.5
-    }
-    
-    @ViewBuilder
-    private var enhancedContextMenu: some View {
-        VStack {
-            Button {
-                action()
-            } label: {
-                Label(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.fill" : "play.fill")
-            }
-            
-            if let favoriteAction = favoriteAction {
-                Button(action: favoriteAction) {
-                    Label("Toggle Favorite", systemImage: "heart.fill")
-                }
-            }
-            
-            Button {
-                // Add to playlist functionality
-            } label: {
-                Label("Add to Playlist", systemImage: "plus")
-            }
-            
-            Divider()
-            
-            Button {
-                onMore()
-            } label: {
-                Label("More Options", systemImage: "ellipsis")
-            }
-        }
-    }
-    
-    // MARK: - Helpers
-    
-    private func updatePlayIndicatorAnimation() {
-        if isPlaying {
-            withAnimation(
-                .easeInOut(duration: 0.8)
-                .repeatForever(autoreverses: true)
-            ) {
-                playIndicatorPhase += 1.0
-            }
-        }
-    }
-    
-    private func triggerHapticFeedback(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
+        .padding(.vertical, 4)
     }
     
     private func formatDuration(_ seconds: Int) -> String {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
-    }
-    
-    // Accessibility
-    private var accessibilityLabel: String {
-        var label = "Track \(index): \(song.title)"
-        if let artist = song.artist {
-            label += " by \(artist)"
-        }
-        if let duration = song.duration {
-            label += ", \(formatDuration(duration))"
-        }
-        if isPlaying {
-            label += ", currently playing"
-        }
-        return label
-    }
-    
-    private var accessibilityHint: String {
-        return "Double tap to \(isPlaying ? "pause" : "play")"
-    }
-}
-
-// MARK: - Convenience Initializers
-
-extension SongRow {
-    init(
-        song: Song,
-        index: Int,
-        isPlaying: Bool,
-        action: @escaping @MainActor () -> Void,
-        onMore: @escaping @MainActor () -> Void,
-        context: SongContext
-    ) {
-        self.init(
-            song: song,
-            index: index,
-            isPlaying: isPlaying,
-            action: action,
-            onMore: onMore,
-            favoriteAction: nil,
-            context: context
-        )
     }
 }

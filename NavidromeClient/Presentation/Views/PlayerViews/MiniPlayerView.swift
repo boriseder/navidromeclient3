@@ -2,16 +2,16 @@
 //  MiniPlayerView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Correctly accessing managers via EnvironmentObject
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
 
 struct MiniPlayerView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var audioSessionManager: AudioSessionManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(AudioSessionManager.self) var audioSessionManager
+    @Environment(CoverArtManager.self) var coverArtManager
     
     @State private var showFullScreen = false
     @State private var isDragging = false
@@ -110,8 +110,8 @@ struct MiniPlayerView: View {
             .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: -2)
             .fullScreenCover(isPresented: $showFullScreen) {
                 FullScreenPlayerView()
-                    .environmentObject(playerVM)
-                    .environmentObject(audioSessionManager)
+                    .environment(playerVM)
+                    .environment(audioSessionManager)
             }
         }
     }
@@ -120,7 +120,7 @@ struct MiniPlayerView: View {
 // MARK: - Progress Bar
 
 struct ProgressBarView: View {
-    @ObservedObject var playerVM: PlayerViewModel
+    var playerVM: PlayerViewModel
     @Binding var isDragging: Bool
     
     var body: some View {

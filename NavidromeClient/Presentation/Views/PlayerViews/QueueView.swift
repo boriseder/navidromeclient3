@@ -2,15 +2,15 @@
 //  QueueView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Added @MainActor to closure definitions in subviews
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
 //
 
 import SwiftUI
 
 struct QueueView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(CoverArtManager.self) var coverArtManager
     @Environment(\.dismiss) private var dismiss
     
     private var currentPlaylist: [Song] {
@@ -221,8 +221,8 @@ struct QueueView: View {
 
 struct CurrentlyPlayingRow: View {
     let song: Song
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var playerVM: PlayerViewModel
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(PlayerViewModel.self) var playerVM
     
     private var coverArt: UIImage? {
         guard let albumId = song.albumId else { return nil }
@@ -292,10 +292,9 @@ struct CurrentlyPlayingRow: View {
 struct QueueSongRow: View {
     let song: Song
     let queuePosition: Int
-    // Swift 6: Closure isolated to MainActor
     let onTap: @MainActor () -> Void
     
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
     
     private var coverArt: UIImage? {
         guard let albumId = song.albumId else { return nil }
