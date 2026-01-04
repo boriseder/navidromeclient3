@@ -101,7 +101,7 @@ class MusicLibraryManager {
     
     func refreshAllData() async {
         guard !isCurrentlyLoading else { return }
-        guard NetworkMonitor.shared.shouldLoadOnlineContent else { return }
+        guard NetworkMonitor.shared.canLoadOnlineContent else { return }
         
         isCurrentlyLoading = true
         defer { isCurrentlyLoading = false }
@@ -156,10 +156,15 @@ class MusicLibraryManager {
         pendingNetworkStrategyChange = nil
         
         switch newStrategy {
+        case .initializing:
+            // Do nothing during app initialization
+            break
+            
         case .online:
             if !isDataFresh, service != nil {
                 await refreshAllData()
             }
+            
         case .offlineOnly, .setupRequired:
             break
         }
@@ -187,7 +192,7 @@ class MusicLibraryManager {
             return
         }
         
-        guard NetworkMonitor.shared.shouldLoadOnlineContent else {
+        guard NetworkMonitor.shared.canLoadOnlineContent else {
             albumLoadingState = .completed
             return
         }
@@ -241,7 +246,7 @@ class MusicLibraryManager {
             return
         }
         
-        guard NetworkMonitor.shared.shouldLoadOnlineContent else {
+        guard NetworkMonitor.shared.canLoadOnlineContent else {
             artistLoadingState = .completed
             return
         }
@@ -272,7 +277,7 @@ class MusicLibraryManager {
             return
         }
         
-        guard NetworkMonitor.shared.shouldLoadOnlineContent else {
+        guard NetworkMonitor.shared.canLoadOnlineContent else {
             genreLoadingState = .completed
             return
         }
@@ -301,7 +306,7 @@ class MusicLibraryManager {
             throw URLError(.networkConnectionLost)
         }
         
-        guard NetworkMonitor.shared.shouldLoadOnlineContent else {
+        guard NetworkMonitor.shared.canLoadOnlineContent else {
             throw URLError(.notConnectedToInternet)
         }
         

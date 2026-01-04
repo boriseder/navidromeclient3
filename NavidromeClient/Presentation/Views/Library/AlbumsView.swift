@@ -29,10 +29,12 @@ struct AlbumsView: View {
         switch networkMonitor.contentLoadingStrategy {
         case .online:
             baseAlbums = musicLibraryManager.albums
+            
         case .offlineOnly:
             baseAlbums = offlineManager.offlineAlbums
-        case .setupRequired:
-            baseAlbums = []
+            
+        case .setupRequired, .initializing:
+            baseAlbums = []  // Empty during setup or initialization
         }
         
         let filteredAlbums: [Album]
@@ -141,7 +143,7 @@ struct AlbumsView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .foregroundColor(.white)
+                            .foregroundColor(theme.textColor)
                     }
                 }
             }

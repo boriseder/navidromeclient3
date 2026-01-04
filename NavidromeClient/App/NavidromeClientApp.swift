@@ -14,7 +14,6 @@ import BackgroundTasks
 @MainActor
 struct NavidromeClientApp: App {
     // MARK: - App State
-    // All top-level objects are now @State and injected via .environment()
     @State private var appInitializer = AppInitializer()
     @State private var appConfig = AppConfig.shared
     @State private var theme = ThemeManager()
@@ -34,15 +33,12 @@ struct NavidromeClientApp: App {
     @State private var playerVM: PlayerViewModel
     
     // MARK: - Local State
-    @State private var hasPerformedInitialConfiguration = false
     @State private var hasConfiguredManagers = false
     
     // MARK: - Scene Phase
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
-        // Initialize interconnected managers
-        // Since the struct is @MainActor, these inits are safe
         let coverArt = CoverArtManager()
         let player = PlayerViewModel(coverArtManager: coverArt)
         
@@ -57,17 +53,16 @@ struct NavidromeClientApp: App {
             contentRoot
                 .task {
                     await performInitialization()
-                    configureInitialDependencies()
+                    if appInitializer.state == .completed {
+                        configureInitialDependencies()
+                    }
                 }
                 .task {
-                    // Modern replacement for setupTerminationHandler
                     for await _ in NotificationCenter.default.notifications(named: UIApplication.willTerminateNotification) {
                         audioSessionManager.handleAppWillTerminate()
                     }
                 }
-                .onChange(of: appInitializer.isConfigured) { _, isConfigured in
-                    handleConfigurationChange(isConfigured)
-                }
+                // Remove: .onChange(of: appInitializer.isConfigured)
                 .onChange(of: networkMonitor.canLoadOnlineContent) { _, isConnected in
                     Task {
                         await handleNetworkChange(isConnected: isConnected)
@@ -89,37 +84,22 @@ struct NavidromeClientApp: App {
 
     @ViewBuilder
     private var contentRoot: some View {
-        switch appInitializer.state {
-        case .notStarted, .inProgress:
-            InitializationView(initializer: appInitializer)
-            
-        case .completed:
-            ContentView()
-                // Inject ALL dependencies using modern .environment()
-                .environment(appConfig)
-                .environment(appInitializer)
-                .environment(theme)
-                .environment(networkMonitor)
-                .environment(downloadManager)
-                .environment(offlineManager)
-                .environment(audioSessionManager)
-                .environment(musicLibraryManager)
-                .environment(songManager)
-                .environment(exploreManager)
-                .environment(favoritesManager)
-                .environment(connectionManager)
-                .environment(coverArtManager)
-                .environment(playerVM)
-                
-                .preferredColorScheme(theme.colorScheme)
-            
-        case .failed(let error):
-            InitializationErrorView(error: error) {
-                Task {
-                    try? await appInitializer.initialize()
-                }
-            }
-        }
+        ContentView()
+            .environment(appConfig)
+            .environment(appInitializer)
+            .environment(theme)
+            .environment(networkMonitor)
+            .environment(downloadManager)
+            .environment(offlineManager)
+            .environment(audioSessionManager)
+            .environment(musicLibraryManager)
+            .environment(songManager)
+            .environment(exploreManager)
+            .environment(favoritesManager)
+            .environment(connectionManager)
+            .environment(coverArtManager)
+            .environment(playerVM)
+            .preferredColorScheme(theme.colorScheme)
     }
 
     // MARK: - Initialization Logic
@@ -127,25 +107,13 @@ struct NavidromeClientApp: App {
     private func performInitialization() async {
         do {
             try await appInitializer.initialize()
-            if appInitializer.state == .completed && appInitializer.isConfigured {
-                AppLogger.general.info("[App] Initialization completed - configuring managers")
+            
+            if appInitializer.isConfigured {
+                AppLogger.general.info("[App] Configuring managers...")
                 configureManagersAndLoadData()
             }
         } catch {
             AppLogger.general.error("[App] Initialization failed: \(error)")
-        }
-    }
-
-    private func handleConfigurationChange(_ isConfigured: Bool) {
-        guard isConfigured else { return }
-
-        if !hasConfiguredManagers {
-            AppLogger.general.info("[App] Configuration changed - initializing managers")
-            configureManagersAndLoadData()
-            
-            if !hasPerformedInitialConfiguration {
-                hasPerformedInitialConfiguration = true
-            }
         }
     }
 
@@ -164,8 +132,6 @@ struct NavidromeClientApp: App {
         )
         
         Task {
-            await waitForStableNetworkState()
-            
             await appInitializer.loadInitialData(
                 exploreManager: exploreManager,
                 favoritesManager: favoritesManager,
@@ -174,18 +140,9 @@ struct NavidromeClientApp: App {
         }
     }
     
-    private func waitForStableNetworkState() async {
-        for _ in 0..<40 {
-            if networkMonitor.contentLoadingStrategy != .setupRequired { return }
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-        AppLogger.general.warn("[App] Timeout waiting for stable network state")
-    }
-    
     private func configureInitialDependencies() {
         audioSessionManager.playerViewModel = playerVM
         audioSessionManager.setupRemoteCommandCenter()
-        // Termination handler is now in .task modifier
     }
     
     // MARK: - Lifecycle & Background
@@ -230,7 +187,6 @@ struct NavidromeClientApp: App {
     }
     
     private func handleFactoryReset() async {
-        hasPerformedInitialConfiguration = false
         hasConfiguredManagers = false
         AppLogger.general.info("[App] Factory reset handled")
     }

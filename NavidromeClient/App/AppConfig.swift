@@ -74,11 +74,7 @@ final class AppConfig {
     func getCredentials() -> ServerCredentials? {
         return credentials
     }
-    
-    func hasCredentials() -> Bool {
-        return credentials != nil
-    }
-    
+        
     private func loadCredentials() {
         AppLogger.general.info("[AppConfig] Loading credentials from CredentialStore...")
         

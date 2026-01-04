@@ -23,7 +23,7 @@ struct GenreView: View {
     private var displayedGenres: [Genre] {
         let genres: [Genre]
         
-        if networkMonitor.shouldLoadOnlineContent {
+        if networkMonitor.canLoadOnlineContent {
             genres = filterGenres(musicLibraryManager.genres)
         } else {
             // Extract unique genres from offline albums
@@ -73,7 +73,7 @@ struct GenreView: View {
             .toolbarColorScheme(theme.colorScheme, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search genres...")
             .refreshable {
-                guard networkMonitor.shouldLoadOnlineContent else { return }
+                guard networkMonitor.canLoadOnlineContent else { return }
                 await refreshAllData()
             }
             .onChange(of: searchText) { _, _ in
@@ -84,7 +84,8 @@ struct GenreView: View {
                     NavigationLink {
                         SettingsView()
                     } label: {
-                        Image(systemName: "person.crop.circle.fill")
+                        Image(systemName: "ellipsis")
+                            .foregroundColor(theme.textColor)
                     }
                 }
             }
@@ -97,7 +98,7 @@ struct GenreView: View {
     @ViewBuilder
     private var contentView: some View {
         ScrollView {
-            LazyVStack(spacing: DSLayout.contentGap) {
+            LazyVStack(spacing: DSLayout.tightGap) {
                 ForEach(displayedGenres.indices, id: \.self) { index in
                     let genre = displayedGenres[index]
                     
@@ -149,15 +150,15 @@ struct GenreRowView: View {
     @Environment(ThemeManager.self) var theme
 
     var body: some View {
-        HStack(spacing: DSLayout.elementGap) {
+        HStack(spacing: DSLayout.contentGap) {
             ZStack {
                 Circle()
                     .fill(
                         LinearGradient(
                             colors: [
-                                .white.opacity(0.2),
-                                .white.opacity(0.08),
-                                .white.opacity(0.05)
+                                .white.opacity(0.4),
+                                .white.opacity(0.28),
+                                .white.opacity(0.15)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -166,9 +167,9 @@ struct GenreRowView: View {
                     .frame(width: ImageContext.artistList.displaySize, height: ImageContext.artistList.displaySize)
                     .overlay(
                         Circle()
-                            .stroke(.white.opacity(0.1), lineWidth: 1)
+                            .stroke(.white.opacity(0.8), lineWidth: 1)
                     )
-                    .shadow(color: .white.opacity(0.1), radius: 4, x: 0, y: 2)
+                    .shadow(color: .white.opacity(0.2), radius: 4, x: 0, y: 2)
                 
                 Image(systemName: "music.note.list")
                     .font(.system(size: DSLayout.smallIcon))
@@ -193,6 +194,9 @@ struct GenreRowView: View {
                 .foregroundStyle(DSColor.onDark)
                 .padding(.trailing, DSLayout.contentPadding)
         }
-        .background(theme.backgroundContrastColor.opacity(0.12))
+        .background(
+            theme.backgroundContrastColor.opacity(0.44),
+            in: RoundedRectangle(cornerRadius: DSCorners.tight)
+        )
     }
 }

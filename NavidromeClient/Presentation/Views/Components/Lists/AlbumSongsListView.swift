@@ -27,7 +27,17 @@ struct AlbumSongsListView: View {
                         await playerVM.setPlaylist(songs, startIndex: index, albumId: albumId)
                     }
                 } label: {
-                    SongRow(song: song, context: .album)
+                    SongRow(
+                        song: song,
+                        index: index + 1,  // Track numbers typically start at 1
+                        isPlaying: playerVM.isPlaying,
+                        action: {
+                            Task {
+                                await playerVM.setPlaylist(songs, startIndex: index, albumId: albumId)
+                            }
+                        },
+                        context: .album
+                    )
                         .padding(.horizontal, DSLayout.contentPadding)
                 }
                 .buttonStyle(PlainButtonStyle())

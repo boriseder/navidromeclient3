@@ -18,12 +18,11 @@ final class AppInitializer {
     
     enum InitializationState: Equatable {
         case notStarted
-        case inProgress
         case completed
         case failed(String)
     }
 
-    private(set) var state: InitializationState = .notStarted
+    var state: InitializationState = .notStarted
     private(set) var isConfigured: Bool = false
 
     private(set) var unifiedService: UnifiedSubsonicService?
@@ -41,13 +40,10 @@ final class AppInitializer {
     }
     
     private func setupNotificationObservers() {
-        // Modern Concurrency: Use detached task to monitor AsyncSequence
-        Task { @MainActor [weak self] in
+        Task { @MainActor in
             for await notification in NotificationCenter.default.notifications(named: .credentialsUpdated) {
-                guard let self = self else { return }
                 guard notification.object is ServerCredentials else { continue }
                 
-                // Safe reinitialization on MainActor
                 try? await self.reinitializeAfterConfiguration()
             }
         }
@@ -56,7 +52,7 @@ final class AppInitializer {
     func initialize() async throws {
         guard state == .notStarted || state == .failed("") else { return }
 
-        state = .inProgress
+        // Remove: state = .inProgress
         AppLogger.general.info("[AppInitializer] === Initialization start ===")
         
         let credentials = AppConfig.shared.getCredentials()
@@ -75,10 +71,7 @@ final class AppInitializer {
     func reinitializeAfterConfiguration() async throws {
         AppLogger.general.info("[AppInitializer] Reinitializing after configuration...")
         
-        // Reset current state
         reset()
-        
-        // Reinitialize with new credentials
         try await initialize()
         
         AppLogger.general.info("[AppInitializer] Reinitialization completed")
@@ -93,7 +86,6 @@ final class AppInitializer {
             password: creds.password
         )
 
-        // Configure network monitor with service
         NetworkMonitor.shared.configureService(unifiedService)
         NetworkMonitor.shared.updateConfiguration(isConfigured: true)
         
@@ -111,8 +103,9 @@ final class AppInitializer {
         musicLibraryManager: MusicLibraryManager,
         playerVM: PlayerViewModel
     ) {
+        // Change: Only check for .completed
         guard state == .completed else {
-            AppLogger.general.warn("[AppInitializer] Cannot configure managers - not initialized")
+            AppLogger.general.warn("[AppInitializer] Cannot configure managers - not initialized (state: \(state))")
             return
         }
         
@@ -143,8 +136,9 @@ final class AppInitializer {
         favoritesManager: FavoritesManager,
         musicLibraryManager: MusicLibraryManager
     ) async {
+        // Change: Only check for .completed
         guard state == .completed else {
-            AppLogger.general.warn("[AppInitializer] Cannot load data - not initialized")
+            AppLogger.general.warn("[AppInitializer] Cannot load data - not initialized (state: \(state))")
             return
         }
         
@@ -169,17 +163,13 @@ final class AppInitializer {
     func performFactoryReset() async {
         AppLogger.general.info("[AppInitializer] === Factory Reset Start ===")
         
-        // 1. Clear credentials via AppConfig
         AppConfig.shared.clearCredentials()
         
-        // 2. Reset network monitor FIRST (before state change)
         NetworkMonitor.shared.updateConfiguration(isConfigured: false)
         NetworkMonitor.shared.reset()
         
-        // 3. Notify all managers to reset
         NotificationCenter.default.post(name: .factoryResetRequested, object: nil)
         
-        // 4. Reset local state but keep .completed (triggers WelcomeView)
         unifiedService = nil
         isConfigured = false
         state = .completed

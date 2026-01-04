@@ -3,7 +3,8 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Compliance
-//  - Uses AppNetworkState to fix compiler ambiguity
+//  - FIXED: Prevents WelcomeView flash on startup
+//  - Uses proper initialization state
 //
 
 import Foundation
@@ -27,10 +28,6 @@ class NetworkMonitor {
     // Convenience for UI
     var canLoadOnlineContent: Bool {
         return contentLoadingStrategy == .online
-    }
-    
-    var shouldLoadOnlineContent: Bool {
-        return canLoadOnlineContent
     }
     
     var connectionStatusDescription: String {

@@ -28,7 +28,7 @@ struct AlbumCollectionView: View {
     @State private var backgroundImageLoaded = false
 
     private var displayedAlbums: [Album] {
-        return networkMonitor.shouldLoadOnlineContent ? albums : availableOfflineAlbums
+        return networkMonitor.canLoadOnlineContent ? albums : availableOfflineAlbums
     }
     
     private var artist: Artist? {
@@ -92,7 +92,7 @@ struct AlbumCollectionView: View {
                 await loadContent()
             }
             .refreshable {
-                guard networkMonitor.shouldLoadOnlineContent else { return }
+                guard networkMonitor.canLoadOnlineContent else { return }
                 await loadContent()
             }
         }

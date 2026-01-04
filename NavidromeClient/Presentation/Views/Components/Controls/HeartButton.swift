@@ -88,7 +88,7 @@ struct HeartButton: View {
     }
     
     private var heartColor: Color {
-        return isFavorite ? DSColor.error : unfavoriteColor
+        return isFavorite ? DSColor.onDark : DSColor.onDark
     }
     
     private func toggleFavorite() {

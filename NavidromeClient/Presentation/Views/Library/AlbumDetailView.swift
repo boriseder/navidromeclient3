@@ -107,7 +107,7 @@ struct AlbumDetailView: View {
     
     @MainActor
     private func loadAlbumData() async {
-        let isNetworkOffline = !networkMonitor.shouldLoadOnlineContent
+        let isNetworkOffline = !networkMonitor.canLoadOnlineContent
         let isDownloaded = downloadManager.isAlbumDownloaded(album.id)
         
         isOfflineAlbum = isNetworkOffline || isDownloaded

@@ -17,7 +17,7 @@ enum ImageContext: Sendable {
     
     var baseSize: Int {
         switch self {
-        case .list: return 80
+        case .list: return 60
         case .card, .miniPlayer: return 168
         case .grid: return 200
         case .artistList: return 50

@@ -3,8 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Compliance
-//  - Renamed to AppNetworkState to avoid conflicts
-//  - Mutable vars for NetworkMonitor
+//  - FIXED: Initial state now uses .initializing instead of .setupRequired
 //
 
 import Foundation
@@ -34,12 +33,13 @@ struct AppNetworkState: Equatable, Sendable {
     var serverReachability: Reachability
     var contentLoadingStrategy: ContentLoadingStrategy
     
+    // FIXED: Use .initializing during startup instead of .setupRequired
     static let initial = AppNetworkState(
         isConnected: false,
         isConfigured: false,
         connectionType: .none,
         serverReachability: .unknown,
-        contentLoadingStrategy: .setupRequired
+        contentLoadingStrategy: .initializing
     )
     
     // Helper

@@ -27,9 +27,11 @@ struct ArtistsView: View {
         switch networkMonitor.contentLoadingStrategy {
         case .online:
             artists = filterArtists(musicLibraryManager.artists)
+            
         case .offlineOnly:
             artists = filterArtists(offlineManager.offlineArtists)
-        case .setupRequired:
+            
+        case .setupRequired, .initializing:
             artists = []
         }
         
@@ -73,7 +75,8 @@ struct ArtistsView: View {
                     NavigationLink {
                         SettingsView()
                     } label: {
-                        Image(systemName: "person.crop.circle.fill")
+                        Image(systemName: "ellipsis")
+                            .foregroundColor(theme.textColor)
                     }
                 }
             }
@@ -83,7 +86,7 @@ struct ArtistsView: View {
     @ViewBuilder
     private var contentView: some View {
         ScrollView {
-            LazyVStack(spacing: 2) {
+            LazyVStack(spacing: DSLayout.tightGap) {
                 ForEach(displayedArtists.indices, id: \.self) { index in
                     let artist = displayedArtists[index]
                     
@@ -209,7 +212,10 @@ struct ArtistRowView: View {
                     .padding(.trailing, DSLayout.contentPadding)
             }
         }
-        .background(theme.backgroundContrastColor.opacity(0.12))
+        .background(
+            theme.backgroundContrastColor.opacity(0.44),
+            in: RoundedRectangle(cornerRadius: DSCorners.tight)
+        )
     }
     
     private var isAvailableOffline: Bool {

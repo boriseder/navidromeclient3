@@ -3,7 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 & iOS 17+ Modernization
-//  - Added import Observation (Critical for @Environment)
+//  - FIXED: Handles .initializing state to prevent WelcomeView flash
 //
 
 import SwiftUI
@@ -27,11 +27,16 @@ struct ContentView: View {
     var body: some View {
         Group {
             switch networkMonitor.contentLoadingStrategy {
+            case .initializing:
+                // Show nothing during initialization - prevents WelcomeView flash
+                Color.clear
+                
             case .setupRequired:
                 WelcomeView {
                     isInitialSetup = true
                     showingSettings = true
                 }
+                
             case .online, .offlineOnly:
                 TabView {
                     ExploreView()
@@ -94,7 +99,7 @@ struct ContentView: View {
     }
 
     private func retryServiceInitialization() async {
-        guard appConfig.hasCredentials() else {
+        guard appConfig.credentials != nil else {
             serviceInitError = "No credentials available"
             return
         }
@@ -124,7 +129,7 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .animation(DSAnimations.ease, value: networkMonitor.canLoadOnlineContent)
                 
-            case .online, .setupRequired:
+            case .online, .setupRequired, .initializing:
                 EmptyView()
         }
     }

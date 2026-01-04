@@ -1,12 +1,4 @@
 //
-//  FavoritesView.swift
-//  NavidromeClient
-//
-//  Created by Boris Eder on 04.01.26.
-//
-
-
-//
 //  FavoritesView.swift - FIXED: Compiler Errors Resolved
 //  NavidromeClient
 //
@@ -83,10 +75,29 @@ struct FavoritesView: View {
                 DynamicMusicBackground()
             }
             
-            contentView
+            VStack(spacing: 0) {
+                makePicker()
+                
+                if selection == 0 {
+                    contentView
+                } else {
+                    playlistView
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
-
+    
+    @ViewBuilder
+    private func makePicker() -> some View {
+        Picker("Category", selection: $selection) {
+            Text("Songs").tag(0)
+            Text("Playlists").tag(1)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, DSLayout.screenPadding)
+        .padding(.top, DSLayout.elementPadding)
+    }
     
     @ViewBuilder
     private func makeMenu() -> some View {
@@ -154,25 +165,10 @@ struct FavoritesView: View {
                 
                 let songs = filteredSongs
                 ForEach(Array(songs.enumerated()), id: \.0) { index, song in
-                    SongRow(
+                    makeSongRow(
                         song: song,
-                        index: index + 1,
-                        isPlaying: playerVM.currentSong?.id == song.id && playerVM.isPlaying,
-                        action: {
-                            Task {
-                                await playerVM.setPlaylist(
-                                    songs,
-                                    startIndex: index,
-                                    albumId: nil
-                                )
-                            }
-                        },
-                        favoriteAction: {
-                            Task {
-                                await favoritesManager.toggleFavorite(song)
-                            }
-                        },
-                        context: .favorites
+                        index: index,
+                        songs: songs
                     )
                 }
             }
@@ -181,6 +177,30 @@ struct FavoritesView: View {
         }
     }
     
+    // FIX #2: Ultra-minimal SongRow - only song parameter
+    @ViewBuilder
+    private func makeSongRow(song: Song, index: Int, songs: [Song]) -> some View {
+        SongRow(song: song)
+            .onTapGesture {
+                Task {
+                    await playerVM.setPlaylist(songs, startIndex: index, albumId: nil)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var playlistView: some View {
+        ScrollView {
+            LazyVStack(spacing: 1) {
+                Text("Playlists coming soon")
+                    .font(DSText.sectionTitle)
+                    .padding(.top, DSLayout.tightGap)
+                    .padding(.bottom, DSLayout.sectionGap)
+            }
+            .padding(.bottom, DSLayout.miniPlayerHeight)
+            .padding(.horizontal, DSLayout.screenPadding)
+        }
+    }
     
     // MARK: - Business Logic
     

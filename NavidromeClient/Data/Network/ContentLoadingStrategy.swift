@@ -3,13 +3,15 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed OfflineManager call
+//  - FIXED: Added .initializing case to prevent WelcomeView flash
+//  - FIXED: setupRequired now correctly returns false for shouldLoadOnlineContent
 //
 
 import Foundation
 import SwiftUI
 
 enum ContentLoadingStrategy: Equatable, Sendable {
+    case initializing  // NEW: During app startup
     case online
     case offlineOnly(reason: OfflineReason)
     case setupRequired
@@ -31,13 +33,15 @@ enum ContentLoadingStrategy: Equatable, Sendable {
     var shouldLoadOnlineContent: Bool {
         switch self {
         case .online: return true
-        case .setupRequired: return true
+        case .initializing: return false  // Don't load during init
+        case .setupRequired: return false  // FIXED: Can't load without config
         case .offlineOnly: return false
         }
     }
     
     var displayName: String {
         switch self {
+        case .initializing: return "Starting..."
         case .online: return "Online"
         case .offlineOnly(let reason): return reason.displayName
         case .setupRequired: return "Setup Required"
@@ -94,7 +98,6 @@ extension ContentLoadingStrategy.OfflineReason {
     func performAction() {
         switch self {
         case .userChoice:
-            // Fixed: Use OfflineManager instead of NetworkMonitor
             OfflineManager.shared.setOfflineMode(false)
         default:
             break

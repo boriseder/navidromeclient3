@@ -4,6 +4,7 @@
 //
 //  UPDATED: Swift 6 & iOS 17+ Modernization
 //  - FIXED: Added 'import Observation'
+//  - FIXED: Constrained width to prevent text stretching
 //
 
 import SwiftUI
@@ -19,18 +20,24 @@ struct CardItemContainer: View {
     let content: CardContent
     let index: Int
     
-    @Environment(CoverArtManager.self) var coverArtManager
+    // Define a fixed card width
+    private let cardWidth: CGFloat = 160
     
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(ThemeManager.self) var theme
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSLayout.elementGap) {
             imageSection
-                .aspectRatio(1, contentMode: .fit)
+                .frame(width: cardWidth, height: cardWidth)
                 .clipShape(RoundedRectangle(cornerRadius: DSCorners.element))
                 .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
             
             textSection
+                .frame(width: cardWidth, alignment: .leading)
         }
-        .padding(.bottom, 8)
+        .frame(width: cardWidth)
+        .padding(.bottom, DSLayout.elementPadding)
     }
     
     @ViewBuilder
@@ -49,24 +56,28 @@ struct CardItemContainer: View {
     private var textSection: some View {
         switch content {
         case .album(let album):
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                 Text(album.name)
                     .font(DSText.body)
-                    .foregroundStyle(DSColor.onLight)
+                    .foregroundStyle(theme.textColor)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 
                 Text(album.artist)
-                    .font(DSText.metadata)
-                    .foregroundStyle(DSColor.secondary)
+                    .font(DSText.detail)
+                    .foregroundStyle(theme.textColor)
                     .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .frame(maxWidth: cardWidth, alignment: .leading)
         case .artist(let artist):
             Text(artist.name)
                 .font(DSText.body)
-                .foregroundStyle(DSColor.onLight)
+                .foregroundStyle(theme.textColor)
                 .lineLimit(1)
+                .truncationMode(.tail)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+                .frame(width: cardWidth, alignment: .center)
         case .playlist:
             EmptyView()
         }
