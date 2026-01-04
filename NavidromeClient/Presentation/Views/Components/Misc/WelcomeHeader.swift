@@ -10,7 +10,8 @@ import SwiftUI
 struct WelcomeHeader: View {
     let username: String
     let nowPlaying: Song?
-    @Environment var offlineManager: OfflineManager
+    
+    @Environment(OfflineManager.self) var offlineManager
     
     @State private var showingNetworkTestView = false
     @State private var showingCoverArtDebugView = false
