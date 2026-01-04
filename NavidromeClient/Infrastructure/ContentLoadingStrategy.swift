@@ -3,7 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Added Sendable conformance
+//  - Fixed OfflineManager call
 //
 
 import Foundation
@@ -94,7 +94,8 @@ extension ContentLoadingStrategy.OfflineReason {
     func performAction() {
         switch self {
         case .userChoice:
-            NetworkMonitor.shared.setManualOfflineMode(false)
+            // Fixed: Use OfflineManager instead of NetworkMonitor
+            OfflineManager.shared.setOfflineMode(false)
         default:
             break
         }

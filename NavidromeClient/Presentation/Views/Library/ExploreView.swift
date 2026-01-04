@@ -1,22 +1,21 @@
 //
-//  ExploreView.swift
+//  ExploreView.swift - RESTORED: Full Swift 5 Functionality
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency
-//  - Checked @MainActor usage in Task modifiers
+//  Swift 6 Compliance with ALL original features restored
 //
 
 import SwiftUI
+import Observation
 
 struct ExploreView: View {
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var theme: ThemeManager
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var downloadManager: DownloadManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var exploreManager: ExploreManager
+    @Environment(ThemeManager.self) var theme
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(NetworkMonitor.self) var networkMonitor
+    @Environment(OfflineManager.self) var offlineManager
+    @Environment(DownloadManager.self) var downloadManager
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(ExploreManager.self) var exploreManager
     
     @State private var hasAttemptedInitialLoad = false
     @State private var hasPreloaded = false
@@ -57,7 +56,7 @@ struct ExploreView: View {
             .navigationTitle("Explore & listen")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: Album.self) { album in
-                AlbumDetailViewContent(album: album)
+                AlbumDetailView(album: album)
             }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.clear, for: .navigationBar)
@@ -161,10 +160,7 @@ struct ExploreView: View {
 
     private var onlineContent: some View {
         LazyVStack(spacing: DSLayout.elementGap) {
-            WelcomeHeader(
-                username: appConfig.getCredentials()?.username ?? "User",
-                nowPlaying: playerVM.currentSong
-            )
+            WelcomeHeader()
             
             if !exploreManager.recentAlbums.isEmpty {
                 ExploreSection(
@@ -253,16 +249,14 @@ struct ExploreView: View {
 // MARK: - ExploreSection
 
 struct ExploreSection: View {
-    @EnvironmentObject var theme: ThemeManager
+    @Environment(ThemeManager.self) var theme
 
     let title: String
     let albums: [Album]
     let icon: String
     let accentColor: Color
     var showRefreshButton: Bool = false
-    
-    // Swift 6: Closure is async and operates on MainActor
-    var refreshAction: (@MainActor () async -> Void)? = nil
+    var refreshAction: (() async -> Void)? = nil
     
     @State private var isRefreshing = false
     

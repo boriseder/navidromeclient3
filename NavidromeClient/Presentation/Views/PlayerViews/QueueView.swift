@@ -2,15 +2,17 @@
 //  QueueView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Added @MainActor to closure definitions in subviews
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
+//  - Modern Styling (foregroundStyle)
+//  - Modern Concurrency
 //
 
 import SwiftUI
 
 struct QueueView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(CoverArtManager.self) var coverArtManager
     @Environment(\.dismiss) private var dismiss
     
     private var currentPlaylist: [Song] {
@@ -45,7 +47,7 @@ struct QueueView: View {
                     Button("Done") {
                         dismiss()
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -63,7 +65,7 @@ struct QueueView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                     }
                 }
             }
@@ -82,7 +84,7 @@ struct QueueView: View {
                         CurrentlyPlayingRow(song: currentSong)
                     } header: {
                         Text("Now Playing")
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundStyle(.white.opacity(0.8))
                     }
                     .listRowBackground(Color.clear)
                 }
@@ -106,13 +108,13 @@ struct QueueView: View {
                     } header: {
                         HStack {
                             Text("Up Next (\(upNextSongs.count))")
-                                .foregroundColor(.white.opacity(0.8))
+                                .foregroundStyle(.white.opacity(0.8))
                             
                             Spacer()
                             
                             if playerVM.isShuffling {
                                 Image(systemName: "shuffle")
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(.green)
                                     .font(.caption)
                             }
                         }
@@ -129,7 +131,7 @@ struct QueueView: View {
                     )
                 } header: {
                     Text("Queue Info")
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.8))
                 }
                 .listRowBackground(Color.clear)
                 
@@ -140,7 +142,8 @@ struct QueueView: View {
             }
             .scrollContentBackground(.hidden)
             .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.1))
                     withAnimation {
                         proxy.scrollTo("song-\(currentIndex + 1)", anchor: .top)
                     }
@@ -154,15 +157,15 @@ struct QueueView: View {
         VStack(spacing: DSLayout.screenGap) {
             Image(systemName: "music.note.list")
                 .font(.system(size: 60))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.6))
             
             Text("No songs in queue")
                 .font(DSText.itemTitle)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
             
             Text("Start playing music to see your queue")
                 .font(DSText.body)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
         }
         .padding(DSLayout.screenPadding)
@@ -221,8 +224,8 @@ struct QueueView: View {
 
 struct CurrentlyPlayingRow: View {
     let song: Song
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var playerVM: PlayerViewModel
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(PlayerViewModel.self) var playerVM
     
     private var coverArt: UIImage? {
         guard let albumId = song.albumId else { return nil }
@@ -244,7 +247,7 @@ struct CurrentlyPlayingRow: View {
                         .frame(width: 50, height: 50)
                         .overlay(
                             Image(systemName: "music.note")
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundStyle(.white.opacity(0.6))
                         )
                 }
                 
@@ -262,12 +265,12 @@ struct CurrentlyPlayingRow: View {
             VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                 Text(song.title)
                     .font(DSText.emphasized)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .lineLimit(1)
                 
                 Text(song.artist ?? "Unknown Artist")
                     .font(DSText.metadata)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
             }
             
@@ -275,12 +278,12 @@ struct CurrentlyPlayingRow: View {
             
             VStack(spacing: DSLayout.tightGap) {
                 Image(systemName: "speaker.wave.2.fill")
-                    .foregroundColor(.green)
+                    .foregroundStyle(.green)
                     .font(DSText.metadata)
                 
                 Text("Now Playing")
                     .font(.caption2)
-                    .foregroundColor(.green)
+                    .foregroundStyle(.green)
             }
         }
         .padding(.vertical, DSLayout.tightGap)
@@ -292,10 +295,9 @@ struct CurrentlyPlayingRow: View {
 struct QueueSongRow: View {
     let song: Song
     let queuePosition: Int
-    // Swift 6: Closure isolated to MainActor
     let onTap: @MainActor () -> Void
     
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
     
     private var coverArt: UIImage? {
         guard let albumId = song.albumId else { return nil }
@@ -307,7 +309,7 @@ struct QueueSongRow: View {
             HStack(spacing: DSLayout.contentGap) {
                 Text("\(queuePosition)")
                     .font(DSText.metadata.monospacedDigit())
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.6))
                     .frame(width: 20, alignment: .center)
                 
                 if let coverArt = coverArt {
@@ -323,20 +325,20 @@ struct QueueSongRow: View {
                         .overlay(
                             Image(systemName: "music.note")
                                 .font(.caption)
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundStyle(.white.opacity(0.6))
                         )
                 }
                 
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                     Text(song.title)
                         .font(DSText.emphasized)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     Text(song.artist ?? "Unknown Artist")
                         .font(DSText.metadata)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -344,7 +346,7 @@ struct QueueSongRow: View {
                 if let duration = song.duration {
                     Text(formatDuration(duration))
                         .font(DSText.metadata.monospacedDigit())
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundStyle(.white.opacity(0.6))
                 }
             }
             .contentShape(Rectangle())
@@ -372,10 +374,10 @@ struct QueueInfoView: View {
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                     Text("\(totalSongs)")
                         .font(DSText.prominent)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                     Text("Total Songs")
                         .font(DSText.metadata)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.7))
                 }
                 
                 Spacer()
@@ -383,10 +385,10 @@ struct QueueInfoView: View {
                 VStack(alignment: .center, spacing: DSLayout.tightGap) {
                     Text("\(remainingSongs)")
                         .font(DSText.prominent)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                     Text("Up Next")
                         .font(DSText.metadata)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.7))
                 }
                 
                 Spacer()
@@ -394,10 +396,10 @@ struct QueueInfoView: View {
                 VStack(alignment: .trailing, spacing: DSLayout.tightGap) {
                     Text(formatTotalDuration(totalDuration))
                         .font(DSText.prominent.monospacedDigit())
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                     Text("Total Time")
                         .font(DSText.metadata)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.7))
                 }
             }
             .padding(DSLayout.contentPadding)

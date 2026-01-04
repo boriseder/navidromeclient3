@@ -2,204 +2,158 @@
 //  OfflineManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Strictly MainActor to align with DownloadManager and UI
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Observable
+//  - Modern Notification Handling
+//  - Fixed Album Initialization Ambiguity
+//  - Added Artist Support for Offline Mode
 //
 
 import Foundation
-import SwiftUI
-import Combine
+import Observation
 
 @MainActor
-class OfflineManager: ObservableObject {
+@Observable
+class OfflineManager {
     static let shared = OfflineManager()
     
-    // MARK: - Offline Data Management (Core Responsibility)
+    private(set) var isOfflineMode = false
+    private(set) var offlineAlbums: [Album] = []
+    private(set) var offlineArtists: [Artist] = []
     
-    // The list of offline albums is now a computed property, eliminating the need
-    // for manual internal caching and invalidation logic (cacheNeedsRefresh).
-    var offlineAlbums: [Album] {
-        // Access the source of truth directly. This ensures the list is always up-to-date
-        // based on DownloadManager and AlbumMetadataCache without manual syncing.
-        let downloadedAlbumIds = Set(downloadManager.downloadedAlbums.map { $0.albumId })
-        return AlbumMetadataCache.shared.getAlbums(ids: downloadedAlbumIds)
+    @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
+    
+    init() {
+        setupAsyncObservers()
     }
     
-    var offlineArtists: [Artist] {
-        // Recalculates from the current set of offlineAlbums
-        extractUniqueArtists(from: offlineAlbums)
+    deinit {
+        observationTasks.forEach { $0.cancel() }
     }
     
-    var offlineGenres: [Genre] {
-        // Recalculates from the current set of offlineAlbums
-        extractUniqueGenres(from: offlineAlbums)
-    }
-    
-    // MARK: - Dependencies
-    
-    private let downloadManager = DownloadManager.shared
-    private let networkMonitor = NetworkMonitor.shared
-    
-    private init() {
-        setupFactoryResetObserver()
-    }
-    
-    // MARK: - Public API (Delegates to NetworkMonitor)
-    
-    func switchToOnlineMode() {
-        networkMonitor.setManualOfflineMode(false)
-        AppLogger.general.info("Requested switch to online mode")
-    }
-
-    func switchToOfflineMode() {
-        networkMonitor.setManualOfflineMode(true)
-        AppLogger.general.info("Requested switch to offline mode")
-    }
+    // MARK: - Mode Control
     
     func toggleOfflineMode() {
-        let currentStrategy = networkMonitor.contentLoadingStrategy
+        isOfflineMode.toggle()
         
-        switch currentStrategy {
-        case .online:
-            switchToOfflineMode()
-        case .offlineOnly(let reason):
-            switch reason {
-            case .userChoice:
-                switchToOnlineMode()
-            case .noNetwork, .serverUnreachable:
-                AppLogger.general.info("⚠️ Cannot switch to online: \(reason.message)")
-            }
-        case .setupRequired:
-            AppLogger.general.info("⚠️ Cannot toggle offline mode: Server setup required")
+        if isOfflineMode {
+            AppLogger.general.info("[OfflineManager] Switched to Offline Mode")
+            refreshOfflineContent()
+        } else {
+            AppLogger.general.info("[OfflineManager] Switched to Online Mode")
         }
+        
+        NotificationCenter.default.post(name: .contentLoadingStrategyChanged, object: nil)
     }
     
-    // MARK: - UI State Properties (Read-Only)
-    
-    /// Legacy compatibility: check if app is in offline mode
-    var isOfflineMode: Bool {
-        return !networkMonitor.shouldLoadOnlineContent
+    func setOfflineMode(_ enabled: Bool) {
+        guard isOfflineMode != enabled else { return }
+        
+        isOfflineMode = enabled
+        if isOfflineMode {
+            refreshOfflineContent()
+        }
+        NotificationCenter.default.post(name: .contentLoadingStrategyChanged, object: nil)
     }
     
-    // MARK: - Network Change Handling (Simplified)
+    // MARK: - Content Management
     
-    func handleNetworkLoss() {
-        // NetworkMonitor handles the strategy change
-        AppLogger.general.info("📵 Network lost - NetworkMonitor will handle strategy")
+    func refreshOfflineContent() {
+        let downloaded = DownloadManager.shared.downloadedAlbums
+        
+        self.offlineAlbums = downloaded.map { dl in
+            // Explicitly typed nils to ensure compiler matches the custom init
+            let parentVal: String? = nil
+            let artistIdVal: String? = nil
+            let totalDuration = dl.songs.reduce(0) { $0 + ($1.duration ?? 0) }
+            
+            return Album(
+                id: dl.albumId,
+                parent: parentVal,
+                album: dl.albumName,
+                title: dl.albumName,
+                name: dl.albumName,
+                isDir: true,
+                coverArt: dl.albumId,
+                artist: dl.artistName,
+                artistId: artistIdVal,
+                created: dl.downloadDate,
+                duration: totalDuration,
+                playCount: 0,
+                songCount: dl.songs.count,
+                year: dl.year,
+                genre: dl.genre
+                // song: default nil
+            )
+        }.sorted { $0.name < $1.name }
+        
+        // Generate unique artists from downloaded albums
+        self.offlineArtists = extractArtistsFromAlbums(offlineAlbums)
+        
+        AppLogger.general.info("[OfflineManager] Refreshed offline content: \(offlineAlbums.count) albums, \(offlineArtists.count) artists")
     }
     
-    func handleNetworkRestored() {
-        // NetworkMonitor handles the strategy change
-        AppLogger.general.info("📶 Network restored - NetworkMonitor will handle strategy")
-    }
-    
-    // MARK: - Album/Artist/Genre Queries (Unchanged)
+    // MARK: - Data Access
     
     func getOfflineAlbums(for artist: Artist) -> [Album] {
         return offlineAlbums.filter { $0.artist == artist.name }
     }
     
     func getOfflineAlbums(for genre: Genre) -> [Album] {
-        return offlineAlbums.filter { $0.genre == genre.value }
-    }
-    
-    func isAlbumAvailableOffline(_ albumId: String) -> Bool {
-        return downloadManager.isAlbumDownloaded(albumId)
+        // Safe check for genre value
+        let genreName = genre.value
+        return offlineAlbums.filter { album in
+            guard let albumGenre = album.genre else { return false }
+            return albumGenre.contains(genreName)
+        }
     }
     
     func isArtistAvailableOffline(_ artistName: String) -> Bool {
-        return offlineAlbums.contains { $0.artist == artistName }
+        return offlineArtists.contains { $0.name == artistName }
     }
     
-    func isGenreAvailableOffline(_ genreName: String) -> Bool {
-        return offlineAlbums.contains { $0.genre == genreName }
-    }
+    // MARK: - Helper Methods
     
-    // MARK: - Statistics (Unchanged)
-    
-    var offlineStats: OfflineStats {
-        return OfflineStats(
-            albumCount: offlineAlbums.count,
-            artistCount: offlineArtists.count,
-            genreCount: offlineGenres.count,
-            totalSongs: offlineAlbums.reduce(0) { $0 + ($1.songCount ?? 0) }
-        )
-    }
-    
-    // MARK: - Reset
-    
-    func performCompleteReset() {
-        cancellables.removeAll()
-        AppLogger.general.info("🔄 OfflineManager: Reset completed")
-    }
-    
-    // MARK: - Reactive Updates
-    
-    private func setupFactoryResetObserver() {
-        NotificationCenter.default.addObserver(
-            forName: .factoryResetRequested,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.performCompleteReset()
+    private func extractArtistsFromAlbums(_ albums: [Album]) -> [Artist] {
+        var artistDict: [String: (id: String, albumCount: Int)] = [:]
+        
+        for album in albums {
+            let artistName = album.artist
+            let artistId = album.artistId ?? "offline-\(artistName.lowercased().replacingOccurrences(of: " ", with: "-"))"
+            
+            if let existing = artistDict[artistName] {
+                artistDict[artistName] = (id: existing.id, albumCount: existing.albumCount + 1)
+            } else {
+                artistDict[artistName] = (id: artistId, albumCount: 1)
             }
         }
-    }
-
-    // MARK: - Private Implementation
-    
-    private func extractUniqueArtists(from albums: [Album]) -> [Artist] {
-        let uniqueArtists = Set(albums.map { $0.artist })
         
-        return uniqueArtists.compactMap { artistName in
+        return artistDict.map { name, info in
             Artist(
-                id: artistName.replacingOccurrences(of: " ", with: "_"),
-                name: artistName,
-                coverArt: nil,
-                albumCount: albums.filter { $0.artist == artistName }.count,
+                id: info.id,
+                name: name,
+                coverArt: info.id,
+                albumCount: info.albumCount,
                 artistImageUrl: nil
             )
         }.sorted { $0.name < $1.name }
     }
     
-    private func extractUniqueGenres(from albums: [Album]) -> [Genre] {
-        let genreGroups = Dictionary(grouping: albums) { $0.genre ?? "Unknown" }
-        
-        return genreGroups.map { genreName, albumsInGenre in
-            Genre(
-                value: genreName,
-                songCount: albumsInGenre.reduce(0) { $0 + ($1.songCount ?? 0) },
-                albumCount: albumsInGenre.count
-            )
-        }.sorted { $0.value < $1.value }
+    // MARK: - Reset
+    
+    func performCompleteReset() {
+        isOfflineMode = false
+        offlineAlbums.removeAll()
+        offlineArtists.removeAll()
+        AppLogger.general.info("[OfflineManager] Reset complete")
     }
     
-    private var cancellables = Set<AnyCancellable>()
-}
-
-// MARK: - Supporting Types
-
-struct OfflineStats {
-    let albumCount: Int
-    let artistCount: Int
-    let genreCount: Int
-    let totalSongs: Int
-    
-    var isEmpty: Bool {
-        return albumCount == 0
-    }
-    
-    var summary: String {
-        if isEmpty {
-            return "No offline content"
+    private func setupAsyncObservers() {
+        let resetTask = Task { @MainActor [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: .factoryResetRequested) {
+                self?.performCompleteReset()
+            }
         }
-        
-        var parts: [String] = []
-        if albumCount > 0 { parts.append("\(albumCount) albums") }
-        if artistCount > 0 { parts.append("\(artistCount) artists") }
-        if genreCount > 0 { parts.append("\(genreCount) genres") }
-        
-        return parts.joined(separator: ", ")
+        observationTasks.append(resetTask)
     }
 }

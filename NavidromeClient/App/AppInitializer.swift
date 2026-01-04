@@ -2,14 +2,17 @@
 //  AppInitializer.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed unused value warning
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - FIXED: Migrated from ObservableObject to @Observable
+//  - Replaced Closure Observers with AsyncSequence
 //
 
 import Foundation
+import Observation
 
 @MainActor
-final class AppInitializer: ObservableObject {
+@Observable
+final class AppInitializer {
 
     // MARK: - Initialization State
     
@@ -20,8 +23,8 @@ final class AppInitializer: ObservableObject {
         case failed(String)
     }
 
-    @Published private(set) var state: InitializationState = .notStarted
-    @Published private(set) var isConfigured: Bool = false
+    private(set) var state: InitializationState = .notStarted
+    private(set) var isConfigured: Bool = false
 
     private(set) var unifiedService: UnifiedSubsonicService?
     
@@ -33,22 +36,19 @@ final class AppInitializer: ObservableObject {
 
     // MARK: - Initialization
 
-    nonisolated init() {
+    init() {
         setupNotificationObservers()
     }
     
-    private nonisolated func setupNotificationObservers() {
-        // Listen for credential updates
-        NotificationCenter.default.addObserver(
-            forName: .credentialsUpdated,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            // Check type existence without capturing the unused variable
-            guard notification.object is ServerCredentials else { return }
-            
-            Task { @MainActor in
-                try? await self?.reinitializeAfterConfiguration()
+    private func setupNotificationObservers() {
+        // Modern Concurrency: Use detached task to monitor AsyncSequence
+        Task { @MainActor [weak self] in
+            for await notification in NotificationCenter.default.notifications(named: .credentialsUpdated) {
+                guard let self = self else { return }
+                guard notification.object is ServerCredentials else { continue }
+                
+                // Safe reinitialization on MainActor
+                try? await self.reinitializeAfterConfiguration()
             }
         }
     }

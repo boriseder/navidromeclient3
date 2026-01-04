@@ -2,30 +2,35 @@
 //  DownloadManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - MainActor isolation
-//  - Complete file structure
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Observable
+//  - Notification Observers replaced with AsyncSequence
 //
 
 import Foundation
+import Observation
 
 @MainActor
-class DownloadManager: ObservableObject {
+@Observable
+class DownloadManager {
     static let shared = DownloadManager()
 
-    @Published private(set) var downloadedAlbums: [DownloadedAlbum] = []
-    @Published private(set) var downloadedSongs: Set<String> = []
-    @Published private(set) var isDownloading: Set<String> = []
-    @Published private(set) var downloadProgress: [String: Double] = [:]
+    private(set) var downloadedAlbums: [DownloadedAlbum] = []
+    private(set) var downloadedSongs: Set<String> = []
+    private(set) var isDownloading: Set<String> = []
+    private(set) var downloadProgress: [String: Double] = [:]
     
-    @Published private(set) var downloadStates: [String: DownloadState] = [:]
-    @Published private(set) var downloadErrors: [String: String] = [:]
+    private(set) var downloadStates: [String: DownloadState] = [:]
+    private(set) var downloadErrors: [String: String] = [:]
 
-    private weak var service: UnifiedSubsonicService?
-    private weak var coverArtManager: CoverArtManager?
+    @ObservationIgnored private weak var service: UnifiedSubsonicService?
+    @ObservationIgnored private weak var coverArtManager: CoverArtManager?
+    
+    // MARK: - Task Management
+    @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
 
     // Properties for paths
-    private var downloadsFolder: URL {
+    @ObservationIgnored private var downloadsFolder: URL {
         let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Downloads", isDirectory: true)
         if !FileManager.default.fileExists(atPath: folder.path) {
@@ -34,7 +39,7 @@ class DownloadManager: ObservableObject {
         return folder
     }
 
-    private var downloadedAlbumsFile: URL {
+    @ObservationIgnored private var downloadedAlbumsFile: URL {
         downloadsFolder.appendingPathComponent("downloaded_albums.json")
     }
 
@@ -68,11 +73,14 @@ class DownloadManager: ObservableObject {
         }
     }
 
-    // Swift 6: Explicit MainActor init ensures @Published properties can be set safely
     init() {
         loadDownloadedAlbums()
         migrateOldDataIfNeeded()
         setupStateObservation()
+    }
+    
+    deinit {
+        observationTasks.forEach { $0.cancel() }
     }
     
     // MARK: - Service Configuration
@@ -311,48 +319,39 @@ class DownloadManager: ObservableObject {
     // MARK: - UI State Management
     
     private func setupStateObservation() {
-            NotificationCenter.default.addObserver(
-                forName: .downloadCompleted,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let albumId = notification.object as? String else { return }
-                Task { @MainActor in
-                    self?.updateDownloadState(for: albumId)
-                }
-            }
-            
-            NotificationCenter.default.addObserver(
-                forName: .downloadFailed,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let albumId = notification.object as? String else { return }
-                Task { @MainActor in
-                    self?.downloadStates[albumId] = .error("Download failed")
-                    self?.objectWillChange.send()
-                }
-            }
-            
-            NotificationCenter.default.addObserver(
-                forName: .factoryResetRequested,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.deleteAllDownloads()
-                    AppLogger.general.info("DownloadManager: Deleted all downloads on factory reset")
-                }
+        let center = NotificationCenter.default
+        
+        let completedTask = Task { [weak self] in
+            for await notification in center.notifications(named: .downloadCompleted) {
+                guard let self = self, let albumId = notification.object as? String else { continue }
+                self.updateDownloadState(for: albumId)
             }
         }
-    
+        
+        let failedTask = Task { [weak self] in
+            for await notification in center.notifications(named: .downloadFailed) {
+                guard let self = self, let albumId = notification.object as? String else { continue }
+                self.downloadStates[albumId] = .error("Download failed")
+            }
+        }
+        
+        let resetTask = Task { [weak self] in
+            for await _ in center.notifications(named: .factoryResetRequested) {
+                guard let self = self else { return }
+                self.deleteAllDownloads()
+                AppLogger.general.info("DownloadManager: Deleted all downloads on factory reset")
+            }
+        }
+        
+        observationTasks.append(contentsOf: [completedTask, failedTask, resetTask])
+    }
+
     func getDownloadState(for albumId: String) -> DownloadState {
         return downloadStates[albumId] ?? determineDownloadState(for: albumId)
     }
     
     private func setDownloadState(_ state: DownloadState, for albumId: String) {
         downloadStates[albumId] = state
-        objectWillChange.send()
     }
     
     private func updateDownloadState(for albumId: String) {
@@ -516,7 +515,6 @@ class DownloadManager: ObservableObject {
         downloadErrors.removeValue(forKey: albumId)
 
         saveDownloadedAlbums()
-        objectWillChange.send()
         
         NotificationCenter.default.post(name: .downloadDeleted, object: albumId)
     }
@@ -542,7 +540,6 @@ class DownloadManager: ObservableObject {
         downloadErrors.removeAll()
 
         saveDownloadedAlbums()
-        objectWillChange.send()
     }
 
     // MARK: - Persistence

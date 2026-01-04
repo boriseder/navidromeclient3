@@ -2,24 +2,24 @@
 //  AlbumImageView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Efficient caching check in .task
+//  UPDATED: Swift 6 Compliance
+//  - FIXED: Observation bug (View didn't update after load)
+//  - Uses @State to force redraw upon image arrival
 //
 
 import SwiftUI
 
 struct AlbumImageView: View {
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
 
     let album: Album
     let context: ImageContext
     
+    // Fix: Local state to force UI update when data arrives
+    @State private var image: UIImage?
+    
     private var displaySize: CGFloat {
         return context.displaySize
-    }
-    
-    private var hasImage: Bool {
-        coverArtManager.getAlbumImage(for: album.id, context: context) != nil
     }
     
     init(album: Album, context: ImageContext) {
@@ -30,35 +30,29 @@ struct AlbumImageView: View {
     var body: some View {
         ZStack {
             placeholderView
-                .opacity(hasImage ? 0 : 1)
+                .opacity(image != nil ? 0 : 1)
             
-            if let image = coverArtManager.getAlbumImage(for: album.id, context: context) {
+            if let image = image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(width: displaySize, height: displaySize)
                     .clipShape(RoundedRectangle(cornerRadius: DSCorners.element))
-                    .opacity(hasImage ? 1 : 0)
                     .transition(.opacity)
             }
         }
         .frame(width: displaySize, height: displaySize)
-        .animation(.easeInOut(duration: 0.3), value: hasImage)
-        .task(id: "\(album.id)_\(context.size)_\(coverArtManager.cacheGeneration)") {
-            // Early return if cached
-            if coverArtManager.getAlbumImage(for: album.id, context: context) != nil {
+        .animation(.easeInOut(duration: 0.3), value: image != nil)
+        .task(id: "\(album.id)_\(context.size)") {
+            // 1. Check Memory Cache immediately (Fast Path)
+            if let cached = coverArtManager.getAlbumImage(for: album.id, context: context) {
+                self.image = cached
                 return
             }
             
-            // Debounce for scrolling
-            if context.size < ImageContext.fullscreen.size {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                if coverArtManager.getAlbumImage(for: album.id, context: context) != nil {
-                    return
-                }
-            }
-            
-            _ = await coverArtManager.loadAlbumImage(
+            // 2. Load (Disk -> Network)
+            // The return value is assigned to State, guaranteeing a refresh
+            self.image = await coverArtManager.loadAlbumImage(
                 for: album.id,
                 context: context
             )

@@ -2,31 +2,39 @@
 //  AudioSessionManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Fixed data races by extracting Sendable data
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Observable
+//  - Modern AsyncSequence for Notification Handling
 //
 
 import Foundation
 import AVFoundation
 import MediaPlayer
+import Observation
 
 @MainActor
-class AudioSessionManager: NSObject, ObservableObject {
+@Observable
+class AudioSessionManager: NSObject {
     static let shared = AudioSessionManager()
     
-    @Published var isAudioSessionActive = false
-    @Published var isHeadphonesConnected = false
-    @Published var audioRoute: String = ""
+    // Observable Properties
+    var isAudioSessionActive = false
+    var isHeadphonesConnected = false
+    var audioRoute: String = ""
     
-    private var audioObservers: [NSObjectProtocol] = []
-    private let audioSession = AVAudioSession.sharedInstance()
-    
+    // Dependencies
     weak var playerViewModel: PlayerViewModel?
+    
+    // Internal
+    @ObservationIgnored private let audioSession = AVAudioSession.sharedInstance()
+    
+    // Task management
+    @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
     
     private override init() {
         super.init()
         setupAudioSession()
-        setupNotifications()
+        setupAsyncNotifications()
         setupRemoteCommandCenter()
         checkAudioRoute()
     }
@@ -36,13 +44,8 @@ class AudioSessionManager: NSObject, ObservableObject {
     // MARK: - Cleanup
 
     func performCleanup() {
-        let observers = self.audioObservers
-        self.audioObservers.removeAll()
-        
-        for observer in observers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        
+        observationTasks.forEach { $0.cancel() }
+        observationTasks.removeAll()
         AppLogger.audio.info("🧹 AudioSessionManager cleanup performed")
     }
 
@@ -61,82 +64,57 @@ class AudioSessionManager: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Notifications Setup
+    // MARK: - Notifications Setup (Modern)
     
-    private func setupNotifications() {
+    private func setupAsyncNotifications() {
         let center = NotificationCenter.default
         
-        // Interruption
-        let interruptionObserver = center.addObserver(
-            forName: AVAudioSession.interruptionNotification,
-            object: audioSession,
-            queue: .main
-        ) { [weak self] notification in
-            // FIX: Extract Sendable data synchronously
-            guard let userInfo = notification.userInfo,
-                  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
-                  let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else {
-                return
-            }
-            
-            // FIX: Dispatch to MainActor
-            Task { @MainActor in
-                self?.handleInterruption(typeValue: typeValue, optionsValue: optionsValue)
+        // 1. Interruption
+        let interruptionTask = Task { [weak self] in
+            for await notification in center.notifications(named: AVAudioSession.interruptionNotification) {
+                guard let self = self,
+                      let userInfo = notification.userInfo,
+                      let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { continue }
+                
+                self.handleInterruption(typeValue: typeValue, optionsValue: optionsValue)
             }
         }
-        audioObservers.append(interruptionObserver)
         
-        // Route changes
-        let routeObserver = center.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: audioSession,
-            queue: .main
-        ) { [weak self] notification in
-            // FIX: Extract Sendable data
-            guard let userInfo = notification.userInfo,
-                  let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt else {
-                return
-            }
-            
-            var wasHeadphones = false
-            if let previousRoute = userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {
-                wasHeadphones = previousRoute.outputs.contains { output in
-                    output.portType == .headphones || output.portType == .bluetoothA2DP
+        // 2. Route changes
+        let routeTask = Task { [weak self] in
+            for await notification in center.notifications(named: AVAudioSession.routeChangeNotification) {
+                guard let self = self,
+                      let userInfo = notification.userInfo,
+                      let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt else { continue }
+                
+                var wasHeadphones = false
+                if let previousRoute = userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {
+                    wasHeadphones = previousRoute.outputs.contains { output in
+                        output.portType == .headphones || output.portType == .bluetoothA2DP
+                    }
                 }
-            }
-            
-            // FIX: Dispatch to MainActor
-            Task { @MainActor in
-                self?.handleRouteChange(reasonValue: reasonValue, wasHeadphones: wasHeadphones)
+                
+                self.handleRouteChange(reasonValue: reasonValue, wasHeadphones: wasHeadphones)
             }
         }
-        audioObservers.append(routeObserver)
         
-        // Media services reset
-        let resetObserver = center.addObserver(
-            forName: AVAudioSession.mediaServicesWereResetNotification,
-            object: audioSession,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
+        // 3. Media services reset
+        let resetTask = Task { [weak self] in
+            for await _ in center.notifications(named: AVAudioSession.mediaServicesWereResetNotification) {
                 self?.handleMediaServicesResetNotification()
             }
         }
-        audioObservers.append(resetObserver)
         
-        // Silence secondary audio
-        let silenceObserver = center.addObserver(
-            forName: AVAudioSession.silenceSecondaryAudioHintNotification,
-            object: audioSession,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
+        // 4. Silence secondary audio
+        let silenceTask = Task { [weak self] in
+            for await _ in center.notifications(named: AVAudioSession.silenceSecondaryAudioHintNotification) {
                 self?.handleSilenceSecondaryAudioNotification()
             }
         }
-        audioObservers.append(silenceObserver)
         
-        AppLogger.audio.info("📡 Audio session observers registered")
+        observationTasks.append(contentsOf: [interruptionTask, routeTask, resetTask, silenceTask])
+        AppLogger.audio.info("📡 Async audio session observers registered")
     }
     
     // MARK: - Enhanced Command Center Setup
@@ -251,7 +229,6 @@ class AudioSessionManager: NSObject, ObservableObject {
         AppLogger.audio.info("📱 Updated Now Playing Info: \(title) - \(artist)")
     }
     
-    /// Helper to create artwork without MainActor isolation capture
     private nonisolated func createNonIsolatedArtwork(from image: UIImage) -> MPMediaItemArtwork {
         return MPMediaItemArtwork(boundsSize: image.size) { _ in
             return image
@@ -263,7 +240,7 @@ class AudioSessionManager: NSObject, ObservableObject {
         AppLogger.audio.info("🔇 Cleared Now Playing Info")
     }
     
-    // MARK: - App Lifecycle
+    // MARK: - Lifecycle Handlers
     
     func handleAppBecameActive() async {
         AppLogger.audio.info("🟢 App became active - reactivating audio session")
@@ -299,7 +276,7 @@ class AudioSessionManager: NSObject, ObservableObject {
             title: song.title,
             artist: song.artist ?? "Unknown Artist",
             album: song.album,
-            artwork: nil,
+            artwork: nil, // Artwork usually managed by system cache if already set
             duration: player.duration,
             currentTime: player.currentTime,
             playbackRate: player.isPlaying ? 1.0 : 0.0
@@ -396,9 +373,7 @@ class AudioSessionManager: NSObject, ObservableObject {
         setupRemoteCommandCenter()
     }
     
-    private func handleSilenceSecondaryAudioNotification() {
-        // Logging only
-    }
+    private func handleSilenceSecondaryAudioNotification() {}
     
     // MARK: - Remote Command Handlers
     

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct DynamicMusicBackground: View {
-    @EnvironmentObject var theme: ThemeManager
+    @Environment(ThemeManager.self) var theme
 
     var body: some View {
         ZStack {

@@ -2,32 +2,30 @@
 //  NetworkDebugBanner.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Aligned with ConnectionViewModel capabilities
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
+//  - Modern Styling (foregroundStyle)
+//  - Fixed Initializer Error
 //
 
 import SwiftUI
 
 struct NetworkDebugBanner: View {
-    @EnvironmentObject private var networkMonitor: NetworkMonitor
-    @EnvironmentObject private var offlineManager: OfflineManager
-    @EnvironmentObject private var connectionManager: ConnectionViewModel
+    @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(OfflineManager.self) private var offlineManager
+    @Environment(ConnectionViewModel.self) private var connectionManager
 
-    @State private var health: ConnectionHealth?
-    
     var body: some View {
         VStack(spacing: DSLayout.contentGap) {
             
             // MARK: - Network State Display
             HStack(spacing: DSLayout.tightGap) {
                 Button {
-                    Task {
-                        offlineManager.toggleOfflineMode()
-                    }
+                    offlineManager.toggleOfflineMode()
                 } label: {
                     Image(systemName: networkMonitor.state.contentLoadingStrategy.isEffectivelyOffline ? "wifi.slash" : "wifi")
                         .font(DSText.subsectionTitle)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 }
                 .padding(.leading, DSLayout.elementPadding)
                 
@@ -46,13 +44,12 @@ struct NetworkDebugBanner: View {
                 VStack(spacing: DSLayout.contentGap) {
                     Button {
                         Task {
-                            // Updated to use the available method in ConnectionViewModel
                             await connectionManager.testConnection()
                         }
                     } label: {
                         Text("Test Connection")
                             .font(DSText.footnote)
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .padding(8)
                             .background(Color.white.opacity(0.2))
                             .cornerRadius(4)
@@ -83,12 +80,12 @@ struct DebugRow: View {
             Text(label)
                 .frame(width: labelWidth, alignment: .leading)
                 .font(DSText.footnote)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
 
             Text(value)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .font(DSText.footnote)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .fontWeight(.bold)
         }
     }

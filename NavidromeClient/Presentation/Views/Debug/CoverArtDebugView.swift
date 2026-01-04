@@ -2,13 +2,15 @@
 //  CoverArtDebugView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
+//  UPDATED: Swift 6 & iOS 17+ Modernization
+//  - Migrated to @Environment(Type.self)
+//  - Modern Styling (foregroundStyle)
 //
 
 import SwiftUI
 
 struct CoverArtDebugView: View {
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
     
     var body: some View {
         let stats = coverArtManager.getCacheStats()
@@ -22,7 +24,7 @@ struct CoverArtDebugView: View {
                 HStack {
                     Text("Health:")
                     Text(health.statusDescription)
-                        .foregroundColor(health.isHealthy ? .green : .orange)
+                        .foregroundStyle(health.isHealthy ? .green : .orange)
                         .bold()
                 }
                 
@@ -47,7 +49,7 @@ struct CoverArtDebugView: View {
                 if stats.activeRequests + stats.errorCount > 0 {
                     let errorRate = Double(stats.errorCount) / Double(stats.activeRequests + stats.errorCount)
                     Text("Error Rate: \(String(format: "%.1f%%", errorRate * 100))")
-                        .foregroundColor(errorRate > 0.1 ? .red : .green)
+                        .foregroundStyle(errorRate > 0.1 ? .red : .green)
                 }
             }
             .font(.caption)

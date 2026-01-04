@@ -3,12 +3,13 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
+//  - Modern Concurrency (Task.sleep)
 //
 
 import SwiftUI
 
 struct ArtistImageView: View {
-    @EnvironmentObject var coverArtManager: CoverArtManager
+    @Environment(CoverArtManager.self) var coverArtManager
     
     let artist: Artist
     let context: ImageContext
@@ -54,7 +55,7 @@ struct ArtistImageView: View {
             }
             
             if context.size < ImageContext.fullscreen.size {
-                try? await Task.sleep(nanoseconds: 100_000_000)
+                try? await Task.sleep(for: .seconds(0.1))
                 if coverArtManager.getArtistImage(for: artist.id, context: context) != nil {
                     return
                 }

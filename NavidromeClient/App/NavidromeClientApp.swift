@@ -1,24 +1,37 @@
+//
+//  NavidromeClientApp.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Compliance
+//  - Added @MainActor to struct
+//  - Replaced closure-based notifications with AsyncSequence
+//
+
 import SwiftUI
 import BackgroundTasks
 
 @main
+@MainActor
 struct NavidromeClientApp: App {
-    // MARK: - State Objects
-    @StateObject private var appInitializer = AppInitializer()
-    @StateObject private var appConfig = AppConfig.shared
-    @StateObject private var networkMonitor = NetworkMonitor.shared
+    // MARK: - App State
+    // All top-level objects are now @State and injected via .environment()
+    @State private var appInitializer = AppInitializer()
+    @State private var appConfig = AppConfig.shared
+    @State private var theme = ThemeManager()
     
-    @StateObject private var musicLibraryManager = MusicLibraryManager()
-    @StateObject private var playerVM: PlayerViewModel
-    @StateObject private var coverArtManager = CoverArtManager()
-    @StateObject private var songManager = SongManager()
-    @StateObject private var exploreManager = ExploreManager()
-    @StateObject private var favoritesManager = FavoritesManager()
-    @StateObject private var downloadManager = DownloadManager.shared
-    @StateObject private var audioSessionManager = AudioSessionManager.shared
-    @StateObject private var offlineManager = OfflineManager.shared
-    @StateObject private var connectionManager: ConnectionViewModel
-    @StateObject private var theme = ThemeManager()
+    @State private var networkMonitor = NetworkMonitor.shared
+    @State private var downloadManager = DownloadManager.shared
+    @State private var offlineManager = OfflineManager.shared
+    @State private var audioSessionManager = AudioSessionManager.shared
+    
+    @State private var musicLibraryManager = MusicLibraryManager()
+    @State private var songManager = SongManager()
+    @State private var exploreManager = ExploreManager()
+    @State private var favoritesManager = FavoritesManager()
+    @State private var connectionManager = ConnectionViewModel()
+    
+    @State private var coverArtManager: CoverArtManager
+    @State private var playerVM: PlayerViewModel
     
     // MARK: - Local State
     @State private var hasPerformedInitialConfiguration = false
@@ -28,17 +41,14 @@ struct NavidromeClientApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
-        // Initialize dependencies
-        let musicLib = MusicLibraryManager()
+        // Initialize interconnected managers
+        // Since the struct is @MainActor, these inits are safe
         let coverArt = CoverArtManager()
         let player = PlayerViewModel(coverArtManager: coverArt)
-        let connection = ConnectionViewModel()
-
-        _musicLibraryManager = StateObject(wrappedValue: musicLib)
-        _coverArtManager = StateObject(wrappedValue: coverArt)
-        _playerVM = StateObject(wrappedValue: player)
-        _connectionManager = StateObject(wrappedValue: connection)
-
+        
+        _coverArtManager = State(initialValue: coverArt)
+        _playerVM = State(initialValue: player)
+        
         AppLogger.general.info("[App] Initialized with SwiftUI lifecycle")
     }
 
@@ -48,6 +58,12 @@ struct NavidromeClientApp: App {
                 .task {
                     await performInitialization()
                     configureInitialDependencies()
+                }
+                .task {
+                    // Modern replacement for setupTerminationHandler
+                    for await _ in NotificationCenter.default.notifications(named: UIApplication.willTerminateNotification) {
+                        audioSessionManager.handleAppWillTerminate()
+                    }
                 }
                 .onChange(of: appInitializer.isConfigured) { _, isConfigured in
                     handleConfigurationChange(isConfigured)
@@ -74,26 +90,27 @@ struct NavidromeClientApp: App {
     @ViewBuilder
     private var contentRoot: some View {
         switch appInitializer.state {
-        
         case .notStarted, .inProgress:
             InitializationView(initializer: appInitializer)
             
         case .completed:
             ContentView()
-                .environmentObject(appConfig)
-                .environmentObject(appInitializer)
-                .environmentObject(playerVM)
-                .environmentObject(musicLibraryManager)
-                .environmentObject(coverArtManager)
-                .environmentObject(songManager)
-                .environmentObject(exploreManager)
-                .environmentObject(favoritesManager)
-                .environmentObject(downloadManager)
-                .environmentObject(audioSessionManager)
-                .environmentObject(networkMonitor)
-                .environmentObject(offlineManager)
-                .environmentObject(connectionManager)
-                .environmentObject(theme)
+                // Inject ALL dependencies using modern .environment()
+                .environment(appConfig)
+                .environment(appInitializer)
+                .environment(theme)
+                .environment(networkMonitor)
+                .environment(downloadManager)
+                .environment(offlineManager)
+                .environment(audioSessionManager)
+                .environment(musicLibraryManager)
+                .environment(songManager)
+                .environment(exploreManager)
+                .environment(favoritesManager)
+                .environment(connectionManager)
+                .environment(coverArtManager)
+                .environment(playerVM)
+                
                 .preferredColorScheme(theme.colorScheme)
             
         case .failed(let error):
@@ -147,7 +164,6 @@ struct NavidromeClientApp: App {
         )
         
         Task {
-            // Wait for network monitor to settle before loading data
             await waitForStableNetworkState()
             
             await appInitializer.loadInitialData(
@@ -159,11 +175,8 @@ struct NavidromeClientApp: App {
     }
     
     private func waitForStableNetworkState() async {
-        // Poll for network state stability (max 2 seconds)
         for _ in 0..<40 {
-            if networkMonitor.contentLoadingStrategy != .setupRequired {
-                return
-            }
+            if networkMonitor.contentLoadingStrategy != .setupRequired { return }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         AppLogger.general.warn("[App] Timeout waiting for stable network state")
@@ -172,24 +185,10 @@ struct NavidromeClientApp: App {
     private func configureInitialDependencies() {
         audioSessionManager.playerViewModel = playerVM
         audioSessionManager.setupRemoteCommandCenter()
-        setupTerminationHandler()
+        // Termination handler is now in .task modifier
     }
     
     // MARK: - Lifecycle & Background
-    
-    private func setupTerminationHandler() {
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.willTerminateNotification,
-            object: nil,
-            queue: .main
-        ) { [weak audioSessionManager] _ in
-            // FIX: We requested queue: .main, so we can assume MainActor isolation
-            // to call synchronous cleanup methods.
-            MainActor.assumeIsolated {
-                audioSessionManager?.handleAppWillTerminate()
-            }
-        }
-    }
     
     private func handleScenePhaseChange(from oldPhase: ScenePhase, to newPhase: ScenePhase) {
         if newPhase == .active {
@@ -217,10 +216,8 @@ struct NavidromeClientApp: App {
     }
     
     private func handleBackgroundRefresh() async {
-        // Background refresh logic - perform essential updates only
         if let service = appInitializer.unifiedService {
              await favoritesManager.loadFavoriteSongs()
-             // Preload some fresh covers
              if let newest = try? await service.getNewestAlbums(size: 5) {
                  await coverArtManager.preloadAlbums(newest, context: .card)
              }

@@ -1,23 +1,27 @@
+//
+//  AlbumsView.swift - RESTORED: Full Swift 5 Functionality
+//  NavidromeClient
+//
+//  Swift 6 Compliance with ALL original features restored
+//
+
 import SwiftUI
+import Observation
 
 struct AlbumsView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var theme: ThemeManager
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var musicLibraryManager: MusicLibraryManager
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var downloadManager: DownloadManager
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(ThemeManager.self) var theme
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(MusicLibraryManager.self) var musicLibraryManager
+    @Environment(NetworkMonitor.self) var networkMonitor
+    @Environment(OfflineManager.self) var offlineManager
+    @Environment(DownloadManager.self) var downloadManager
     
     @State private var searchText = ""
     @State private var selectedAlbumSort: ContentService.AlbumSortType = .alphabetical
     @State private var showOnlyDownloaded = false
-    @StateObject private var debouncer = Debouncer()
-    
+    @State private var debouncer = Debouncer()
     @State private var lastPreloadedCount = 0
-    
-    // MARK: - Filter Logic
     
     private var displayedAlbums: [Album] {
         let baseAlbums: [Album]
@@ -55,12 +59,13 @@ struct AlbumsView: View {
                 if theme.backgroundStyle == .dynamic {
                     DynamicMusicBackground()
                 }
+                
                 contentView
             }
             .navigationTitle("Albums")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: Album.self) { album in
-                AlbumDetailViewContent(album: album)
+                AlbumDetailView(album: album)
             }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.clear, for: .navigationBar)
@@ -85,7 +90,9 @@ struct AlbumsView: View {
                     Menu {
                         ForEach(ContentService.AlbumSortType.allCases, id: \.self) { sortType in
                             Button {
-                                Task { await loadAlbums(sortBy: sortType) }
+                                Task {
+                                    await loadAlbums(sortBy: sortType)
+                                }
                             } label: {
                                 HStack {
                                     Image(systemName: sortType.icon)
@@ -153,14 +160,17 @@ struct AlbumsView: View {
                             CardItemContainer(content: .album(album), index: index)
                         }
                         .onAppear {
-                            // Load more logic
                             if networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent &&
                                index >= displayedAlbums.count - 5 {
-                                Task { await musicLibraryManager.loadMoreAlbumsIfNeeded() }
+                                Task {
+                                    await musicLibraryManager.loadMoreAlbumsIfNeeded()
+                                }
                             }
-                            // Preload logic
+                            
                             if index > lastPreloadedCount - 10 && index < displayedAlbums.count - 1 {
-                                Task { await preloadNextBatch(from: index) }
+                                Task {
+                                    await preloadNextBatch(from: index)
+                                }
                             }
                         }
                     }
@@ -171,6 +181,8 @@ struct AlbumsView: View {
         .scrollIndicators(.hidden)
         .padding(.horizontal, DSLayout.screenPadding)
     }
+    
+    // MARK: - Business Logic
     
     private func refreshAllData() async {
         await musicLibraryManager.refreshAllData()
@@ -184,24 +196,38 @@ struct AlbumsView: View {
     }
     
     private func handleSearchTextChange() {
-        debouncer.debounce { }
+        debouncer.debounce {
+            // Search filtering happens automatically via computed property
+        }
     }
+    
+    // MARK: - Intelligent Preloading
     
     private func preloadVisibleAlbums() async {
         let albumsToPreload = Array(displayedAlbums.prefix(40))
         guard !albumsToPreload.isEmpty else { return }
         
-        await coverArtManager.preloadAlbumsControlled(albumsToPreload, context: .card)
+        await coverArtManager.preloadAlbumsControlled(
+            albumsToPreload,
+            context: .card
+        )
+        
         lastPreloadedCount = displayedAlbums.count
     }
     
     private func preloadNextBatch(from index: Int) async {
         let batchStart = index + 1
         let batchEnd = min(batchStart + 20, displayedAlbums.count)
+        
         guard batchStart < displayedAlbums.count else { return }
         
         let batch = Array(displayedAlbums[batchStart..<batchEnd])
-        await coverArtManager.preloadAlbumsControlled(batch, context: .card)
+        
+        await coverArtManager.preloadAlbumsControlled(
+            batch,
+            context: .card
+        )
+        
         lastPreloadedCount = max(lastPreloadedCount, batchEnd)
     }
 }

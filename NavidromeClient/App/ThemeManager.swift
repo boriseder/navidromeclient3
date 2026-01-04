@@ -1,14 +1,25 @@
+//
+//  ThemeManager.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Compliance
+//  - FIXED: Ambiguity between UserBackgroundStyle.light and Font.Weight.light
+//  - FIXED: Restored backgroundColor property
+//
+
 import SwiftUI
+import Observation
 
 @MainActor
-final class ThemeManager: ObservableObject {
-    @Published var backgroundStyle: UserBackgroundStyle {
+@Observable
+final class ThemeManager {
+    var backgroundStyle: UserBackgroundStyle {
         didSet {
             UserDefaults.standard.set(backgroundStyle.rawValue, forKey: "userBackgroundStyle")
         }
     }
 
-    @Published var accentColor: UserAccentColor {
+    var accentColor: UserAccentColor {
         didSet {
             UserDefaults.standard.set(accentColor.rawValue, forKey: "userAccentColor")
         }
@@ -23,22 +34,24 @@ final class ThemeManager: ObservableObject {
     }
 
     var textColor: Color {
-        backgroundStyle == .light ? .black : .white
+        // Fix: Explicit enum type to avoid Font.Weight ambiguity
+        backgroundStyle == UserBackgroundStyle.light ? .black : .white
     }
 
     var backgroundColor: Color {
-        backgroundStyle == .light ? .white : .black
+        // Fix: Explicit enum type to avoid Font.Weight ambiguity
+        backgroundStyle == UserBackgroundStyle.light ? .white : .black
     }
     
     var backgroundContrastColor: Color {
-        backgroundStyle == .light ? .black : .white
+        backgroundStyle == UserBackgroundStyle.light ? .black : .white
     }
 
     var colorScheme: ColorScheme {
         switch backgroundStyle {
-        case .light: .light
-        case .dark: .dark
-        case .dynamic: .dark
+        case .light: return .light
+        case .dark: return .dark
+        case .dynamic: return .dark
         }
     }
 

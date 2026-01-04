@@ -3,7 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Marked @MainActor to align with ConnectionService and UI consumers
+//  - FIXED: Restored optional chaining for AlbumList?
 //
 
 import Foundation
@@ -41,7 +41,8 @@ class ContentService {
             type: SubsonicResponse<AlbumListContainer>.self
         )
         
-        return decoded.subsonicResponse.albumList2.album
+        // Fixed: albumList2 is Optional, so we must use ?.album ?? []
+        return decoded.subsonicResponse.albumList2?.album ?? []
     }
     
     func getAlbumsByArtist(artistId: String) async throws -> [Album] {
@@ -53,6 +54,7 @@ class ContentService {
             type: SubsonicResponse<ArtistDetailContainer>.self
         )
         
+        // Artist details usually have a non-optional artist, but album list might be nil
         return decoded.subsonicResponse.artist.album ?? []
     }
     
@@ -66,7 +68,8 @@ class ContentService {
         let params = [
             "size": "\(size)",
             "type": "byGenre",
-            "genre": genre]
+            "genre": genre
+        ]
         
         do {
             let decoded: SubsonicResponse<AlbumListContainer> = try await fetchData(
@@ -75,15 +78,13 @@ class ContentService {
                 type: SubsonicResponse<AlbumListContainer>.self
             )
             
-            let albums = decoded.subsonicResponse.albumList2.album
-            return albums
+            // Fixed: albumList2 is Optional
+            return decoded.subsonicResponse.albumList2?.album ?? []
             
         } catch {
-            AppLogger.ui.error("❌ getAlbumsByGenre failed with error: \(error)")
+            AppLogger.ui.error("❌ getAlbumsByGenre failed: \(error) - Attempting fallback")
             
-            // Fallback: Test mit fetchDataWithFallback
-            AppLogger.general.debug(" DEBUG: Trying fallback method...")
-            
+            // Fallback
             let emptyAlbumList = AlbumList(album: [])
             let emptyContainer = AlbumListContainer(albumList2: emptyAlbumList)
             let fallbackResponse = SubsonicResponse<AlbumListContainer>(subsonicResponse: emptyContainer)
@@ -94,8 +95,7 @@ class ContentService {
                 type: SubsonicResponse<AlbumListContainer>.self,
                 fallback: fallbackResponse
             )
-            return result.subsonicResponse.albumList2.album
-
+            return result.subsonicResponse.albumList2?.album ?? []
         }
     }
     
@@ -192,19 +192,15 @@ class ContentService {
         do {
             return try await fetchData(endpoint: endpoint, params: params, type: type)
         } catch {
-            // Handle empty response decoding errors
             if let subsonicError = error as? SubsonicError, subsonicError.isEmptyResponse {
                 return fallback
             }
-            
-            // Handle keyNotFound specifically for known empty response keys
             if case DecodingError.keyNotFound(let key, _) = error {
                 let emptyResponseKeys = ["albumList2", "artists", "genres", "album"]
                 if emptyResponseKeys.contains(key.stringValue) {
                     return fallback
                 }
             }
-            
             throw error
         }
     }
@@ -213,13 +209,11 @@ class ContentService {
     
     private func handleDecodingError(_ error: Error, endpoint: String) -> SubsonicError {
         if case DecodingError.keyNotFound(let key, _) = error {
-            // Known "empty response" scenarios
             let emptyResponseKeys = ["album", "artist", "song", "genre"]
             if emptyResponseKeys.contains(key.stringValue) {
                 return SubsonicError.emptyResponse(endpoint: endpoint)
             }
         }
-        
         return SubsonicError.decoding(underlying: error)
     }
 }

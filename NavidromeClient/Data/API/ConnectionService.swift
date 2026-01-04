@@ -3,26 +3,28 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Marked @MainActor to protect @Published state
-//  - URLSession handles background I/O automatically
+//  - Migrated to @Observable
+//  - Removed @Published property wrappers
 //
 
 import Foundation
 import CryptoKit
+import Observation
 
 @MainActor
-class ConnectionService: ObservableObject {
+@Observable
+class ConnectionService {
     private let baseURL: URL
     private let username: String
     private let password: String
-    private let session: URLSession
+    @ObservationIgnored private let session: URLSession
     
     // MARK: - Connection State
-    @Published private(set) var isConnected = false
-    @Published private(set) var connectionQuality: ConnectionQuality = .unknown
-    @Published private(set) var lastSuccessfulConnection: Date?
+    private(set) var isConnected = false
+    private(set) var connectionQuality: ConnectionQuality = .unknown
+    private(set) var lastSuccessfulConnection: Date?
 
-    enum ConnectionQuality {
+    enum ConnectionQuality: Sendable {
         case unknown, excellent, good, poor, timeout
         
         var description: String {
@@ -62,8 +64,6 @@ class ConnectionService: ObservableObject {
         let startTime = Date()
         
         do {
-            // Single request - ping provides all needed info
-            // Force-unwrap safe here because buildURL checks endpoint validity
             guard let url = buildURL(endpoint: "ping") else {
                 return .failure(.invalidURL)
             }
@@ -121,7 +121,6 @@ class ConnectionService: ObservableObject {
             let failureTime = Date().timeIntervalSince(startTime)
             updateConnectionState(responseTime: failureTime, success: false)
             
-            // Convert error using new consolidated system
             let subsonicError = SubsonicError.from(error)
             return .failure(subsonicError.asConnectionError)
         }
@@ -200,6 +199,13 @@ class ConnectionService: ObservableObject {
         return components.url
     }
 
+    func getAuthHeader() -> [String: String] {
+        let loginString = "\(username):\(password)"
+        guard let loginData = loginString.data(using: .utf8) else { return [:] }
+        let base64LoginString = loginData.base64EncodedString()
+        return ["Authorization": "Basic \(base64LoginString)"]
+    }
+
     // MARK: - HEALTH MONITORING
     
     func performHealthCheck() async -> ConnectionHealth {
@@ -266,19 +272,19 @@ class ConnectionService: ObservableObject {
 
 // MARK: - Supporting Types
 
-enum ConnectionTestResult {
+enum ConnectionTestResult: Sendable {
     case success(ConnectionInfo)
     case failure(ConnectionError)
 }
 
-struct ConnectionInfo {
+struct ConnectionInfo: Sendable {
     let version: String
     let type: String
     let serverVersion: String
     let openSubsonic: Bool
 }
 
-enum ConnectionError {
+enum ConnectionError: Sendable {
     case invalidCredentials
     case serverUnreachable
     case timeout
@@ -304,7 +310,7 @@ enum ConnectionError {
     }
 }
 
-struct ConnectionHealth {
+struct ConnectionHealth: Sendable {
     let isConnected: Bool
     let quality: ConnectionService.ConnectionQuality
     let responseTime: TimeInterval

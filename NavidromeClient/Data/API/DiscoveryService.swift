@@ -3,7 +3,7 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Marked @MainActor
+//  - FIXED: Restored optional chaining
 //
 
 import Foundation
@@ -43,10 +43,8 @@ class DiscoveryService {
     // MARK: -  ADVANCED DISCOVERY
     
     func getRecommendationsFor(artist: Artist, limit: Int = 10) async throws -> [Album] {
-        // Get albums by same artist
         let sameArtistAlbums = try await getSimilarByArtist(artistId: artist.id, limit: limit / 2)
         
-        // Get albums from same genre (if available)
         var genreAlbums: [Album] = []
         if sameArtistAlbums.count < limit {
             genreAlbums = try await getSimilarByGenre(
@@ -59,11 +57,9 @@ class DiscoveryService {
     }
     
     func getRecommendationsFor(album: Album, limit: Int = 10) async throws -> [Album] {
-        // Get other albums by same artist
         let sameArtistAlbums = try await getSimilarByArtist(artistId: album.artistId, limit: limit / 2)
-            .filter { $0.id != album.id } // Exclude the current album
+            .filter { $0.id != album.id }
         
-        // Get albums from same genre
         var genreAlbums: [Album] = []
         if sameArtistAlbums.count < limit {
             genreAlbums = try await getSimilarByGenre(
@@ -76,7 +72,6 @@ class DiscoveryService {
     }
     
     func getDiscoveryMix(size: Int = 20) async throws -> DiscoveryMix {
-        // Load different discovery categories in parallel
         async let recent = getRecentAlbums(size: size / 4)
         async let newest = getNewestAlbums(size: size / 4)
         async let frequent = getFrequentAlbums(size: size / 4)
@@ -101,7 +96,8 @@ class DiscoveryService {
             type: SubsonicResponse<AlbumListContainer>.self
         )
         
-        return decoded.subsonicResponse.albumList2.album
+        // Fixed: albumList2 is Optional
+        return decoded.subsonicResponse.albumList2?.album ?? []
     }
     
     func getPopularGenres(limit: Int = 10) async throws -> [GenreWithAlbumCount] {
@@ -112,7 +108,6 @@ class DiscoveryService {
         
         let genres = decoded.subsonicResponse.genres?.genre ?? []
         
-        // Sort by album count and take top genres
         return genres
             .map { GenreWithAlbumCount(genre: $0.value, albumCount: $0.albumCount) }
             .sorted { $0.albumCount > $1.albumCount }
@@ -123,7 +118,6 @@ class DiscoveryService {
     // MARK: -  TIME-BASED DISCOVERY
     
     func getAlbumsFromYear(year: Int, limit: Int = 20) async throws -> [Album] {
-        // This would need a custom implementation or use search
         return try await getAlbumList(type: .byYear, size: limit)
             .filter { $0.year == year }
     }
@@ -148,7 +142,6 @@ class DiscoveryService {
     private func getAlbumList(type: AlbumListType, size: Int = 20, offset: Int = 0) async throws -> [Album] {
         let params = ["type": type.rawValue, "size": "\(size)", "offset": "\(offset)"]
         
-        // Create fallback for empty responses
         let emptyAlbumList = AlbumList(album: [])
         let emptyContainer = AlbumListContainer(albumList2: emptyAlbumList)
         let fallbackResponse = SubsonicResponse<AlbumListContainer>(subsonicResponse: emptyContainer)
@@ -160,7 +153,8 @@ class DiscoveryService {
             fallback: fallbackResponse
         )
         
-        let albums = decoded.subsonicResponse.albumList2.album
+        // Fixed: safely unwrap
+        let albums = decoded.subsonicResponse.albumList2?.album ?? []
         AppLogger.general.info(" Loaded \(albums.count) \(type.rawValue) albums")
         return albums
     }
@@ -181,7 +175,7 @@ class DiscoveryService {
         guard let album = album, let genre = album.genre, !genre.isEmpty else { return [] }
         
         return try await getAlbumsByGenre(genre: genre, limit: limit)
-            .filter { $0.id != album.id } // Exclude the source album
+            .filter { $0.id != album.id }
     }
     
     // MARK: -  CORE FETCH IMPLEMENTATION
@@ -236,18 +230,15 @@ class DiscoveryService {
         do {
             return try await fetchData(endpoint: endpoint, params: params, type: type)
         } catch {
-            // Handle empty response decoding errors
             if let subsonicError = error as? SubsonicError, subsonicError.isEmptyResponse {
                 return fallback
             }
-            
             if case DecodingError.keyNotFound(let key, _) = error {
                 let emptyResponseKeys = ["albumList2", "artists", "genres"]
                 if emptyResponseKeys.contains(key.stringValue) {
                     return fallback
                 }
             }
-            
             throw error
         }
     }

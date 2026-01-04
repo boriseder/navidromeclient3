@@ -3,7 +3,8 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 Concurrency Compliance
-//  - Proper state observation on MainActor
+//  - Proper state observation with @Observable
+//  - Modern Styling (foregroundStyle)
 //
 
 import SwiftUI
@@ -12,7 +13,7 @@ struct DownloadButton: View {
     let album: Album
     let songs: [Song]
     
-    @EnvironmentObject var downloadManager: DownloadManager
+    @Environment(DownloadManager.self) var downloadManager
     @State private var showingDeleteConfirmation = false
     @State private var isProcessing = false
     
@@ -29,18 +30,11 @@ struct DownloadButton: View {
         .onAppear {
             updateState()
         }
-        .onReceive(downloadManager.objectWillChange) { _ in
+        .onChange(of: downloadManager.downloadStates[album.id]) { _, _ in
             updateState()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .downloadCompleted)) { notification in
-            if let albumId = notification.object as? String, albumId == album.id {
-                updateState()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .downloadDeleted)) { notification in
-            if let albumId = notification.object as? String, albumId == album.id {
-                updateState()
-            }
+        .onChange(of: downloadManager.downloadProgress[album.id]) { _, _ in
+            updateState()
         }
         .confirmationDialog(
             "Delete Downloaded Album?",
@@ -82,7 +76,7 @@ struct DownloadButton: View {
                         
                         Text("\(Int(max(0.05, currentProgress) * 100))%")
                             .font(.system(size: 6, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                     }
                 case .downloaded:
                     Image(systemName: "checkmark.circle.fill")
@@ -98,7 +92,7 @@ struct DownloadButton: View {
             }
             .frame(width: 20, height: 20)
         }
-        .foregroundColor(.white)
+        .foregroundStyle(.white)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(buttonBackgroundColor)

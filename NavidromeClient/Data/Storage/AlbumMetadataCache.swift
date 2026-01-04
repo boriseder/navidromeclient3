@@ -1,12 +1,23 @@
+//
+//  AlbumMetadataCache.swift
+//  NavidromeClient
+//
+//  UPDATED: Swift 6 Concurrency Compliance
+//  - Migrated to @Observable
+//  - Optimized Background I/O
+//
+
 import Foundation
 import SwiftUI
+import Observation
 
 // MARK: - Album Metadata Cache
 @MainActor
-class AlbumMetadataCache: ObservableObject {
+@Observable
+class AlbumMetadataCache {
     static let shared = AlbumMetadataCache()
     
-    private let cacheFile: URL
+    @ObservationIgnored private let cacheFile: URL
     private var cachedAlbums: [String: Album] = [:]
     
     private init() {
@@ -41,11 +52,13 @@ class AlbumMetadataCache: ObservableObject {
     
     func clearCache() {
         cachedAlbums.removeAll()
-        // Offload file deletion
+        
         let file = cacheFile
+        // Offload file deletion to detached task
         Task.detached {
             try? FileManager.default.removeItem(at: file)
         }
+        
         AppLogger.general.info("📦 AlbumMetadataCache: Cache cleared")
     }
     
@@ -63,6 +76,7 @@ class AlbumMetadataCache: ObservableObject {
     }
     
     private func saveCache() {
+        // Capture data snapshot for background task
         let albums = cachedAlbums
         let file = cacheFile
         

@@ -1,22 +1,29 @@
+//
+//  ArtistsView.swift - RESTORED: Full Swift 5 Functionality
+//  NavidromeClient
+//
+//  Swift 6 Compliance with ALL original features restored
+//
+
 import SwiftUI
+import Observation
 
 struct ArtistsView: View {
-    @EnvironmentObject var playerVM: PlayerViewModel
-    @EnvironmentObject var appConfig: AppConfig
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var musicLibraryManager: MusicLibraryManager
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @EnvironmentObject var offlineManager: OfflineManager
-    @EnvironmentObject var downloadManager: DownloadManager
-    @EnvironmentObject var theme: ThemeManager
+    @Environment(PlayerViewModel.self) var playerVM
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(MusicLibraryManager.self) var musicLibraryManager
+    @Environment(NetworkMonitor.self) var networkMonitor
+    @Environment(OfflineManager.self) var offlineManager
+    @Environment(DownloadManager.self) var downloadManager
+    @Environment(ThemeManager.self) var theme
 
     @State private var searchText = ""
-    @StateObject private var debouncer = Debouncer()
-    
+    @State private var debouncer = Debouncer()
     @State private var lastPreloadedCount = 0
     
     private var displayedArtists: [Artist] {
         let artists: [Artist]
+        
         switch networkMonitor.contentLoadingStrategy {
         case .online:
             artists = filterArtists(musicLibraryManager.artists)
@@ -25,6 +32,7 @@ struct ArtistsView: View {
         case .setupRequired:
             artists = []
         }
+        
         return artists
     }
 
@@ -34,6 +42,7 @@ struct ArtistsView: View {
                 if theme.backgroundStyle == .dynamic {
                     DynamicMusicBackground()
                 }
+                
                 contentView
             }
             .navigationTitle("Artists")
@@ -55,6 +64,7 @@ struct ArtistsView: View {
             .task(id: displayedArtists.count) {
                 guard displayedArtists.count > lastPreloadedCount else { return }
                 guard displayedArtists.count > 0 else { return }
+                
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 await preloadVisibleArtists()
             }
@@ -83,7 +93,9 @@ struct ArtistsView: View {
                     .buttonStyle(.plain)
                     .onAppear {
                         if index > lastPreloadedCount - 10 && index < displayedArtists.count - 1 {
-                            Task { await preloadNextBatch(from: index) }
+                            Task {
+                                await preloadNextBatch(from: index)
+                            }
                         }
                     }
                 }
@@ -94,8 +106,11 @@ struct ArtistsView: View {
         .padding(.horizontal, DSLayout.screenPadding)
     }
     
+    // MARK: - Business Logic
+    
     private func filterArtists(_ artists: [Artist]) -> [Artist] {
         let filteredArtists: [Artist]
+        
         if searchText.isEmpty {
             filteredArtists = artists
         } else {
@@ -103,6 +118,7 @@ struct ArtistsView: View {
                 artist.name.localizedCaseInsensitiveContains(searchText)
             }
         }
+        
         return filteredArtists.sorted(by: { $0.name < $1.name })
     }
 
@@ -112,39 +128,59 @@ struct ArtistsView: View {
     }
     
     private func handleSearchTextChange() {
-        debouncer.debounce { }
+        debouncer.debounce {
+            // Search filtering happens automatically via computed property
+        }
     }
+    
+    // MARK: - Intelligent Preloading
     
     private func preloadVisibleArtists() async {
         let artistsToPreload = Array(displayedArtists.prefix(40))
         guard !artistsToPreload.isEmpty else { return }
         
-        await coverArtManager.preloadArtists(artistsToPreload, context: .artistList)
+        await coverArtManager.preloadArtists(
+            artistsToPreload,
+            context: .artistList
+        )
+        
         lastPreloadedCount = displayedArtists.count
     }
     
     private func preloadNextBatch(from index: Int) async {
         let batchStart = index + 1
         let batchEnd = min(batchStart + 20, displayedArtists.count)
+        
         guard batchStart < displayedArtists.count else { return }
         
         let batch = Array(displayedArtists[batchStart..<batchEnd])
-        await coverArtManager.preloadArtists(batch, context: .artistList)
+        
+        await coverArtManager.preloadArtists(
+            batch,
+            context: .artistList
+        )
+        
         lastPreloadedCount = max(lastPreloadedCount, batchEnd)
     }
 }
 
+// MARK: - Artist Row View
+
 struct ArtistRowView: View {
     let artist: Artist
     
-    @EnvironmentObject var coverArtManager: CoverArtManager
-    @EnvironmentObject var theme: ThemeManager
+    @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(ThemeManager.self) var theme
+    @Environment(OfflineManager.self) var offlineManager
 
     var body: some View {
         HStack(spacing: DSLayout.contentGap) {
             ArtistImageView(artist: artist, context: .artistList)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(.black.opacity(0.2), lineWidth: 1))
+                .overlay(
+                    Circle()
+                        .stroke(.black.opacity(0.2), lineWidth: 1)
+                )
                 .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
                 .padding(.vertical, DSLayout.tightPadding)
                 .padding(.leading, DSLayout.tightPadding)
@@ -177,6 +213,6 @@ struct ArtistRowView: View {
     }
     
     private var isAvailableOffline: Bool {
-        OfflineManager.shared.isArtistAvailableOffline(artist.name)
+        offlineManager.isArtistAvailableOffline(artist.name)
     }
 }
