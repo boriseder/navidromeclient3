@@ -16,7 +16,8 @@ struct ExploreView: View {
     @Environment(DownloadManager.self) var downloadManager
     @Environment(CoverArtManager.self) var coverArtManager
     @Environment(ExploreManager.self) var exploreManager
-    
+    @Environment(AppConfig.self) var appConfig
+
     @State private var hasAttemptedInitialLoad = false
     @State private var hasPreloaded = false
     
@@ -160,8 +161,11 @@ struct ExploreView: View {
 
     private var onlineContent: some View {
         LazyVStack(spacing: DSLayout.elementGap) {
-            WelcomeHeader()
-            
+            WelcomeHeader(
+                username: appConfig.getCredentials()?.username ?? "User",
+                nowPlaying: playerVM.currentSong
+            )
+
             if !exploreManager.recentAlbums.isEmpty {
                 ExploreSection(
                     title: "Recently played",
