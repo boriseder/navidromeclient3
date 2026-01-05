@@ -1,12 +1,3 @@
-//
-//  PlayerViewModel.swift
-//  NavidromeClient
-//
-//  UPDATED: Swift 6 Compliance
-//  - Replaced Combine with Swift Concurrency (AsyncSequence)
-//  - Fully MainActor isolated
-//
-
 import Foundation
 import SwiftUI
 import AVFoundation
@@ -32,11 +23,9 @@ class PlayerViewModel: NSObject {
         didSet { playbackEngine.volume = volume }
     }
     
-    // PlaylistManager is now @Observable and independent
     var playlistManager = PlaylistManager()
     
     // MARK: - Task Storage
-    // Replaces Combine Cancellables
     @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
 
     // MARK: - Playlist Delegation
@@ -128,8 +117,30 @@ class PlayerViewModel: NSObject {
     }
     
     func playNext() async {
+        // CRITICAL FIX: Don't reload the queue if playback engine is handling it
+        // Just update our local state to match
+        guard let nextIndex = playlistManager.nextIndex() else {
+            AppLogger.general.info("PlayerViewModel: No next song available")
+            stop()
+            return
+        }
+        
         playlistManager.advanceToNext()
-        await playCurrent()
+        
+        // Update UI state to match the new song
+        if let newSong = playlistManager.currentSong {
+            currentSong = newSong
+            currentAlbumId = newSong.albumId
+            duration = Double(newSong.duration ?? 0)
+            currentTime = 0
+            
+            // Preload artwork
+            if let albumId = newSong.albumId {
+                coverArtManager.preloadForFullscreen(albumId: albumId)
+            }
+            
+            AppLogger.general.info("PlayerViewModel: Advanced to next song: \(newSong.title)")
+        }
     }
     
     func playPrevious() async {
@@ -166,6 +177,9 @@ class PlayerViewModel: NSObject {
             coverArtManager.preloadForFullscreen(albumId: albumId)
         }
         
+        // Get upcoming songs for gapless playback
+        let upcomingSongs = playlistManager.getUpcoming(count: 2)
+        
         let audioURL = await getAudioURL(for: song)
         
         guard let url = audioURL else {
@@ -174,8 +188,38 @@ class PlayerViewModel: NSObject {
             return
         }
         
-        await playbackEngine.setQueue(primaryURL: url, primaryId: song.id, upcomingURLs: [])
+        // Resolve URLs for upcoming songs
+        let upcomingURLs = await resolveUpcomingURLs(for: upcomingSongs)
+        
+        // Set the queue with current song + upcoming
+        await playbackEngine.setQueue(
+            primaryURL: url,
+            primaryId: song.id,
+            upcomingURLs: upcomingURLs
+        )
+        
         isLoading = false
+        
+        AppLogger.general.info("PlayerViewModel: Started playback with \(upcomingURLs.count) upcoming songs")
+    }
+    
+    private func resolveUpcomingURLs(for songs: [Song]) async -> [(id: String, url: URL)] {
+        await withTaskGroup(of: (String, URL?).self) { group in
+            for song in songs {
+                group.addTask {
+                    let url = await self.getAudioURL(for: song)
+                    return (song.id, url)
+                }
+            }
+            
+            var results: [(String, URL)] = []
+            for await (id, url) in group {
+                if let url = url {
+                    results.append((id, url))
+                }
+            }
+            return results
+        }
     }
     
     private func getAudioURL(for song: Song) async -> URL? {
@@ -190,15 +234,12 @@ class PlayerViewModel: NSObject {
     private func setupAsyncObservers() {
         let center = NotificationCenter.default
         
-        // Task 1: Interruption Began
         let interruptionStartTask = Task { [weak self] in
             for await _ in center.notifications(named: .audioInterruptionBegan) {
-                // Already on MainActor via Task context
                 self?.pause()
             }
         }
         
-        // Task 2: Interruption Ended
         let interruptionEndTask = Task { [weak self] in
             for await _ in center.notifications(named: .audioInterruptionEndedShouldResume) {
                 guard let self = self else { return }
@@ -208,7 +249,6 @@ class PlayerViewModel: NSObject {
             }
         }
         
-        // Task 3: Device Disconnected
         let deviceDisconnectedTask = Task { [weak self] in
             for await _ in center.notifications(named: .audioDeviceDisconnected) {
                 self?.pause()
@@ -272,18 +312,55 @@ extension PlayerViewModel: PlaybackEngineDelegate {
     }
     
     func playbackEngine(_ engine: PlaybackEngine, didFinishPlaying successfully: Bool) {
+        AppLogger.general.info("PlayerViewModel: Playback finished, successfully: \(successfully)")
+        
         if successfully {
-            Task { await playNext() }
+            // Queue is empty, need to advance to next song in playlist
+            Task {
+                await playNext()
+            }
+        } else {
+            // Error occurred, stop playback
+            stop()
         }
     }
     
     func playbackEngine(_ engine: PlaybackEngine, didEncounterError error: String) {
         errorMessage = error
-        Task { await playNext() }
+        AppLogger.general.info("PlayerViewModel: Encountered error, attempting next song")
+        Task {
+            await playNext()
+        }
     }
     
     func playbackEngineNeedsMoreItems(_ engine: PlaybackEngine) async {
-        // Implementation omitted for brevity
+        let currentQueueSize = engine.currentQueueSize
+        
+        guard currentQueueSize < 3 else {
+            AppLogger.general.info("PlayerViewModel: Queue sufficient (\(currentQueueSize) items)")
+            return
+        }
+        
+        let itemsNeeded = 3 - currentQueueSize
+        AppLogger.general.info("PlayerViewModel: Need \(itemsNeeded) more items for queue")
+        
+        let nextSongs = playlistManager.getUpcoming(count: itemsNeeded)
+        
+        guard !nextSongs.isEmpty else {
+            AppLogger.general.info("PlayerViewModel: No more songs available in playlist")
+            return
+        }
+        
+        AppLogger.general.info("PlayerViewModel: Loading \(nextSongs.count) upcoming songs")
+        let urls = await resolveUpcomingURLs(for: nextSongs)
+        
+        guard !urls.isEmpty else {
+            AppLogger.general.info("PlayerViewModel: Failed to resolve URLs for upcoming songs")
+            return
+        }
+        
+        await playbackEngine.addItemsToQueue(urls)
+        AppLogger.general.info("PlayerViewModel: Successfully added \(urls.count) items to queue")
     }
 }
 

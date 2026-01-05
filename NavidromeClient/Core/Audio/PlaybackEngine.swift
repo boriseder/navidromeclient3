@@ -63,6 +63,7 @@ class PlaybackEngine {
     init() {
         queuePlayer.volume = 0.7
         queuePlayer.automaticallyWaitsToMinimizeStalling = true
+        queuePlayer.actionAtItemEnd = .advance  // Ensure automatic advancement
     }
     
     deinit {
@@ -274,29 +275,32 @@ class PlaybackEngine {
     }
     
     private func setupItemObserver(for item: AVPlayerItem) {
+        // CRITICAL: Keep synchronous - queue: .main ensures MainActor execution
+        // The notification fires AFTER AVQueuePlayer has advanced to next item
         let observer = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
         ) { [weak self] notification in
-            // FIX: Extract the object synchronously before entering the Task
-            // The notification.object IS the item (AVPlayerItem), which is what we need.
-            guard let finishedItem = notification.object as? AVPlayerItem else { return }
+            guard let self = self,
+                  let finishedItem = notification.object as? AVPlayerItem else { return }
             
-            Task { @MainActor in
-                guard let self = self else { return }
-                
-                let itemId = ObjectIdentifier(finishedItem)
-                if let songId = self.itemToSongId[itemId] {
-                    AppLogger.general.info("PlaybackEngine: Item finished playing: \(songId)")
-                }
-                
-                self.unregisterItem(finishedItem)
-                
-                if self.queuePlayer.items().isEmpty {
-                    AppLogger.general.info("PlaybackEngine: Queue finished")
-                    self.delegate?.playbackEngine(self, didFinishPlaying: true)
-                }
+            let itemId = ObjectIdentifier(finishedItem)
+            if let songId = self.itemToSongId[itemId] {
+                AppLogger.general.info("PlaybackEngine: Item finished playing: \(songId)")
+            }
+            
+            // Check if queue has more items BEFORE unregistering
+            // AVQueuePlayer has already advanced automatically at this point
+            let hasMoreItems = self.queuePlayer.items().count > 0
+            
+            self.unregisterItem(finishedItem)
+            
+            if !hasMoreItems {
+                AppLogger.general.info("PlaybackEngine: Queue finished - no more items")
+                self.delegate?.playbackEngine(self, didFinishPlaying: true)
+            } else {
+                AppLogger.general.info("PlaybackEngine: Continuing playback - \(self.queuePlayer.items().count) items remaining")
             }
         }
         
