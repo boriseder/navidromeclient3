@@ -241,20 +241,24 @@ class PlaybackEngine {
     }
     
     private func setupCurrentItemObserver() {
+        // CRITICAL: This observer MUST execute synchronously
+        // Wrapping in Task breaks UI updates due to race conditions
         currentItemObserver = queuePlayer.observe(\.currentItem, options: [.new]) { [weak self] player, change in
-            Task { @MainActor in
-                guard let self = self else { return }
-                
-                if let newItem = change.newValue as? AVPlayerItem {
-                    let itemId = ObjectIdentifier(newItem)
-                    if let songId = self.itemToSongId[itemId] {
-                        self.currentSongId = songId
-                        AppLogger.general.info("PlaybackEngine: Current item changed to: \(songId)")
+            guard let self = self else { return }
+            
+            if let newItem = change.newValue as? AVPlayerItem {
+                let itemId = ObjectIdentifier(newItem)
+                if let songId = self.itemToSongId[itemId] {
+                    self.currentSongId = songId
+                    AppLogger.general.info("PlaybackEngine: Current item changed to: \(songId)")
+                    
+                    // Async queue extension check
+                    Task { @MainActor in
                         await self.checkAndExtendQueue()
                     }
                 }
-                self.pruneOldItems()
             }
+            self.pruneOldItems()
         }
     }
        

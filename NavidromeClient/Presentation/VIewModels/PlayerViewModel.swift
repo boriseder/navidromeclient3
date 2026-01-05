@@ -117,8 +117,6 @@ class PlayerViewModel: NSObject {
     }
     
     func playNext() async {
-        // CRITICAL FIX: Don't reload the queue if playback engine is handling it
-        // Just update our local state to match
         guard let nextIndex = playlistManager.nextIndex() else {
             AppLogger.general.info("PlayerViewModel: No next song available")
             stop()
@@ -127,20 +125,9 @@ class PlayerViewModel: NSObject {
         
         playlistManager.advanceToNext()
         
-        // Update UI state to match the new song
-        if let newSong = playlistManager.currentSong {
-            currentSong = newSong
-            currentAlbumId = newSong.albumId
-            duration = Double(newSong.duration ?? 0)
-            currentTime = 0
-            
-            // Preload artwork
-            if let albumId = newSong.albumId {
-                coverArtManager.preloadForFullscreen(albumId: albumId)
-            }
-            
-            AppLogger.general.info("PlayerViewModel: Advanced to next song: \(newSong.title)")
-        }
+        // CRITICAL: Must call playCurrent to reload queue for manual next
+        // This ensures UI updates and proper queue management
+        await playCurrent()
     }
     
     func playPrevious() async {
@@ -200,7 +187,7 @@ class PlayerViewModel: NSObject {
         
         isLoading = false
         
-        AppLogger.general.info("PlayerViewModel: Started playback with \(upcomingURLs.count) upcoming songs")
+        AppLogger.general.info("PlayerViewModel: Started playback: \(song.title) with \(upcomingURLs.count) upcoming")
     }
     
     private func resolveUpcomingURLs(for songs: [Song]) async -> [(id: String, url: URL)] {
@@ -315,12 +302,20 @@ extension PlayerViewModel: PlaybackEngineDelegate {
         AppLogger.general.info("PlayerViewModel: Playback finished, successfully: \(successfully)")
         
         if successfully {
-            // Queue is empty, need to advance to next song in playlist
+            // CRITICAL: When queue finishes naturally (all songs played),
+            // check if we have more songs in playlist
             Task {
-                await playNext()
+                guard let nextIndex = playlistManager.nextIndex() else {
+                    AppLogger.general.info("PlayerViewModel: End of playlist")
+                    stop()
+                    return
+                }
+                
+                // Advance playlist and reload
+                playlistManager.advanceToNext()
+                await playCurrent()
             }
         } else {
-            // Error occurred, stop playback
             stop()
         }
     }
