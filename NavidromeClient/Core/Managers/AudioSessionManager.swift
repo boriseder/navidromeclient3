@@ -38,9 +38,7 @@ class AudioSessionManager: NSObject {
         setupRemoteCommandCenter()
         checkAudioRoute()
     }
-        
-    deinit { }
-
+    
     // MARK: - Cleanup
 
     func performCleanup() {
@@ -106,14 +104,6 @@ class AudioSessionManager: NSObject {
             }
         }
         
-        // 4. Silence secondary audio
-        let silenceTask = Task { [weak self] in
-            for await _ in center.notifications(named: AVAudioSession.silenceSecondaryAudioHintNotification) {
-                self?.handleSilenceSecondaryAudioNotification()
-            }
-        }
-        
-        observationTasks.append(contentsOf: [interruptionTask, routeTask, resetTask, silenceTask])
         AppLogger.audio.info("📡 Async audio session observers registered")
     }
     

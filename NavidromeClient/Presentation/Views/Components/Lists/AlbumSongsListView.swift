@@ -22,6 +22,9 @@ struct AlbumSongsListView: View {
             ForEach(Array(songs.indices), id: \.self) { index in
                 let song = songs[index]
                 
+                // Check if THIS specific song is currently playing
+                let isThisSongPlaying = playerVM.currentSong?.id == song.id && playerVM.isPlaying
+
                 Button {
                     Task {
                         await playerVM.setPlaylist(songs, startIndex: index, albumId: albumId)
@@ -30,7 +33,7 @@ struct AlbumSongsListView: View {
                     SongRow(
                         song: song,
                         index: index + 1,  // Track numbers typically start at 1
-                        isPlaying: playerVM.isPlaying,
+                        isPlaying: isThisSongPlaying,
                         action: {
                             Task {
                                 await playerVM.setPlaylist(songs, startIndex: index, albumId: albumId)
@@ -38,7 +41,6 @@ struct AlbumSongsListView: View {
                         },
                         context: .album
                     )
-                        .padding(.horizontal, DSLayout.contentPadding)
                 }
                 .buttonStyle(PlainButtonStyle())
                 

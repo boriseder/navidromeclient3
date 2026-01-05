@@ -3,11 +3,12 @@ import SwiftUI
 import AVFoundation
 
 @MainActor
-class PlaylistManager: ObservableObject {
-    @Published private(set) var currentPlaylist: [Song] = []
-    @Published private(set) var currentIndex: Int = 0
-    @Published var isShuffling: Bool = false
-    @Published var repeatMode: RepeatMode = .off
+@Observable
+class PlaylistManager {
+    private(set) var currentPlaylist: [Song] = []
+    private(set) var currentIndex: Int = 0
+    var isShuffling: Bool = false
+    var repeatMode: RepeatMode = .off
 
     enum RepeatMode { case off, all, one }
 
@@ -16,7 +17,6 @@ class PlaylistManager: ObservableObject {
     func setPlaylist(_ songs: [Song], startIndex: Int = 0) {
         currentPlaylist = songs
         currentIndex = max(0, min(startIndex, songs.count - 1))
-        objectWillChange.send()
     }
 
     func nextIndex() -> Int? {
@@ -35,20 +35,31 @@ class PlaylistManager: ObservableObject {
     func advanceToNext() {
         if let next = nextIndex() {
             currentIndex = next
-            objectWillChange.send()
         }
     }
     
     func moveToPrevious(currentTime: TimeInterval) {
         currentIndex = previousIndex(currentTime: currentTime)
-        objectWillChange.send()
     }
     
     func toggleShuffle() {
-        isShuffling.toggle();
+        isShuffling.toggle()
+        
         if isShuffling {
-            currentPlaylist.shuffle()
-            objectWillChange.send()
+            guard let currentSong = currentSong else { return }
+            
+            // Remove current song
+            var songsToShuffle = currentPlaylist
+            songsToShuffle.remove(at: currentIndex)
+            
+            // Shuffle remaining songs
+            songsToShuffle.shuffle()
+            
+            // Put current song at front
+            currentPlaylist = [currentSong] + songsToShuffle
+            currentIndex = 0
+            
+            AppLogger.general.info("🔀 Shuffle enabled - \(currentPlaylist.count) songs")
         }
     }
     
@@ -58,7 +69,6 @@ class PlaylistManager: ObservableObject {
         case .all: repeatMode = .one
         case .one: repeatMode = .off
         }
-        objectWillChange.send()
     }
 }
 
@@ -72,7 +82,6 @@ extension PlaylistManager {
             return
         }
         currentIndex = index
-        objectWillChange.send()
         AppLogger.general.info("Jumped to queue position \(index): \(currentPlaylist[index].title)")
     }
     
@@ -94,7 +103,6 @@ extension PlaylistManager {
                 currentIndex = max(0, currentPlaylist.count - 1)
             }
         }
-        objectWillChange.send()
     }
     
     func removeSongs(at indices: [Int]) {
@@ -125,7 +133,6 @@ extension PlaylistManager {
             currentIndex += 1
         }
         
-        objectWillChange.send()
         AppLogger.general.info("🔄 Moved queue item: \(song.title) from \(source) to \(adjustedDestination)")
     }
     
@@ -156,7 +163,6 @@ extension PlaylistManager {
         
         currentPlaylist = Array(currentPlaylist[0...currentIndex]) + shuffledUpcoming
         
-        objectWillChange.send()
         AppLogger.general.info("Shuffled \(shuffledUpcoming.count) upcoming songs")
     }
     
@@ -169,7 +175,6 @@ extension PlaylistManager {
         let removedCount = currentPlaylist.count - currentIndex - 1
         currentPlaylist = Array(currentPlaylist[0...currentIndex])
         
-        objectWillChange.send()
         AppLogger.general.info("Cleared \(removedCount) upcoming songs from queue")
     }
     
@@ -178,7 +183,6 @@ extension PlaylistManager {
         
         currentPlaylist.append(contentsOf: songs)
         
-        objectWillChange.send()
         AppLogger.general.info("Added \(songs.count) songs to queue")
     }
     
@@ -189,7 +193,6 @@ extension PlaylistManager {
         for (offset, song) in songs.enumerated() {
             currentPlaylist.insert(song, at: insertIndex + offset)
         }
-        objectWillChange.send()
         AppLogger.general.info("Inserted \(songs.count) songs to play next")
     }
     

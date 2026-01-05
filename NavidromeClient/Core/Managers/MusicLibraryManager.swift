@@ -2,14 +2,20 @@
 //  MusicLibraryManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Increased Batch Size to 100
-//  - Restored .byGenre functionality
+//  UPDATED: Technical Debt Eliminated
+//  - FIXED: Observer memory leaks (HIGH)
+//  - REMOVED: Unused contentLoadingStrategyChanged observer (MEDIUM)
+//  - REMOVED: Unused backgroundLoadingProgress property (MEDIUM)
+//  - RENAMED: isCurrentlyLoading → coordinatedLoadInProgress (MEDIUM)
+//  - IMPROVED: Better freshness check logic (MEDIUM)
+//  - IMPROVED: Magic numbers extracted to constants (LOW)
+//  - FIXED: Swift 6 concurrency compliance
 //
 
 import Foundation
 import SwiftUI
 import Observation
+@preconcurrency import ObjectiveC
 
 @MainActor
 @Observable
@@ -30,25 +36,37 @@ class MusicLibraryManager {
     // MARK: - State Management
     private(set) var hasLoadedInitialData = false
     private(set) var lastRefreshDate: Date?
-    private(set) var backgroundLoadingProgress: String = ""
     
     // MARK: - Loading Coordination
-    @ObservationIgnored private var isCurrentlyLoading = false
+    // RENAMED: More descriptive name
+    @ObservationIgnored private var coordinatedLoadInProgress = false
     @ObservationIgnored private var pendingNetworkStrategyChange: ContentLoadingStrategy?
     
     @ObservationIgnored private weak var service: UnifiedSubsonicService?
     
+    // FIXED: Observers now stored for proper cleanup
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    
+    // IMPROVED: Constants extracted
     private struct LoadingConfig {
-        // Fix: Increased from 20 to 100 to prevent "Limited to 20" feeling
         static let albumBatchSize = 100
         static let artistBatchSize = 100
         static let genreBatchSize = 50
-        static let batchDelay: UInt64 = 100_000_000 // Reduced delay
+        static let batchDelay: UInt64 = 100_000_000
+    }
+    
+    private struct CacheConfig {
+        static let freshnessDuration: TimeInterval = 10 * 60 // 10 minutes
     }
     
     nonisolated init() {
-        setupNetworkStateObserver()
         setupFactoryResetObserver()
+    }
+    
+    // FIXED: Use MainActor-isolated cleanup instead of deinit
+    func cleanup() {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.removeAll()
     }
     
     // MARK: - PUBLIC API
@@ -66,8 +84,7 @@ class MusicLibraryManager {
     
     var isDataFresh: Bool {
         guard let lastRefresh = lastRefreshDate else { return false }
-        let freshnessDuration: TimeInterval = 10 * 60
-        return Date().timeIntervalSince(lastRefresh) < freshnessDuration
+        return Date().timeIntervalSince(lastRefresh) < CacheConfig.freshnessDuration
     }
     
     func configure(service: UnifiedSubsonicService) {
@@ -79,11 +96,11 @@ class MusicLibraryManager {
 
     func loadInitialDataIfNeeded() async {
         guard !hasLoadedInitialData else { return }
-        guard !isCurrentlyLoading else { return }
+        guard !coordinatedLoadInProgress else { return }
         guard service != nil else { return }
         
-        isCurrentlyLoading = true
-        defer { isCurrentlyLoading = false }
+        coordinatedLoadInProgress = true
+        defer { coordinatedLoadInProgress = false }
         
         AppLogger.general.info("📚 Starting coordinated initial data load...")
         
@@ -100,11 +117,11 @@ class MusicLibraryManager {
     }
     
     func refreshAllData() async {
-        guard !isCurrentlyLoading else { return }
+        guard !coordinatedLoadInProgress else { return }
         guard NetworkMonitor.shared.canLoadOnlineContent else { return }
         
-        isCurrentlyLoading = true
-        defer { isCurrentlyLoading = false }
+        coordinatedLoadInProgress = true
+        defer { coordinatedLoadInProgress = false }
         
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadAlbumsProgressively(reset: true) }
@@ -117,22 +134,9 @@ class MusicLibraryManager {
     
     // MARK: - Network State Handling
     
-    private nonisolated func setupNetworkStateObserver() {
-        NotificationCenter.default.addObserver(
-            forName: .contentLoadingStrategyChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let newStrategy = notification.object as? ContentLoadingStrategy {
-                Task { @MainActor in
-                    await self?.handleNetworkStrategyChange(newStrategy)
-                }
-            }
-        }
-    }
-    
+    // FIXED: Observer now properly stored and cleaned up
     private nonisolated func setupFactoryResetObserver() {
-        NotificationCenter.default.addObserver(
+        let observer = NotificationCenter.default.addObserver(
             forName: .factoryResetRequested,
             object: nil,
             queue: .main
@@ -141,14 +145,23 @@ class MusicLibraryManager {
                 self?.reset()
             }
         }
+        // FIXED: Remove await since storeObserver is sync
+        Task { @MainActor in
+            self.storeObserver(observer)
+        }
+    }
+    
+    private func storeObserver(_ observer: NSObjectProtocol) {
+        observers.append(observer)
     }
     
     func handleNetworkChange(isOnline: Bool) async {
         await handleNetworkStrategyChange(NetworkMonitor.shared.contentLoadingStrategy)
     }
     
+    // IMPROVED: Better freshness logic
     private func handleNetworkStrategyChange(_ newStrategy: ContentLoadingStrategy) async {
-        if isCurrentlyLoading {
+        if coordinatedLoadInProgress {
             pendingNetworkStrategyChange = newStrategy
             return
         }
@@ -161,8 +174,12 @@ class MusicLibraryManager {
             break
             
         case .online:
-            if !isDataFresh, service != nil {
-                await refreshAllData()
+            if service != nil {
+                if !hasLoadedInitialData {
+                    await loadInitialDataIfNeeded()
+                } else if !isDataFresh {
+                    await refreshAllData()
+                }
             }
             
         case .offlineOnly, .setupRequired:
@@ -217,11 +234,10 @@ class MusicLibraryManager {
             AlbumMetadataCache.shared.cacheAlbums(newAlbums)
             loadedAlbums.append(contentsOf: newAlbums)
             
-            // Fix: Correct logic for completion
             if newAlbums.count < batchSize {
                 albumLoadingState = .completed
             } else {
-                albumLoadingState = .idle // Allow triggering next batch
+                albumLoadingState = .idle
             }
             
             totalAlbumCount = loadedAlbums.count
@@ -337,7 +353,7 @@ class MusicLibraryManager {
     // MARK: - Reset
     
     func reset() {
-        isCurrentlyLoading = false
+        coordinatedLoadInProgress = false
         pendingNetworkStrategyChange = nil
         loadedAlbums = []
         loadedArtists = []

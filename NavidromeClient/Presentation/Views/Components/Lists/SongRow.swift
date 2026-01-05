@@ -193,7 +193,7 @@ struct SongRow: View {
         if isPressed {
             return DSColor.accent.opacity(0.45)
         } else if isPlaying {
-            return DSColor.background
+            return theme.backgroundContrastColor.opacity(0.44)
         } else {
             return theme.backgroundContrastColor.opacity(0.44)
         }
