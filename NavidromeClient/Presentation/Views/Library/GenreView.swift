@@ -68,6 +68,12 @@ struct GenreView: View {
             }
             .navigationTitle("Genres")
             .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(for: Genre.self) { genre in
+                AlbumCollectionView(context: .byGenre(genre))
+            }
+            .navigationDestination(for: Album.self) { album in
+                AlbumDetailView(album: album)
+            }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.clear, for: .navigationBar)
             .toolbarColorScheme(theme.colorScheme, for: .navigationBar)
@@ -89,9 +95,8 @@ struct GenreView: View {
                     }
                 }
             }
-            .navigationDestination(for: Genre.self) { genre in
-                AlbumCollectionView(context: .byGenre(genre))
-            }
+
+
         }
     }
     

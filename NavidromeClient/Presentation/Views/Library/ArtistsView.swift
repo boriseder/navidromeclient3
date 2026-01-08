@@ -52,6 +52,9 @@ struct ArtistsView: View {
             .navigationDestination(for: Artist.self) { artist in
                 AlbumCollectionView(context: .byArtist(artist))
             }
+            .navigationDestination(for: Album.self) { album in
+                AlbumDetailView(album: album)
+            }
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.clear, for: .navigationBar)
             .toolbarColorScheme(theme.colorScheme, for: .navigationBar)

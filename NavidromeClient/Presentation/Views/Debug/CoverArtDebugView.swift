@@ -2,76 +2,164 @@
 //  CoverArtDebugView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 & iOS 17+ Modernization
-//  - Migrated to @Environment(Type.self)
-//  - Modern Styling (foregroundStyle)
+//  UPDATED: Settings UI Style
 //
 
 import SwiftUI
 
 struct CoverArtDebugView: View {
     @Environment(CoverArtManager.self) var coverArtManager
+    @Environment(ThemeManager.self) var theme
     
     var body: some View {
         let stats = coverArtManager.getCacheStats()
         let health = coverArtManager.getHealthStatus()
         
-        VStack(spacing: 16) {
-            Text("Cover Art Diagnostics")
-                .font(.headline)
-            
-            VStack(alignment: .leading, spacing: 4) {
+        List {
+            // MARK: - Health Status Section
+            Section {
                 HStack {
-                    Text("Health:")
-                    Text(health.statusDescription)
+                    Image(systemName: health.isHealthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(health.isHealthy ? .green : .orange)
-                        .bold()
+                        .font(.title2)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Cache Health")
+                            .font(.headline)
+                        Text(health.statusDescription)
+                            .font(.subheadline)
+                            .foregroundStyle(health.isHealthy ? .green : .orange)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("Gen \(coverArtManager.cacheGeneration)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(6)
                 }
+                .padding(.vertical, 8)
+            } header: {
+                Text("Status")
+            }
+            
+            // MARK: - Disk Cache Section
+            Section {
+                LabeledStatRow(
+                    icon: "internaldrive",
+                    label: "Cache Entries",
+                    value: "\(stats.diskCount)"
+                )
                 
-                Text("Cache Generation: \(coverArtManager.cacheGeneration)")
-                
-                Divider()
-                
+                LabeledStatRow(
+                    icon: "chart.bar.fill",
+                    label: "Cache Size",
+                    value: stats.diskSizeFormatted
+                )
+            } header: {
                 Text("Disk Cache")
-                    .font(.subheadline)
-                    .bold()
-                Text("Entries: \(stats.diskCount)")
-                Text("Size: \(stats.diskSizeFormatted)")
+            }
+            
+            // MARK: - Network Section
+            Section {
+                LabeledStatRow(
+                    icon: "arrow.down.circle",
+                    label: "Active Requests",
+                    value: "\(stats.activeRequests)",
+                    valueColor: stats.activeRequests > 10 ? .orange : .primary
+                )
                 
-                Divider()
-                
-                Text("Network")
-                    .font(.subheadline)
-                    .bold()
-                Text("Active Requests: \(stats.activeRequests)")
-                Text("Errors: \(stats.errorCount)")
+                LabeledStatRow(
+                    icon: "exclamationmark.triangle",
+                    label: "Errors",
+                    value: "\(stats.errorCount)",
+                    valueColor: stats.errorCount > 0 ? .red : .green
+                )
                 
                 if stats.activeRequests + stats.errorCount > 0 {
                     let errorRate = Double(stats.errorCount) / Double(stats.activeRequests + stats.errorCount)
-                    Text("Error Rate: \(String(format: "%.1f%%", errorRate * 100))")
-                        .foregroundStyle(errorRate > 0.1 ? .red : .green)
+                    LabeledStatRow(
+                        icon: "percent",
+                        label: "Error Rate",
+                        value: String(format: "%.1f%%", errorRate * 100),
+                        valueColor: errorRate > 0.1 ? .red : .green
+                    )
                 }
+            } header: {
+                Text("Network Performance")
             }
-            .font(.caption)
-            .frame(maxWidth: .infinity, alignment: .leading)
             
-            HStack {
-                Button("Reset Stats") {
+            // MARK: - Actions Section
+            Section {
+                Button {
                     coverArtManager.resetPerformanceStats()
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Reset Statistics")
+                        Spacer()
+                    }
                 }
-                .buttonStyle(.bordered)
                 
-                Button("Clear Cache") {
+                Button {
                     coverArtManager.clearMemoryCache()
+                } label: {
+                    HStack {
+                        Image(systemName: "trash")
+                        Text("Clear Memory Cache")
+                        Spacer()
+                    }
                 }
-                .buttonStyle(.bordered)
+                .foregroundStyle(.orange)
                 
-                Button("Print Logs") {
+                Button {
                     coverArtManager.printDiagnostics()
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text.magnifyingglass")
+                        Text("Print Diagnostics to Console")
+                        Spacer()
+                    }
                 }
-                .buttonStyle(.bordered)
+            } header: {
+                Text("Actions")
+            } footer: {
+                Text("Reset statistics to clear counters. Clear cache to free memory. Print diagnostics outputs detailed logs to Xcode console.")
+                    .font(.caption)
             }
         }
-        .padding()
+        .listStyle(.insetGrouped)
+        .navigationTitle("Cover Art Diagnostics")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Helper View
+
+struct LabeledStatRow: View {
+    let icon: String
+    let label: String
+    let value: String
+    var valueColor: Color = .primary
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+            
+            Text(label)
+                .foregroundStyle(.primary)
+            
+            Spacer()
+            
+            Text(value)
+                .foregroundStyle(valueColor)
+                .fontWeight(.semibold)
+        }
+        .padding(.vertical, 4)
     }
 }

@@ -81,9 +81,6 @@ struct AlbumCollectionView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: Album.self) { album in
-                AlbumDetailView(album: album)
-            }
             .scrollIndicators(.hidden)
             .task {
                 if case .byArtist(let artist) = context {

@@ -37,7 +37,10 @@ struct SettingsView: View {
             List {
                 Section(header: Text("Debug")) {
                     NavigationLink(destination: CoverArtDebugView()) {
-                        Label("Cover Art Debug", systemImage: "photo.artframe")
+                        Label("Cover Art Debug", systemImage: "photo")
+                    }
+                    NavigationLink(destination: NetworkDebugView()) {
+                        Label("Network Debug", systemImage: "network")
                     }
                 }
                 
@@ -76,7 +79,7 @@ struct SettingsView: View {
                 }
                 
                 NavidromeSection
-                NetworkDebugSection
+                
                 
                 if appInitializer.isConfigured {
                     CacheSection
@@ -161,14 +164,6 @@ struct SettingsView: View {
             Text("This will reset the app to its initial state. All local data will be lost.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    private var NetworkDebugSection: some View {
-        Section {
-            NetworkDebugBanner()
-        } header: {
-            Text("Network Debug")
         }
     }
     

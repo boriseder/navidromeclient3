@@ -117,16 +117,13 @@ class PlayerViewModel: NSObject {
     }
     
     func playNext() async {
-        guard let nextIndex = playlistManager.nextIndex() else {
+        guard playlistManager.nextIndex() != nil else {
             AppLogger.general.info("PlayerViewModel: No next song available")
             stop()
             return
         }
         
         playlistManager.advanceToNext()
-        
-        // CRITICAL: Must call playCurrent to reload queue for manual next
-        // This ensures UI updates and proper queue management
         await playCurrent()
     }
     
@@ -302,16 +299,13 @@ extension PlayerViewModel: PlaybackEngineDelegate {
         AppLogger.general.info("PlayerViewModel: Playback finished, successfully: \(successfully)")
         
         if successfully {
-            // CRITICAL: When queue finishes naturally (all songs played),
-            // check if we have more songs in playlist
             Task {
-                guard let nextIndex = playlistManager.nextIndex() else {
+                guard playlistManager.nextIndex() != nil else {
                     AppLogger.general.info("PlayerViewModel: End of playlist")
                     stop()
                     return
                 }
                 
-                // Advance playlist and reload
                 playlistManager.advanceToNext()
                 await playCurrent()
             }
@@ -335,7 +329,7 @@ extension PlayerViewModel: PlaybackEngineDelegate {
             AppLogger.general.info("PlayerViewModel: Queue sufficient (\(currentQueueSize) items)")
             return
         }
-        
+
         let itemsNeeded = 3 - currentQueueSize
         AppLogger.general.info("PlayerViewModel: Need \(itemsNeeded) more items for queue")
         

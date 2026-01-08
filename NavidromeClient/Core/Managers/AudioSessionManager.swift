@@ -68,41 +68,47 @@ class AudioSessionManager: NSObject {
         let center = NotificationCenter.default
         
         // 1. Interruption
-        let interruptionTask = Task { [weak self] in
-            for await notification in center.notifications(named: AVAudioSession.interruptionNotification) {
-                guard let self = self,
-                      let userInfo = notification.userInfo,
-                      let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
-                      let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { continue }
-                
-                self.handleInterruption(typeValue: typeValue, optionsValue: optionsValue)
+        observationTasks.append(
+            Task { [weak self] in
+                for await notification in center.notifications(named: AVAudioSession.interruptionNotification) {
+                    guard let self = self,
+                          let userInfo = notification.userInfo,
+                          let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                          let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { continue }
+                    
+                    self.handleInterruption(typeValue: typeValue, optionsValue: optionsValue)
+                }
             }
-        }
+        )
         
         // 2. Route changes
-        let routeTask = Task { [weak self] in
-            for await notification in center.notifications(named: AVAudioSession.routeChangeNotification) {
-                guard let self = self,
-                      let userInfo = notification.userInfo,
-                      let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt else { continue }
-                
-                var wasHeadphones = false
-                if let previousRoute = userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {
-                    wasHeadphones = previousRoute.outputs.contains { output in
-                        output.portType == .headphones || output.portType == .bluetoothA2DP
+        observationTasks.append(
+            Task { [weak self] in
+                for await notification in center.notifications(named: AVAudioSession.routeChangeNotification) {
+                    guard let self = self,
+                          let userInfo = notification.userInfo,
+                          let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt else { continue }
+                    
+                    var wasHeadphones = false
+                    if let previousRoute = userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription {
+                        wasHeadphones = previousRoute.outputs.contains { output in
+                            output.portType == .headphones || output.portType == .bluetoothA2DP
+                        }
                     }
+                    
+                    self.handleRouteChange(reasonValue: reasonValue, wasHeadphones: wasHeadphones)
                 }
-                
-                self.handleRouteChange(reasonValue: reasonValue, wasHeadphones: wasHeadphones)
             }
-        }
+        )
         
         // 3. Media services reset
-        let resetTask = Task { [weak self] in
-            for await _ in center.notifications(named: AVAudioSession.mediaServicesWereResetNotification) {
-                self?.handleMediaServicesResetNotification()
+        observationTasks.append(
+            Task { [weak self] in
+                for await _ in center.notifications(named: AVAudioSession.mediaServicesWereResetNotification) {
+                    self?.handleMediaServicesResetNotification()
+                }
             }
-        }
+        )
         
         AppLogger.audio.info("📡 Async audio session observers registered")
     }
