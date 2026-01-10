@@ -25,9 +25,6 @@ class PlayerViewModel: NSObject {
     
     var playlistManager = PlaylistManager()
     
-    // MARK: - Task Storage
-    @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
-
     // MARK: - Playlist Delegation
     var isShuffling: Bool { playlistManager.isShuffling }
     var repeatMode: PlaylistManager.RepeatMode { playlistManager.repeatMode }
@@ -36,6 +33,7 @@ class PlayerViewModel: NSObject {
     
     // MARK: - Private Properties
     @ObservationIgnored private let playbackEngine = PlaybackEngine()
+    @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
     
     // MARK: - Dependencies
     @ObservationIgnored private weak var unifiedService: UnifiedSubsonicService?
@@ -57,8 +55,27 @@ class PlayerViewModel: NSObject {
         playbackEngine.delegate = self
         playbackEngine.volume = volume
         
-        setupAsyncObservers()
+        startObservingNotifications()
         configureAudioSession()
+    }
+    
+    deinit {
+        // Cancel all observation tasks (thread-safe)
+        observationTasks.forEach { $0.cancel() }
+        
+        // Capture references that need MainActor cleanup
+        let engine = playbackEngine
+        let sessionManager = audioSessionManager
+        
+        // Schedule MainActor cleanup asynchronously
+        // Note: This may not complete if app is terminating
+        Task { @MainActor in
+            engine.shutdown()
+            sessionManager.clearNowPlayingInfo()
+            AppLogger.general.info("PlayerViewModel: Cleanup completed")
+        }
+        
+        AppLogger.general.info("PlayerViewModel: Deinitialized")
     }
 
     // MARK: - Configuration
@@ -70,8 +87,9 @@ class PlayerViewModel: NSObject {
     func shutdown() {
         observationTasks.forEach { $0.cancel() }
         observationTasks.removeAll()
-        playbackEngine.stop()
+        playbackEngine.shutdown()
         audioSessionManager.clearNowPlayingInfo()
+        AppLogger.general.info("PlayerViewModel: Explicit shutdown completed")
     }
     
     // MARK: - Public Playback Methods
@@ -210,21 +228,31 @@ class PlayerViewModel: NSObject {
         if let localURL = downloadManager.getLocalFileURL(for: song.id) {
             return localURL
         }
-        return unifiedService?.streamURL(for: song.id)
+        
+        guard let service = unifiedService else {
+            AppLogger.general.error("PlayerViewModel: Service not configured")
+            errorMessage = "Service not configured"
+            return nil
+        }
+        
+        return service.streamURL(for: song.id)
     }
     
-    // MARK: - Notifications Setup (AsyncSequence)
+    // MARK: - Notifications Setup (Simple Separate Tasks)
     
-    private func setupAsyncObservers() {
+    private func startObservingNotifications() {
         let center = NotificationCenter.default
         
-        let interruptionStartTask = Task { [weak self] in
+        // Task 1: Audio interruption began
+        let task1 = Task { @MainActor [weak self] in
             for await _ in center.notifications(named: .audioInterruptionBegan) {
                 self?.pause()
             }
         }
+        observationTasks.append(task1)
         
-        let interruptionEndTask = Task { [weak self] in
+        // Task 2: Audio interruption ended (should resume)
+        let task2 = Task { @MainActor [weak self] in
             for await _ in center.notifications(named: .audioInterruptionEndedShouldResume) {
                 guard let self = self else { return }
                 if self.currentSong != nil {
@@ -232,14 +260,15 @@ class PlayerViewModel: NSObject {
                 }
             }
         }
+        observationTasks.append(task2)
         
-        let deviceDisconnectedTask = Task { [weak self] in
+        // Task 3: Audio device disconnected (headphones unplugged)
+        let task3 = Task { @MainActor [weak self] in
             for await _ in center.notifications(named: .audioDeviceDisconnected) {
                 self?.pause()
             }
         }
-        
-        observationTasks.append(contentsOf: [interruptionStartTask, interruptionEndTask, deviceDisconnectedTask])
+        observationTasks.append(task3)
     }
     
     private func configureAudioSession() {
@@ -329,7 +358,7 @@ extension PlayerViewModel: PlaybackEngineDelegate {
             AppLogger.general.info("PlayerViewModel: Queue sufficient (\(currentQueueSize) items)")
             return
         }
-
+        
         let itemsNeeded = 3 - currentQueueSize
         AppLogger.general.info("PlayerViewModel: Need \(itemsNeeded) more items for queue")
         

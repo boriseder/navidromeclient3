@@ -15,7 +15,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				Presentation/Views/Library/FavoritesView.bak,
 			);
 			target = A1D552D92E5E6BDB00317006 /* NavidromeClient */;
 		};

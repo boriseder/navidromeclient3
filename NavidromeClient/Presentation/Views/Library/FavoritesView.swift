@@ -78,7 +78,7 @@ struct FavoritesView: View {
     
     @ViewBuilder
     private func makeMainContent() -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        ZStack {
             if theme.backgroundStyle == .dynamic {
                 DynamicMusicBackground()
             }
@@ -86,7 +86,6 @@ struct FavoritesView: View {
             contentView
         }
     }
-
     
     @ViewBuilder
     private func makeMenu() -> some View {
@@ -154,10 +153,13 @@ struct FavoritesView: View {
                 
                 let songs = filteredSongs
                 ForEach(Array(songs.enumerated()), id: \.0) { index, song in
+                    let isCurrentlyPlaying = playerVM.currentSong?.id == song.id && playerVM.isPlaying
+                    let isLast = index == songs.count - 1
+                    
                     SongRow(
                         song: song,
                         index: index + 1,
-                        isPlaying: playerVM.currentSong?.id == song.id && playerVM.isPlaying,
+                        isPlaying: isCurrentlyPlaying,
                         action: {
                             Task {
                                 await playerVM.setPlaylist(
@@ -172,7 +174,9 @@ struct FavoritesView: View {
                                 await favoritesManager.toggleFavorite(song)
                             }
                         },
-                        context: .favorites
+                        context: .favorites,
+                        isLastInGroup: isLast,
+                        isFavorited: true
                     )
                 }
             }

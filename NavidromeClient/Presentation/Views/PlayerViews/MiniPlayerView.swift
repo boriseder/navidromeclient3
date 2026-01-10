@@ -2,7 +2,7 @@
 //  MiniPlayerView.swift
 //  NavidromeClient
 //
-//  Modern UI/UX Redesign - iOS 17+
+//  FIXED: Buttons are now tappable, drag gesture doesn't interfere
 //
 
 import SwiftUI
@@ -47,6 +47,11 @@ struct MiniPlayerView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // Make song info area tappable for fullscreen
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        showFullScreen = true
+                    }
                     
                     // Control buttons with modern interaction
                     HStack(spacing: 20) {
@@ -75,56 +80,52 @@ struct MiniPlayerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(
+                    // Background with swipe gesture handler
                     ModernBackgroundView(
                         albumId: song.albumId,
                         coverArtManager: coverArtManager
                     )
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 20) // Increased minimum distance
+                            .onChanged { value in
+                                // Only handle vertical drags
+                                if abs(value.translation.height) > abs(value.translation.width) {
+                                    dragOffset = value.translation.height
+                                    if value.translation.height > 10 {
+                                        isPressed = false
+                                    }
+                                }
+                            }
+                            .onEnded { value in
+                                isPressed = false
+                                
+                                if value.translation.height < -80 {
+                                    // Swipe up - open full screen
+                                    showFullScreen = true
+                                    dragOffset = 0
+                                } else if value.translation.height > 100 {
+                                    // Swipe down - close player
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        dragOffset = 300
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                        playerVM.stop()
+                                        dragOffset = 0
+                                    }
+                                } else {
+                                    // Snap back
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                        dragOffset = 0
+                                    }
+                                }
+                            }
+                    )
                 )
-                .contentShape(Rectangle())
                 .scaleEffect(isPressed ? 0.98 : 1.0)
                 .offset(y: dragOffset)
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressed)
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: dragOffset)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if abs(value.translation.height) > abs(value.translation.width) {
-                                dragOffset = value.translation.height
-                                if value.translation.height > 10 {
-                                    isPressed = false
-                                }
-                            } else if value.translation.height == 0 {
-                                isPressed = true
-                            }
-                        }
-                        .onEnded { value in
-                            isPressed = false
-                            
-                            if value.translation.height < -80 {
-                                // Swipe up - open full screen
-                                showFullScreen = true
-                                dragOffset = 0
-                            } else if value.translation.height > 100 {
-                                // Swipe down - close player
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    dragOffset = 300
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                    playerVM.stop()
-                                    dragOffset = 0
-                                }
-                            } else if abs(value.translation.height) < 10 && abs(value.translation.width) < 10 {
-                                // Tap - open full screen
-                                showFullScreen = true
-                                dragOffset = 0
-                            } else {
-                                // Snap back
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                    dragOffset = 0
-                                }
-                            }
-                        }
-                )
             }
             .task(id: song.albumId) {
                 if let albumId = song.albumId {
@@ -221,6 +222,11 @@ struct ModernAlbumArt: View {
         .frame(width: 56, height: 56)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+        // Make album art tappable for fullscreen
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Could add haptic feedback here
+        }
     }
 }
 

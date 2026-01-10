@@ -29,12 +29,13 @@ class PlaybackEngine {
     private var currentSongId: String?
     private var timeObserver: Any?
     private var currentItemObserver: NSKeyValueObservation?
-    private var itemObservers: [NSObjectProtocol] = []
-    private var statusObservers: [Task<Void, Never>] = []
-    
+
     private let queueTargetSize = 3
     private var isExtendingQueue = false
     
+    nonisolated(unsafe) private var itemObservers: [NSObjectProtocol] = []
+    nonisolated(unsafe) private var statusObservers: [Task<Void, Never>] = []
+
 
     
     var currentQueueSize: Int {
@@ -396,9 +397,18 @@ class PlaybackEngine {
     }
     
     deinit {
-        cleanupQueue()
-        AppLogger.general.info("PlaybackEngine: Deinitialized with cleanup")
+        // Only cancel tasks that are thread-safe to cancel
+        statusObservers.forEach { $0.cancel() }
+        itemObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        
+        AppLogger.general.warn("PlaybackEngine: Deinitialized - call shutdown() before release for complete cleanup")
     }
+    
+    /// MUST be called before releasing the engine
+    func shutdown() {
+        cleanupQueue()
+    }
+
 }
 
 // MARK: - AVPlayerItem Extension
