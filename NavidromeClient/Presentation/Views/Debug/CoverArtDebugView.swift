@@ -11,12 +11,11 @@ struct CoverArtDebugView: View {
     @Environment(CoverArtManager.self) var coverArtManager
     @Environment(ThemeManager.self) var theme
     
+    @State private var stats = CoverArtCacheStats(diskCount: 0, diskSize: 0, activeRequests: 0, errorCount: 0)
+    @State private var health = CoverArtHealthStatus(isHealthy: true, statusDescription: "Loading...")
+    
     var body: some View {
-        let stats = coverArtManager.getCacheStats()
-        let health = coverArtManager.getHealthStatus()
-        
         List {
-            // MARK: - Health Status Section
             Section {
                 HStack {
                     Image(systemName: health.isHealthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -46,24 +45,13 @@ struct CoverArtDebugView: View {
                 Text("Status")
             }
             
-            // MARK: - Disk Cache Section
             Section {
-                LabeledStatRow(
-                    icon: "internaldrive",
-                    label: "Cache Entries",
-                    value: "\(stats.diskCount)"
-                )
-                
-                LabeledStatRow(
-                    icon: "chart.bar.fill",
-                    label: "Cache Size",
-                    value: stats.diskSizeFormatted
-                )
+                LabeledStatRow(icon: "internaldrive", label: "Cache Entries", value: "\(stats.diskCount)")
+                LabeledStatRow(icon: "chart.bar.fill", label: "Cache Size", value: stats.diskSizeFormatted)
             } header: {
                 Text("Disk Cache")
             }
             
-            // MARK: - Network Section
             Section {
                 LabeledStatRow(
                     icon: "arrow.down.circle",
@@ -71,14 +59,12 @@ struct CoverArtDebugView: View {
                     value: "\(stats.activeRequests)",
                     valueColor: stats.activeRequests > 10 ? .orange : .primary
                 )
-                
                 LabeledStatRow(
                     icon: "exclamationmark.triangle",
                     label: "Errors",
                     value: "\(stats.errorCount)",
                     valueColor: stats.errorCount > 0 ? .red : .green
                 )
-                
                 if stats.activeRequests + stats.errorCount > 0 {
                     let errorRate = Double(stats.errorCount) / Double(stats.activeRequests + stats.errorCount)
                     LabeledStatRow(
@@ -92,10 +78,10 @@ struct CoverArtDebugView: View {
                 Text("Network Performance")
             }
             
-            // MARK: - Actions Section
             Section {
                 Button {
                     coverArtManager.resetPerformanceStats()
+                    Task { await refreshStats() }
                 } label: {
                     HStack {
                         Image(systemName: "arrow.clockwise")
@@ -106,6 +92,7 @@ struct CoverArtDebugView: View {
                 
                 Button {
                     coverArtManager.clearMemoryCache()
+                    Task { await refreshStats() }
                 } label: {
                     HStack {
                         Image(systemName: "trash")
@@ -116,7 +103,7 @@ struct CoverArtDebugView: View {
                 .foregroundStyle(.orange)
                 
                 Button {
-                    coverArtManager.printDiagnostics()
+                    Task { await coverArtManager.printDiagnostics() }
                 } label: {
                     HStack {
                         Image(systemName: "doc.text.magnifyingglass")
@@ -134,9 +121,15 @@ struct CoverArtDebugView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Cover Art Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await refreshStats() }
+        .refreshable { await refreshStats() }
+    }
+    
+    private func refreshStats() async {
+        stats = await coverArtManager.getCacheStats()
+        health = await coverArtManager.getHealthStatus()  // also async now
     }
 }
-
 // MARK: - Helper View
 
 struct LabeledStatRow: View {

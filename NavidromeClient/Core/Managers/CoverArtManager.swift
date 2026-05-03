@@ -288,7 +288,7 @@ class CoverArtManager {
         
         // 2. Disk Check
         let diskCacheKey = "\(type.name)_\(id)_\(size)"
-        if let cached = persistentCache.image(for: diskCacheKey, size: size) {
+        if let cached = await persistentCache.image(for: diskCacheKey, size: size) {
             storeImage(cached, forId: id, type: type, size: size)
             return cached
         }
@@ -356,7 +356,9 @@ class CoverArtManager {
             }
             
             let diskCacheKey = "\(type.name)_\(id)_\(size)"
-            persistentCache.store(image, for: diskCacheKey, size: size)
+            Task {
+                await persistentCache.store(image, for: diskCacheKey, size: size)
+            }
             return image
         } else {
             _ = await MainActor.run {
@@ -535,15 +537,17 @@ class CoverArtManager {
         loadingStates.removeAll()
         errorStates.removeAll()
         incrementCacheGeneration()
-        persistentCache.clearCache()
- 
+        Task {
+            await persistentCache.clearCache()  // actor-isolated, fire-and-forget
+        }
         AppLogger.cache.info("[CoverArtManager] All caches cleared")
     }
 
+
     // MARK: - Diagnostics
     
-    func getCacheStats() -> CoverArtCacheStats {
-        let persistentStats = persistentCache.getCacheStats()
+    func getCacheStats() async -> CoverArtCacheStats {
+        let persistentStats = await persistentCache.getCacheStats()
         
         return CoverArtCacheStats(
             diskCount: persistentStats.diskCount,
@@ -553,13 +557,13 @@ class CoverArtManager {
         )
     }
     
-    func getHealthStatus() -> CoverArtHealthStatus {
-        let stats = getCacheStats()
-        
+    func getHealthStatus() async -> CoverArtHealthStatus {
+        let stats = await getCacheStats()
+
         let totalActivity = stats.activeRequests + stats.errorCount
         let errorRate = totalActivity > 0 ? Double(stats.errorCount) / Double(totalActivity) : 0.0
         let isHealthy = errorRate < 0.1 && stats.activeRequests < 50
-        
+
         let statusDescription: String
         if errorRate < 0.05 && stats.activeRequests < 10 {
             statusDescription = "Excellent"
@@ -568,20 +572,20 @@ class CoverArtManager {
         } else {
             statusDescription = "Poor"
         }
-        
+
         return CoverArtHealthStatus(isHealthy: isHealthy, statusDescription: statusDescription)
     }
-    
+
     func resetPerformanceStats() {
         loadingStates.removeAll()
         errorStates.removeAll()
         AppLogger.cache.info("[CoverArtManager] Performance stats reset")
     }
     
-    func printDiagnostics() {
-        let stats = getCacheStats()
-        let health = getHealthStatus()
-        
+    func printDiagnostics() async {
+        let stats = await getCacheStats()
+        let health = await getHealthStatus()
+
         AppLogger.cache.info("""
         [CoverArtManager] DIAGNOSTICS:
         Health: \(health.statusDescription)

@@ -44,7 +44,7 @@ class MediaService {
             }
             
             // Cache the image
-            PersistentImageCache.shared.store(image, for: coverId, size: size)
+            await PersistentImageCache.shared.store(image, for: coverId, size: size)
             return image
             
         } catch {
@@ -134,14 +134,14 @@ class MediaService {
     
     // MARK: -  CACHE MANAGEMENT
     
-    func clearCoverArtCache() {
-        PersistentImageCache.shared.clearCache()
+    func clearCoverArtCache() async {
+        await PersistentImageCache.shared.clearCache()
         AppLogger.general.info("🧹 Cleared media cache")
     }
-    
-    func getCacheStats() -> MediaCacheStats {
-        let cacheStats = PersistentImageCache.shared.getCacheStats()
-        
+
+    func getCacheStats() async -> MediaCacheStats {
+        let cacheStats = await PersistentImageCache.shared.getCacheStats()
+
         return MediaCacheStats(
             imageCount: cacheStats.diskCount,
             cacheSize: cacheStats.diskSize,

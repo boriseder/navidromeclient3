@@ -62,13 +62,15 @@ final class AppConfig {
         credentialStore.clearCredentials()
         credentials = nil
         
-        // Clear caches
-        PersistentImageCache.shared.clearCache()
-        AlbumMetadataCache.shared.clearCache()
+        // Clear caches — both are actor-isolated, fire-and-forget is correct here
+        Task {
+            await PersistentImageCache.shared.clearCache()
+            await AlbumMetadataCache.shared.clearCache()
+        }
         
         AppLogger.general.info("[AppConfig] Credentials cleared")
     }
-            
+
     // MARK: - Credentials Access
     
     func getCredentials() -> ServerCredentials? {

@@ -231,7 +231,7 @@ class MusicLibraryManager {
                 return
             }
             
-            AlbumMetadataCache.shared.cacheAlbums(newAlbums)
+            await AlbumMetadataCache.shared.cacheAlbums(newAlbums)
             loadedAlbums.append(contentsOf: newAlbums)
             
             if newAlbums.count < batchSize {

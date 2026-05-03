@@ -28,6 +28,7 @@ struct SettingsView: View {
     // MARK: - Local State
     @State private var showingFactoryResetConfirmation = false
     @State private var isPerformingReset = false
+    @State private var coverArtCacheSize: String = "—"
 
     var body: some View {
         // Create Bindable scope for theme to allow Picker bindings
@@ -128,10 +129,14 @@ struct SettingsView: View {
     private var CacheSection: some View {
         Section {
             NavigationLink("Cache Settings") { CacheSettingsView() }
-            SettingsRow(title: "Cover Art Cache", value: PersistentImageCache.shared.getCacheStats().diskSizeFormatted)
+            SettingsRow(title: "Cover Art Cache", value: coverArtCacheSize)
             SettingsRow(title: "Download Cache", value: downloadManager.totalDownloadSize())
         } header: {
             Text("Cache & Downloads")
+        }
+        .task {
+            let stats = await PersistentImageCache.shared.getCacheStats()
+            coverArtCacheSize = stats.diskSizeFormatted
         }
     }
     
@@ -215,7 +220,14 @@ struct CacheSettingsView: View {
     @Environment(DownloadManager.self) var downloadManager
     @Environment(CoverArtManager.self) var coverArtManager
 
-    @State private var cacheStats = PersistentImageCache.shared.getCacheStats()
+    // FIX: Cannot call async getCacheStats() in property initializer.
+    // Use a default empty value; .task loads the real data.
+    @State private var cacheStats = PersistentImageCache.CacheStats(
+        memoryCount: 0,
+        diskCount: 0,
+        diskSize: 0,
+        maxSize: 1
+    )
     @State private var showingClearConfirmation = false
     @State private var showingClearSuccess = false
 
@@ -249,18 +261,18 @@ struct CacheSettingsView: View {
                     value: "\(downloadManager.downloadedAlbums.reduce(0) { $0 + $1.songs.count })",
                     icon: "music.note"
                 )
-                
+
                 Button(role: .destructive) {
                     downloadManager.deleteAllDownloads()
                 } label: {
                     Label("Delete ALL Music", systemImage: "trash")
                 }
             }
-            
+
             Section {
                 Button("Clear Memory Cache") {
                     coverArtManager.clearMemoryCache()
-                    updateCacheStats()
+                    Task { await updateCacheStats() }
                 }
             } header: {
                 Text("Memory Management")
@@ -271,7 +283,9 @@ struct CacheSettingsView: View {
         }
         .navigationTitle("Cache Management")
         .confirmationDialog("Clear Cover Art Cache?", isPresented: $showingClearConfirmation) {
-            Button("Clear Cache", role: .destructive) { clearCoverArtCache() }
+            Button("Clear Cache", role: .destructive) {
+                Task { await clearCoverArtCache() }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will remove all cached cover art images.")
@@ -281,18 +295,20 @@ struct CacheSettingsView: View {
         } message: {
             Text("Cover art cache has been successfully cleared.")
         }
-        .task { updateCacheStats() }
-        .refreshable { updateCacheStats() }
+        .task { await updateCacheStats() }
+        .refreshable { await updateCacheStats() }
     }
 
-    private func updateCacheStats() {
-        cacheStats = PersistentImageCache.shared.getCacheStats()
+    // FIX: async so it can await the actor-isolated getCacheStats()
+    private func updateCacheStats() async {
+        cacheStats = await PersistentImageCache.shared.getCacheStats()
     }
-    
-    private func clearCoverArtCache() {
-        PersistentImageCache.shared.clearCache()
+
+    // FIX: async so it can await the actor-isolated clearCache()
+    private func clearCoverArtCache() async {
+        await PersistentImageCache.shared.clearCache()
         coverArtManager.clearMemoryCache()
-        updateCacheStats()
+        await updateCacheStats()
         showingClearSuccess = true
     }
 }

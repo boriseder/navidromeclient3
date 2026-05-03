@@ -2,89 +2,88 @@
 //  AlbumMetadataCache.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Migrated to @Observable
-//  - Optimized Background I/O
+//  REFACTORED: Swift 6 — Step 1
+//  - Converted from @MainActor class to actor
+//  - All disk I/O delegated to StorageActor
+//  - No blocking reads anywhere
 //
 
 import Foundation
-import SwiftUI
-import Observation
 
-// MARK: - Album Metadata Cache
-@MainActor
-@Observable
-class AlbumMetadataCache {
-    static let shared = AlbumMetadataCache()
-    
-    @ObservationIgnored private let cacheFile: URL
+actor AlbumMetadataCache {
+
+    // MARK: - Singleton (replaced by DI in Step 7)
+    static let shared = AlbumMetadataCache(storage: AppStorageActor.shared)
+
+    // MARK: - Dependencies
+    private let storage: StorageActor
+
+    // MARK: - State (actor-isolated)
     private var cachedAlbums: [String: Album] = [:]
-    
-    private init() {
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        cacheFile = documentsPath.appendingPathComponent("album_metadata_cache.json")
-        loadCache()
+    private var isLoaded = false
+
+    // MARK: - Init
+
+    init(storage: StorageActor) {
+        self.storage = storage
+        // No blocking I/O in init.
+        // First call to any public method triggers lazy load.
     }
-    
-    func cacheAlbum(_ album: Album) {
+
+    // MARK: - Lazy Load
+
+    private func ensureLoaded() async {
+        guard !isLoaded else { return }
+        cachedAlbums = await storage.loadAlbums()
+        isLoaded = true
+        AppLogger.general.info("AlbumMetadataCache: Loaded \(cachedAlbums.count) albums from disk")
+    }
+
+    // MARK: - Public API
+
+    func cacheAlbum(_ album: Album) async {
+        await ensureLoaded()
         cachedAlbums[album.id] = album
-        saveCache()
+        scheduleSave()
     }
-    
-    func cacheAlbums(_ albums: [Album]) {
+
+    func cacheAlbums(_ albums: [Album]) async {
+        await ensureLoaded()
         for album in albums {
             cachedAlbums[album.id] = album
         }
-        saveCache()
+        scheduleSave()
     }
-    
-    func getAlbum(id: String) -> Album? {
+
+    func getAlbum(id: String) async -> Album? {
+        await ensureLoaded()
         return cachedAlbums[id]
     }
-    
-    func getAlbums(ids: Set<String>) -> [Album] {
+
+    func getAlbums(ids: Set<String>) async -> [Album] {
+        await ensureLoaded()
         return ids.compactMap { cachedAlbums[$0] }
     }
-    
-    func getAllCachedAlbums() -> [Album] {
+
+    func getAllCachedAlbums() async -> [Album] {
+        await ensureLoaded()
         return Array(cachedAlbums.values)
     }
-    
-    func clearCache() {
+
+    func clearCache() async {
         cachedAlbums.removeAll()
-        
-        let file = cacheFile
-        // Offload file deletion to detached task
-        Task.detached {
-            try? FileManager.default.removeItem(at: file)
-        }
-        
-        AppLogger.general.info("📦 AlbumMetadataCache: Cache cleared")
+        isLoaded = true // Mark loaded so ensureLoaded won't reload stale data
+        await storage.clearAlbumsFile()
+        AppLogger.general.info("AlbumMetadataCache: Cache cleared")
     }
-    
-    private func loadCache() {
-        guard FileManager.default.fileExists(atPath: cacheFile.path) else { return }
-        
-        do {
-            let data = try Data(contentsOf: cacheFile)
-            let albums = try JSONDecoder().decode([String: Album].self, from: data)
-            self.cachedAlbums = albums
-            AppLogger.general.info("📦 Loaded \(cachedAlbums.count) albums from metadata cache")
-        } catch {
-            AppLogger.general.error("📦 Failed to load metadata cache: \(error)")
-        }
-    }
-    
-    private func saveCache() {
-        // Capture data snapshot for background task
-        let albums = cachedAlbums
-        let file = cacheFile
-        
-        // Save in background to prevent UI stutter
+
+    // MARK: - Private
+
+    private func scheduleSave() {
+        let snapshot = cachedAlbums
+        let stor = storage
         Task.detached {
-            if let data = try? JSONEncoder().encode(albums) {
-                try? data.write(to: file, options: .atomic)
-            }
+            await stor.saveAlbums(snapshot)
         }
     }
 }
