@@ -62,6 +62,16 @@ struct NavidromeClientApp: App {
                         audioSessionManager.handleAppWillTerminate()
                     }
                 }
+                .task {
+                    for await _ in NotificationCenter.default.notifications(named: .credentialsUpdated) {
+                        hasConfiguredManagers = false
+                        try? await Task.sleep(for: .milliseconds(200))
+                        if appInitializer.areServicesReady {
+                            configureInitialDependencies()
+                            configureManagersAndLoadData()
+                        }
+                    }
+                }
                 // Remove: .onChange(of: appInitializer.isConfigured)
                 .onChange(of: networkMonitor.canLoadOnlineContent) { _, isConnected in
                     Task {

@@ -14,12 +14,11 @@ struct ArtistImageView: View {
     let artist: Artist
     let context: ImageContext
     
+    // Mirror AlbumImageView: local state forces redraw on arrival
+    @State private var image: UIImage?
+    
     private var displaySize: CGFloat {
         return context.displaySize
-    }
-    
-    private var hasImage: Bool {
-        coverArtManager.getArtistImage(for: artist.id, context: context) != nil
     }
     
     init(artist: Artist, context: ImageContext) {
@@ -30,38 +29,33 @@ struct ArtistImageView: View {
     var body: some View {
         ZStack {
             placeholderView
-                .opacity(hasImage ? 0 : 1)
+                .opacity(image != nil ? 0 : 1)
             
-            if let image = coverArtManager.getArtistImage(for: artist.id, context: context) {
+            if let image = image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(width: displaySize, height: displaySize)
                     .clipShape(Circle())
-                    .opacity(hasImage ? 1 : 0)
-                    .transition(.opacity)
                     .overlay(
                         Circle()
                             .stroke(DSColor.onLight.opacity(0.1), lineWidth: 1)
                     )
                     .shadow(color: DSColor.onLight.opacity(0.1), radius: 4, x: 0, y: 2)
+                    .transition(.opacity)
             }
         }
         .frame(width: displaySize, height: displaySize)
-        .animation(.easeInOut(duration: 0.3), value: hasImage)
-        .task(id: "\(artist.id)_\(context.size)_\(coverArtManager.cacheGeneration)") {
-            if coverArtManager.getArtistImage(for: artist.id, context: context) != nil {
+        .animation(.easeInOut(duration: 0.3), value: image != nil)
+        .task(id: "\(artist.id)_\(context.size)") {  // ← no cacheGeneration
+            // 1. Check memory cache immediately (fast path)
+            if let cached = coverArtManager.getArtistImage(for: artist.id, context: context) {
+                self.image = cached
                 return
             }
             
-            if context.size < ImageContext.fullscreen.size {
-                try? await Task.sleep(for: .seconds(0.1))
-                if coverArtManager.getArtistImage(for: artist.id, context: context) != nil {
-                    return
-                }
-            }
-            
-            _ = await coverArtManager.loadArtistImage(
+            // 2. Load from disk or network
+            self.image = await coverArtManager.loadArtistImage(
                 for: artist.id,
                 context: context
             )

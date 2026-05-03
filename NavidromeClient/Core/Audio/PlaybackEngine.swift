@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 import AVFoundation
 
 // MARK: - PlaybackEngine Delegate Protocol
@@ -243,23 +243,48 @@ class PlaybackEngine {
         currentItemObserver = queuePlayer.observe(\.currentItem, options: [.new]) { [weak self] player, change in
             guard let self = self else { return }
             
-            // Use assumeIsolated for synchronous MainActor access
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 if let newItem = change.newValue as? AVPlayerItem {
                     let itemId = ObjectIdentifier(newItem)
                     if let songId = self.itemToSongId[itemId] {
                         self.currentSongId = songId
                         AppLogger.general.info("PlaybackEngine: Current item changed to: \(songId)")
-                        
-                        // Async queue extension check
-                        Task { @MainActor in
-                            await self.checkAndExtendQueue()
-                        }
+                        await self.checkAndExtendQueue()
                     }
                 }
                 self.pruneOldItems()
             }
         }
+    }
+
+    private func setupItemObserver(for item: AVPlayerItem) {
+        let observer = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  let finishedItem = notification.object as? AVPlayerItem else { return }
+            
+            Task { @MainActor in
+                let itemId = ObjectIdentifier(finishedItem)
+                if let songId = self.itemToSongId[itemId] {
+                    AppLogger.general.info("PlaybackEngine: Item finished playing: \(songId)")
+                }
+                
+                let hasMoreItems = self.queuePlayer.items().count > 0
+                self.unregisterItem(finishedItem)
+                
+                if !hasMoreItems {
+                    AppLogger.general.info("PlaybackEngine: Queue finished - no more items")
+                    self.delegate?.playbackEngine(self, didFinishPlaying: true)
+                } else {
+                    AppLogger.general.info("PlaybackEngine: Continuing playback - \(self.queuePlayer.items().count) items remaining")
+                }
+            }
+        }
+        
+        itemObservers.append(observer)
     }
     
     private func checkAndExtendQueue() async {
@@ -278,38 +303,6 @@ class PlaybackEngine {
         await delegate?.playbackEngineNeedsMoreItems(self)
     }
     
-    private func setupItemObserver(for item: AVPlayerItem) {
-        let observer = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: item,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self = self,
-                  let finishedItem = notification.object as? AVPlayerItem else { return }
-            
-            // Use assumeIsolated since we're on main queue
-            MainActor.assumeIsolated {
-                let itemId = ObjectIdentifier(finishedItem)
-                if let songId = self.itemToSongId[itemId] {
-                    AppLogger.general.info("PlaybackEngine: Item finished playing: \(songId)")
-                }
-                
-                // Check if queue has more items BEFORE unregistering
-                let hasMoreItems = self.queuePlayer.items().count > 0
-                
-                self.unregisterItem(finishedItem)
-                
-                if !hasMoreItems {
-                    AppLogger.general.info("PlaybackEngine: Queue finished - no more items")
-                    self.delegate?.playbackEngine(self, didFinishPlaying: true)
-                } else {
-                    AppLogger.general.info("PlaybackEngine: Continuing playback - \(self.queuePlayer.items().count) items remaining")
-                }
-            }
-        }
-        
-        itemObservers.append(observer)
-    }
     
     private func setupStatusObserver(for item: AVPlayerItem) {
         let task = Task { [weak self] in
@@ -363,45 +356,43 @@ class PlaybackEngine {
     
     // MARK: - Cleanup
     
-    nonisolated private func cleanupQueue() {
-        MainActor.assumeIsolated {
-            // Clean up time observer
-            if let observer = timeObserver {
-                queuePlayer.removeTimeObserver(observer)
-                timeObserver = nil
-            }
-            
-            // Clean up current item observer
-            currentItemObserver?.invalidate()
-            currentItemObserver = nil
-            
-            // Clean up item observers
-            itemObservers.forEach {
-                NotificationCenter.default.removeObserver($0)
-            }
-            itemObservers.removeAll()
-            
-            // Clean up status observers
-            statusObservers.forEach { $0.cancel() }
-            statusObservers.removeAll()
-            
-            // Clean up player
-            queuePlayer.pause()
-            queuePlayer.removeAllItems()
-            
-            // Clean up tracking
-            itemToSongId.removeAll()
-            songIdToItem.removeAll()
-            currentSongId = nil
+    private func cleanupQueue() {
+        // Clean up time observer
+        if let observer = timeObserver {
+            queuePlayer.removeTimeObserver(observer)
+            timeObserver = nil
         }
+        
+        // Clean up current item observer
+        currentItemObserver?.invalidate()
+        currentItemObserver = nil
+        
+        // Clean up item observers
+        itemObservers.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
+        itemObservers.removeAll()
+        
+        // Clean up status observers
+        statusObservers.forEach { $0.cancel() }
+        statusObservers.removeAll()
+        
+        // Clean up player
+        queuePlayer.pause()
+        queuePlayer.removeAllItems()
+        
+        // Clean up tracking
+        itemToSongId.removeAll()
+        songIdToItem.removeAll()
+        currentSongId = nil
     }
-    
+
     deinit {
-        // Only cancel tasks that are thread-safe to cancel
+        // Only Task.cancel() and NotificationCenter.removeObserver() are
+        // safe to call from deinit — they don't touch MainActor state
         statusObservers.forEach { $0.cancel() }
         itemObservers.forEach { NotificationCenter.default.removeObserver($0) }
-        
-        AppLogger.general.warn("PlaybackEngine: Deinitialized - call shutdown() before release for complete cleanup")
+        AppLogger.general.warn("PlaybackEngine: Deinitialized - call shutdown() before release")
     }
     
     /// MUST be called before releasing the engine

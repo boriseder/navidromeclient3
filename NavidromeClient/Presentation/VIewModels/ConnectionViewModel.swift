@@ -17,24 +17,60 @@ class ConnectionViewModel {
     var isConnected: Bool = false
     var isTestingConnection: Bool = false
     
-    // Dependencies injected usually via Environment or singleton access
-    // Here we use NetworkMonitor singleton for status checks
-    
+    // Test already-saved credentials (used in SettingsView)
     func testConnection() async {
+        guard let credentials = AppConfig.shared.getCredentials() else {
+            isConnected = false
+            connectionStatusText = "Not configured"
+            return
+        }
+        
         isTestingConnection = true
         connectionStatusText = "Testing..."
         
-        // Simulate network delay or actual ping
-        try? await Task.sleep(for: .seconds(0.5))
+        let service = ConnectionService(
+            baseURL: credentials.baseURL,
+            username: credentials.username,
+            password: credentials.password
+        )
         
-        if NetworkMonitor.shared.state.isFullyConnected {
+        let result = await service.testConnection()
+        
+        switch result {
+        case .success(let info):
             isConnected = true
-            connectionStatusText = "Connected"
-        } else {
+            connectionStatusText = "Connected · \(info.type) \(info.serverVersion)"
+        case .failure(let error):
             isConnected = false
-            connectionStatusText = "Connection Failed"
+            connectionStatusText = error.userMessage
         }
         
         isTestingConnection = false
+    }
+    
+    // Test specific credentials before saving (used in ServerEditView)
+    func testCredentials(baseURL: URL, username: String, password: String) async -> Bool {
+        isTestingConnection = true
+        connectionStatusText = "Testing..."
+        
+        let service = ConnectionService(
+            baseURL: baseURL,
+            username: username,
+            password: password
+        )
+        
+        let result = await service.testConnection()
+        
+        switch result {
+        case .success(let info):
+            isConnected = true
+            connectionStatusText = "Connected · \(info.type) \(info.serverVersion)"
+        case .failure(let error):
+            isConnected = false
+            connectionStatusText = error.userMessage
+        }
+        
+        isTestingConnection = false
+        return isConnected
     }
 }

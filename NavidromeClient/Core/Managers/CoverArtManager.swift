@@ -380,8 +380,6 @@ class CoverArtManager {
         
         let coverArt = AlbumCoverArt(image: image, size: size)
         cache.setObject(coverArt, forKey: cacheKey, cost: coverArt.memoryFootprint)
-        
-        incrementCacheGeneration()
     }
     
     // MARK: - State Queries

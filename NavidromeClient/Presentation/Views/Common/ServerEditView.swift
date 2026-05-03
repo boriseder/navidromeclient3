@@ -80,13 +80,21 @@ struct ServerEditView: View {
     }
     
     private func validateAndSave() async {
-        guard let url = URL(string: serverUrlString), url.scheme != nil, url.host != nil else {
+        guard let url = URL(string: serverUrlString),
+              url.scheme != nil,
+              url.host != nil else {
             errorMessage = "Invalid URL. Please include http:// or https://"
             showError = true
             return
         }
         
-        await connectionVM.testConnection()
+        let success = await connectionVM.testCredentials(
+            baseURL: url,
+            username: username,
+            password: password
+        )
+        
+        guard success else { return }
         
         appConfig.configure(baseURL: url, username: username, password: password)
         

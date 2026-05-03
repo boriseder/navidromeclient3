@@ -123,7 +123,6 @@ struct SettingsView: View {
         } footer: {
             Text("Your (self-)hosted Navidrome server. Don't forget to add port (usually 4533).")
         }
-        .task { await connectionVM.testConnection() }
     }
 
     private var CacheSection: some View {
@@ -147,7 +146,6 @@ struct SettingsView: View {
         } header: {
             Text("Server Info")
         }
-        .task { await connectionVM.testConnection() }
     }
 
     private var DangerZoneSection: some View {
