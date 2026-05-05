@@ -2,10 +2,8 @@
 //  QueueView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 & iOS 17+ Modernization
-//  - Migrated to @Environment(Type.self)
-//  - Modern Styling (foregroundStyle)
-//  - Modern Concurrency
+//  REFACTORED: Step 3 — ImageCacheActor
+//  Row subviews load cover art via @State + .task
 //
 
 import SwiftUI
@@ -14,23 +12,16 @@ struct QueueView: View {
     @Environment(PlayerViewModel.self) var playerVM
     @Environment(CoverArtManager.self) var coverArtManager
     @Environment(\.dismiss) private var dismiss
-    
-    private var currentPlaylist: [Song] {
-        playerVM.playlistManager.currentPlaylist
-    }
-    
-    private var currentIndex: Int {
-        playerVM.playlistManager.currentIndex
-    }
-    
+
+    private var currentPlaylist: [Song] { playerVM.playlistManager.currentPlaylist }
+    private var currentIndex: Int { playerVM.playlistManager.currentIndex }
+
     private var upNextSongs: [Song] {
-        let totalSongs = currentPlaylist.count
-        guard totalSongs > 0, currentIndex < totalSongs else { return [] }
-        
-        let nextIndex = currentIndex + 1
-        return Array(currentPlaylist[nextIndex..<totalSongs])
+        let total = currentPlaylist.count
+        guard total > 0, currentIndex < total else { return [] }
+        return Array(currentPlaylist[(currentIndex + 1)...])
     }
-    
+
     var body: some View {
         NavigationView {
             ZStack {
@@ -44,58 +35,39 @@ struct QueueView: View {
             .navigationBarTitleDisplayMode(.automatic)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .foregroundStyle(.white)
+                    Button("Done") { dismiss() }.foregroundStyle(.white)
                 }
-                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button("Shuffle Queue") {
-                            shuffleUpNext()
-                        }
-                        
-                        Button("Clear Queue") {
-                            clearQueue()
-                        }
-                        
-                        Button("Repeat: \(repeatModeText)") {
-                            playerVM.toggleRepeat()
-                        }
+                        Button("Shuffle Queue") { shuffleUpNext() }
+                        Button("Clear Queue")   { clearQueue() }
+                        Button("Repeat: \(repeatModeText)") { playerVM.toggleRepeat() }
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .foregroundStyle(.white)
+                        Image(systemName: "ellipsis").foregroundStyle(.white)
                     }
                 }
             }
         }
     }
-    
-    // MARK: - Queue Content
-    
+
     @ViewBuilder
     private var queueContent: some View {
         ScrollViewReader { proxy in
             List {
-                // Currently Playing Section
                 if let currentSong = playerVM.currentSong {
                     Section {
                         CurrentlyPlayingRow(song: currentSong)
                     } header: {
-                        Text("Now Playing")
-                            .foregroundStyle(.white.opacity(0.8))
+                        Text("Now Playing").foregroundStyle(.white.opacity(0.8))
                     }
                     .listRowBackground(Color.clear)
                 }
-                
-                // Up Next Section
+
                 if !upNextSongs.isEmpty {
                     Section {
                         ForEach(upNextSongs.indices, id: \.self) { relativeIndex in
                             let actualIndex = currentIndex + 1 + relativeIndex
                             let song = upNextSongs[relativeIndex]
-                            
                             QueueSongRow(
                                 song: song,
                                 queuePosition: relativeIndex + 1,
@@ -107,22 +79,16 @@ struct QueueView: View {
                         .onDelete(perform: deleteUpNextSongs)
                     } header: {
                         HStack {
-                            Text("Up Next (\(upNextSongs.count))")
-                                .foregroundStyle(.white.opacity(0.8))
-                            
+                            Text("Up Next (\(upNextSongs.count))").foregroundStyle(.white.opacity(0.8))
                             Spacer()
-                            
                             if playerVM.isShuffling {
-                                Image(systemName: "shuffle")
-                                    .foregroundStyle(.green)
-                                    .font(.caption)
+                                Image(systemName: "shuffle").foregroundStyle(.green).font(.caption)
                             }
                         }
                     }
                     .listRowBackground(Color.clear)
                 }
-                
-                // Queue Info
+
                 Section {
                     QueueInfoView(
                         totalSongs: currentPlaylist.count,
@@ -130,87 +96,68 @@ struct QueueView: View {
                         totalDuration: calculateTotalDuration()
                     )
                 } header: {
-                    Text("Queue Info")
-                        .foregroundStyle(.white.opacity(0.8))
+                    Text("Queue Info").foregroundStyle(.white.opacity(0.8))
                 }
                 .listRowBackground(Color.clear)
-                
-                // Bottom spacing for mini player
-                Color.clear
-                    .frame(height: DSLayout.miniPlayerHeight)
-                    .listRowBackground(Color.clear)
+
+                Color.clear.frame(height: DSLayout.miniPlayerHeight).listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
             .onAppear {
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(0.1))
-                    withAnimation {
-                        proxy.scrollTo("song-\(currentIndex + 1)", anchor: .top)
-                    }
+                    withAnimation { proxy.scrollTo("song-\(currentIndex + 1)", anchor: .top) }
                 }
             }
         }
     }
-    
+
     @ViewBuilder
     private var emptyQueueView: some View {
         VStack(spacing: DSLayout.screenGap) {
             Image(systemName: "music.note.list")
                 .font(.system(size: 60))
                 .foregroundStyle(.white.opacity(0.6))
-            
             Text("No songs in queue")
-                .font(DSText.itemTitle)
-                .foregroundStyle(.white)
-            
+                .font(DSText.itemTitle).foregroundStyle(.white)
             Text("Start playing music to see your queue")
-                .font(DSText.body)
-                .foregroundStyle(.white.opacity(0.7))
+                .font(DSText.body).foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
         }
         .padding(DSLayout.screenPadding)
     }
-    
-    // MARK: - Queue Management Actions
-    
+
     private func jumpToSong(at index: Int) {
         Task { await playerVM.jumpToSong(at: index) }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
-    
+
     private func moveUpNextSongs(from source: IndexSet, to destination: Int) {
         let sourceIndices = source.map { currentIndex + 1 + $0 }
-        let destIndex = currentIndex + 1 + destination
-        
-        Task { await playerVM.moveQueueSongs(from: sourceIndices, to: destIndex) }
+        Task { await playerVM.moveQueueSongs(from: sourceIndices, to: currentIndex + 1 + destination) }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
-    
+
     private func deleteUpNextSongs(at offsets: IndexSet) {
-        let indicesToDelete = offsets.map { currentIndex + 1 + $0 }
-        
-        Task { await playerVM.removeQueueSongs(at: indicesToDelete) }
+        let indices = offsets.map { currentIndex + 1 + $0 }
+        Task { await playerVM.removeQueueSongs(at: indices) }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
-    
+
     private func shuffleUpNext() {
         playerVM.shuffleUpNext()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
-    
+
     private func clearQueue() {
         playerVM.clearQueue()
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
     }
-    
-    // MARK: - Helper Methods
-    
+
     private func calculateTotalDuration() -> Int {
-        return currentPlaylist.reduce(0) { total, song in
-            total + (song.duration ?? 0)
-        }
+        currentPlaylist.reduce(0) { $0 + ($1.duration ?? 0) }
     }
-    
+
     private var repeatModeText: String {
         switch playerVM.repeatMode {
         case .off: return "Off"
@@ -226,19 +173,15 @@ struct CurrentlyPlayingRow: View {
     let song: Song
     @Environment(CoverArtManager.self) var coverArtManager
     @Environment(PlayerViewModel.self) var playerVM
-    
-    private var coverArt: UIImage? {
-        guard let albumId = song.albumId else { return nil }
-        return coverArtManager.getAlbumImage(for: albumId, context: .list)
-    }
-    
+
+    @State private var cover: UIImage? = nil
+
     var body: some View {
         HStack(spacing: DSLayout.contentGap) {
             ZStack {
-                if let coverArt = coverArt {
-                    Image(uiImage: coverArt)
-                        .resizable()
-                        .scaledToFill()
+                if let cover = cover {
+                    Image(uiImage: cover)
+                        .resizable().scaledToFill()
                         .frame(width: 50, height: 50)
                         .clipShape(RoundedRectangle(cornerRadius: DSCorners.element))
                 } else {
@@ -246,44 +189,39 @@ struct CurrentlyPlayingRow: View {
                         .fill(.ultraThinMaterial)
                         .frame(width: 50, height: 50)
                         .overlay(
-                            Image(systemName: "music.note")
-                                .foregroundStyle(.white.opacity(0.6))
+                            Image(systemName: "music.note").foregroundStyle(.white.opacity(0.6))
                         )
                 }
-                
+
                 if playerVM.isPlaying {
                     RoundedRectangle(cornerRadius: DSCorners.element)
                         .fill(.black.opacity(0.4))
                         .frame(width: 50, height: 50)
                         .overlay(
-                            EqualizerBars(isActive: true, accentColor: .white)
-                                .scaleEffect(0.6)
+                            EqualizerBars(isActive: true, accentColor: .white).scaleEffect(0.6)
                         )
                 }
             }
-            
+            .task(id: song.albumId) {
+                guard let albumId = song.albumId else { cover = nil; return }
+                if let cached = await coverArtManager.imageCache.cachedImage(
+                    for: albumId, type: .album, size: ImageContext.list.size
+                ) { cover = cached; return }
+                cover = await coverArtManager.loadAlbumImage(for: albumId, context: .list)
+            }
+
             VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                 Text(song.title)
-                    .font(DSText.emphasized)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                
+                    .font(DSText.emphasized).foregroundStyle(.white).lineLimit(1)
                 Text(song.artist ?? "Unknown Artist")
-                    .font(DSText.metadata)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
+                    .font(DSText.metadata).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
             }
-            
+
             Spacer()
-            
+
             VStack(spacing: DSLayout.tightGap) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .foregroundStyle(.green)
-                    .font(DSText.metadata)
-                
-                Text("Now Playing")
-                    .font(.caption2)
-                    .foregroundStyle(.green)
+                Image(systemName: "speaker.wave.2.fill").foregroundStyle(.green).font(DSText.metadata)
+                Text("Now Playing").font(.caption2).foregroundStyle(.green)
             }
         }
         .padding(.vertical, DSLayout.tightGap)
@@ -296,14 +234,10 @@ struct QueueSongRow: View {
     let song: Song
     let queuePosition: Int
     let onTap: @MainActor () -> Void
-    
+
     @Environment(CoverArtManager.self) var coverArtManager
-    
-    private var coverArt: UIImage? {
-        guard let albumId = song.albumId else { return nil }
-        return coverArtManager.getAlbumImage(for: albumId, context: .list)
-    }
-    
+    @State private var cover: UIImage? = nil
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: DSLayout.contentGap) {
@@ -311,38 +245,40 @@ struct QueueSongRow: View {
                     .font(DSText.metadata.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.6))
                     .frame(width: 20, alignment: .center)
-                
-                if let coverArt = coverArt {
-                    Image(uiImage: coverArt)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 40, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: DSCorners.tight))
-                } else {
-                    RoundedRectangle(cornerRadius: DSCorners.tight)
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 40, height: 40)
-                        .overlay(
-                            Image(systemName: "music.note")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.6))
-                        )
+
+                Group {
+                    if let cover = cover {
+                        Image(uiImage: cover)
+                            .resizable().scaledToFill()
+                            .frame(width: 40, height: 40)
+                            .clipShape(RoundedRectangle(cornerRadius: DSCorners.tight))
+                    } else {
+                        RoundedRectangle(cornerRadius: DSCorners.tight)
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.caption).foregroundStyle(.white.opacity(0.6))
+                            )
+                    }
                 }
-                
+                .task(id: song.albumId) {
+                    guard let albumId = song.albumId else { cover = nil; return }
+                    if let cached = await coverArtManager.imageCache.cachedImage(
+                        for: albumId, type: .album, size: ImageContext.list.size
+                    ) { cover = cached; return }
+                    cover = await coverArtManager.loadAlbumImage(for: albumId, context: .list)
+                }
+
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
                     Text(song.title)
-                        .font(DSText.emphasized)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
+                        .font(DSText.emphasized).foregroundStyle(.white).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    
                     Text(song.artist ?? "Unknown Artist")
-                        .font(DSText.metadata)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
+                        .font(DSText.metadata).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                
+
                 if let duration = song.duration {
                     Text(formatDuration(duration))
                         .font(DSText.metadata.monospacedDigit())
@@ -353,11 +289,9 @@ struct QueueSongRow: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 
@@ -367,61 +301,41 @@ struct QueueInfoView: View {
     let totalSongs: Int
     let remainingSongs: Int
     let totalDuration: Int
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: DSLayout.elementGap) {
-            HStack {
-                VStack(alignment: .leading, spacing: DSLayout.tightGap) {
-                    Text("\(totalSongs)")
-                        .font(DSText.prominent)
-                        .foregroundStyle(.white)
-                    Text("Total Songs")
-                        .font(DSText.metadata)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .center, spacing: DSLayout.tightGap) {
-                    Text("\(remainingSongs)")
-                        .font(DSText.prominent)
-                        .foregroundStyle(.white)
-                    Text("Up Next")
-                        .font(DSText.metadata)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: DSLayout.tightGap) {
-                    Text(formatTotalDuration(totalDuration))
-                        .font(DSText.prominent.monospacedDigit())
-                        .foregroundStyle(.white)
-                    Text("Total Time")
-                        .font(DSText.metadata)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
+        HStack {
+            VStack(alignment: .leading, spacing: DSLayout.tightGap) {
+                Text("\(totalSongs)").font(DSText.prominent).foregroundStyle(.white)
+                Text("Total Songs").font(DSText.metadata).foregroundStyle(.white.opacity(0.7))
             }
-            .padding(DSLayout.contentPadding)
-            .background(
-                RoundedRectangle(cornerRadius: DSCorners.content)
-                    .fill(.ultraThinMaterial.opacity(0.3))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DSCorners.content)
-                            .stroke(.white.opacity(0.1), lineWidth: 1)
-                    )
-            )
+            Spacer()
+            VStack(alignment: .center, spacing: DSLayout.tightGap) {
+                Text("\(remainingSongs)").font(DSText.prominent).foregroundStyle(.white)
+                Text("Up Next").font(DSText.metadata).foregroundStyle(.white.opacity(0.7))
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: DSLayout.tightGap) {
+                Text(formatTotalDuration(totalDuration))
+                    .font(DSText.prominent.monospacedDigit()).foregroundStyle(.white)
+                Text("Total Time").font(DSText.metadata).foregroundStyle(.white.opacity(0.7))
+            }
         }
+        .padding(DSLayout.contentPadding)
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.content)
+                .fill(.ultraThinMaterial.opacity(0.3))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DSCorners.content)
+                        .stroke(.white.opacity(0.1), lineWidth: 1)
+                )
+        )
     }
-    
+
     private func formatTotalDuration(_ seconds: Int) -> String {
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
-        
-        if hours > 0 {
-            return String(format: "%d:%02d:00", hours, minutes)
-        } else {
-            return String(format: "%d:00", minutes)
-        }
+        return hours > 0
+            ? String(format: "%d:%02d:00", hours, minutes)
+            : String(format: "%d:00", minutes)
     }
 }

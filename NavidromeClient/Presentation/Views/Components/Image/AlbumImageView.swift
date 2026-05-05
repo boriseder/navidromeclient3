@@ -44,18 +44,15 @@ struct AlbumImageView: View {
         .frame(width: displaySize, height: displaySize)
         .animation(.easeInOut(duration: 0.3), value: image != nil)
         .task(id: "\(album.id)_\(context.size)") {
-            // 1. Check Memory Cache immediately (Fast Path)
-            if let cached = coverArtManager.getAlbumImage(for: album.id, context: context) {
+            // Fast path: check actor memory cache
+            if let cached = await coverArtManager.imageCache.cachedImage(
+                for: album.id, type: .album, size: context.size
+            ) {
                 self.image = cached
                 return
             }
-            
-            // 2. Load (Disk -> Network)
-            // The return value is assigned to State, guaranteeing a refresh
-            self.image = await coverArtManager.loadAlbumImage(
-                for: album.id,
-                context: context
-            )
+            // Slow path: disk → network
+            self.image = await coverArtManager.loadAlbumImage(for: album.id, context: context)
         }
     }
     

@@ -47,18 +47,14 @@ struct ArtistImageView: View {
         }
         .frame(width: displaySize, height: displaySize)
         .animation(.easeInOut(duration: 0.3), value: image != nil)
-        .task(id: "\(artist.id)_\(context.size)") {  // ← no cacheGeneration
-            // 1. Check memory cache immediately (fast path)
-            if let cached = coverArtManager.getArtistImage(for: artist.id, context: context) {
+        .task(id: "\(artist.id)_\(context.size)") {
+            if let cached = await coverArtManager.imageCache.cachedImage(
+                for: artist.id, type: .artist, size: context.size
+            ) {
                 self.image = cached
                 return
             }
-            
-            // 2. Load from disk or network
-            self.image = await coverArtManager.loadArtistImage(
-                for: artist.id,
-                context: context
-            )
+            self.image = await coverArtManager.loadArtistImage(for: artist.id, context: context)
         }
     }
     
