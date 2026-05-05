@@ -2,9 +2,9 @@
 //  ConnectionService.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Migrated to @Observable
-//  - Removed @Published property wrappers
+//  REFACTORED: Step 2 — NetworkActor
+//  Observable UI state stays @MainActor.
+//  All HTTP delegated to NetworkActor.
 //
 
 import Foundation
@@ -14,259 +14,116 @@ import Observation
 @MainActor
 @Observable
 class ConnectionService {
-    private let baseURL: URL
-    private let username: String
-    private let password: String
-    @ObservationIgnored private let session: URLSession
-    
-    // MARK: - Connection State
+
+    // MARK: - Observable UI State
+
     private(set) var isConnected = false
     private(set) var connectionQuality: ConnectionQuality = .unknown
     private(set) var lastSuccessfulConnection: Date?
 
+    // MARK: - Network
+
+    let network: NetworkActor
+
     enum ConnectionQuality: Sendable {
         case unknown, excellent, good, poor, timeout
-        
+
         var description: String {
             switch self {
-            case .unknown: return "Unknown"
+            case .unknown:   return "Unknown"
             case .excellent: return "Excellent"
-            case .good: return "Good"
-            case .poor: return "Poor"
-            case .timeout: return "Timeout"
+            case .good:      return "Good"
+            case .poor:      return "Poor"
+            case .timeout:   return "Timeout"
             }
         }
     }
 
-    // MARK: - Initialization
+    // MARK: - Init
+
     init(baseURL: URL, username: String, password: String) {
-        self.baseURL = baseURL
-        self.username = username
-        self.password = password
-        
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 30
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.httpAdditionalHeaders = [
-            "User-Agent": "NavidromeClient/1.0 iOS",
-            "Accept": "application/json"
-        ]
-        config.urlCache = nil
-        config.httpCookieAcceptPolicy = .never
-        
-        self.session = URLSession(configuration: config)
+        self.network = NetworkActor(
+            baseURL: baseURL,
+            username: username,
+            password: password
+        )
     }
-    
-    // MARK: - CONNECTION TESTING (OPTIMIZED)
-    
+
+    // MARK: - Connection Testing
+
     func testConnection() async -> ConnectionTestResult {
         let startTime = Date()
-        
+
         do {
-            guard let url = buildURL(endpoint: "ping") else {
-                return .failure(.invalidURL)
-            }
-            
-            let (data, response) = try await session.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                return .failure(.serverUnreachable)
-            }
-            
-            // Check HTTP status
-            guard httpResponse.statusCode == 200 else {
-                if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                    return .failure(.invalidCredentials)
-                }
-                return .failure(.serverUnreachable)
-            }
-            
-            // Parse PingInfo
-            let pingResponse = try JSONDecoder().decode(
-                SubsonicResponse<PingInfo>.self,
-                from: data
-            )
-            let pingInfo = pingResponse.subsonicResponse
-            
-            // Additionally check for Subsonic-level errors
-            if let errorCheck = try? JSONDecoder().decode(
-                SubsonicResponse<SubsonicResponseContent>.self,
-                from: data
-            ), errorCheck.subsonicResponse.status == "failed" {
-                if let error = errorCheck.subsonicResponse.error {
-                    AppLogger.ui.error("❌ Subsonic error: code=\(error.code), message=\(error.message)")
-                    
-                    if error.code == 40 || error.code == 41 {
-                        return .failure(.invalidCredentials)
-                    }
-                    return .failure(.networkError(error.message))
-                }
-            }
-            
-            // Success!
+            let pingInfo = try await network.ping()
+
             let responseTime = Date().timeIntervalSince(startTime)
             updateConnectionState(responseTime: responseTime, success: true)
-            
-            let connectionInfo = ConnectionInfo(
+
+            return .success(ConnectionInfo(
                 version: pingInfo.version,
                 type: pingInfo.type,
                 serverVersion: pingInfo.serverVersion,
                 openSubsonic: pingInfo.openSubsonic
-            )
-            
-            return .success(connectionInfo)
-            
+            ))
         } catch {
-            let failureTime = Date().timeIntervalSince(startTime)
-            updateConnectionState(responseTime: failureTime, success: false)
-            
-            let subsonicError = SubsonicError.from(error)
-            return .failure(subsonicError.asConnectionError)
+            let elapsed = Date().timeIntervalSince(startTime)
+            updateConnectionState(responseTime: elapsed, success: false)
+            return .failure(SubsonicError.from(error).asConnectionError)
         }
     }
 
     func ping() async -> Bool {
         let startTime = Date()
-        
         do {
-            _ = try await pingWithInfo()
-            let responseTime = Date().timeIntervalSince(startTime)
-            updateConnectionState(responseTime: responseTime, success: true)
+            _ = try await network.ping()
+            updateConnectionState(responseTime: Date().timeIntervalSince(startTime), success: true)
             return true
         } catch {
-            let failureTime = Date().timeIntervalSince(startTime)
-            updateConnectionState(responseTime: failureTime, success: false)
+            updateConnectionState(responseTime: Date().timeIntervalSince(startTime), success: false)
             return false
         }
     }
-    
-    private func pingWithInfo() async throws -> PingInfo {
-        guard let url = buildURL(endpoint: "ping") else {
-            throw SubsonicError.badURL
-        }
-        
-        let (data, response) = try await session.data(from: url)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw SubsonicError.unauthorized
-        }
-        
-        let decoded = try JSONDecoder().decode(SubsonicResponse<PingInfo>.self, from: data)
-        return decoded.subsonicResponse
-    }
-    
-    // MARK: - URL BUILDING & SECURITY
-    
+
+    // MARK: - URL / Auth pass-through (kept for callers that need them)
+
     func buildURL(endpoint: String, params: [String: String] = [:]) -> URL? {
-        guard validateEndpoint(endpoint) else {
-            AppLogger.general.info("Invalid endpoint: \(endpoint)")
-            return nil
-        }
-        
-        guard var components = URLComponents(string: baseURL.absoluteString) else {
-            return nil
-        }
-        
-        components.path = "/rest/\(endpoint).view"
-        
-        let salt = generateSecureSalt()
-        let token = (password + salt).md5()
-        
-        var queryItems = [
-            URLQueryItem(name: "u", value: username),
-            URLQueryItem(name: "t", value: token),
-            URLQueryItem(name: "s", value: salt),
-            URLQueryItem(name: "v", value: "1.16.1"),
-            URLQueryItem(name: "c", value: "NavidromeClient")
-        ]
-        
-        // Only add format parameter for non-stream endpoints
-        if endpoint != "stream" && endpoint != "download" {
-            queryItems.append(URLQueryItem(name: "f", value: "json"))
-        }
-        
-        for (key, value) in params {
-            guard validateParameter(key: key, value: value) else {
-                AppLogger.general.info("Invalid parameter: \(key)")
-                continue
-            }
-            queryItems.append(URLQueryItem(name: key, value: value))
-        }
-        
-        components.queryItems = queryItems
-        return components.url
+        network.buildURL(endpoint: endpoint, params: params)
     }
 
     func getAuthHeader() -> [String: String] {
-        let loginString = "\(username):\(password)"
-        guard let loginData = loginString.data(using: .utf8) else { return [:] }
-        let base64LoginString = loginData.base64EncodedString()
-        return ["Authorization": "Basic \(base64LoginString)"]
+        network.authHeader()
     }
 
-    // MARK: - HEALTH MONITORING
-    
+    // MARK: - Health
+
     func performHealthCheck() async -> ConnectionHealth {
         let startTime = Date()
-        let isReachable = await ping()
-        let responseTime = Date().timeIntervalSince(startTime)
-        
+        let reachable = await ping()
+        let elapsed = Date().timeIntervalSince(startTime)
         return ConnectionHealth(
-            isConnected: isReachable,
-            quality: determineConnectionQuality(responseTime: responseTime, success: isReachable),
-            responseTime: responseTime,
+            isConnected: reachable,
+            quality: determineQuality(responseTime: elapsed, success: reachable),
+            responseTime: elapsed,
             lastSuccessfulConnection: lastSuccessfulConnection
         )
     }
-    
-    // MARK: - PRIVATE HELPERS (OPTIMIZED)
-    
+
+    // MARK: - Private
+
     private func updateConnectionState(responseTime: TimeInterval, success: Bool) {
         isConnected = success
-        connectionQuality = determineConnectionQuality(responseTime: responseTime, success: success)
-        
-        if success {
-            lastSuccessfulConnection = Date()
-        }
+        connectionQuality = determineQuality(responseTime: responseTime, success: success)
+        if success { lastSuccessfulConnection = Date() }
     }
-    
-    private func determineConnectionQuality(responseTime: TimeInterval, success: Bool) -> ConnectionQuality {
+
+    private func determineQuality(responseTime: TimeInterval, success: Bool) -> ConnectionQuality {
         guard success else { return .timeout }
-        guard responseTime > 0 else { return .unknown }
-        
         switch responseTime {
-        case 0..<0.5: return .excellent
+        case 0..<0.5:  return .excellent
         case 0.5..<1.5: return .good
-        case 1.5..<5.0: return .poor
-        default: return .poor  // Slow but connected
+        default:        return .poor
         }
-    }
-    
-    private func validateEndpoint(_ endpoint: String) -> Bool {
-        let allowedEndpoints = [
-            "ping", "getArtists", "getArtist", "getAlbum", "getAlbumList2",
-            "getCoverArt", "stream", "download", "getGenres", "search2",
-            "star", "unstar", "getStarred2"
-        ]
-        return allowedEndpoints.contains(endpoint) &&
-               endpoint.allSatisfy { $0.isLetter || $0.isNumber }
-    }
-    
-    private func validateParameter(key: String, value: String) -> Bool {
-        guard key.count <= 50, value.count <= 1000 else { return false }
-        
-        // Only block real security risks, not genre characters
-        let dangerousChars = CharacterSet(charactersIn: "<>\"'")
-        return key.rangeOfCharacter(from: dangerousChars) == nil &&
-               value.rangeOfCharacter(from: dangerousChars) == nil
-    }
-    
-    private func generateSecureSalt() -> String {
-        let saltLength = 12
-        let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        return String((0..<saltLength).compactMap { _ in characters.randomElement() })
     }
 }
 
