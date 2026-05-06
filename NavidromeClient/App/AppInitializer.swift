@@ -5,6 +5,8 @@
 //  UPDATED: Swift 6 & iOS 17+ Modernization
 //  - FIXED: Migrated from ObservableObject to @Observable
 //  - Replaced Closure Observers with AsyncSequence
+//  - FIXED Bug 04: initialize() guard now correctly matches .failed(_) with
+//    any associated value, not just the empty string literal .failed("")
 //
 
 import Foundation
@@ -43,16 +45,30 @@ final class AppInitializer {
         Task { @MainActor in
             for await notification in NotificationCenter.default.notifications(named: .credentialsUpdated) {
                 guard notification.object is ServerCredentials else { continue }
-                
                 try? await self.reinitializeAfterConfiguration()
             }
         }
     }
 
     func initialize() async throws {
-        guard state == .notStarted || state == .failed("") else { return }
+        // FIXED Bug 04: The old guard was:
+        //
+        //   guard state == .notStarted || state == .failed("") else { return }
+        //
+        // .failed("") is an equality check that compares the associated String
+        // value to an empty string literal. A real failure like .failed("Network
+        // error") never matches, so calling initialize() after a failure silently
+        // did nothing — the app was permanently stuck.
+        //
+        // The fix uses a switch to pattern-match on the *case*, ignoring the
+        // associated value entirely.
+        switch state {
+        case .notStarted, .failed:
+            break          // proceed with initialization
+        case .completed:
+            return         // already done, nothing to do
+        }
 
-        // Remove: state = .inProgress
         AppLogger.general.info("[AppInitializer] === Initialization start ===")
         
         let credentials = AppConfig.shared.getCredentials()
@@ -103,7 +119,6 @@ final class AppInitializer {
         musicLibraryManager: MusicLibraryManager,
         playerVM: PlayerViewModel
     ) {
-        // Change: Only check for .completed
         guard state == .completed else {
             AppLogger.general.warn("[AppInitializer] Cannot configure managers - not initialized (state: \(state))")
             return
@@ -118,6 +133,9 @@ final class AppInitializer {
 
         coverArtManager.configure(service: service)
         songManager.configure(service: service)
+        // FIXED Bug 02: SongManager needs DownloadManager so it can return
+        // offline songs when the network is unavailable or the album is cached.
+        songManager.configure(downloadManager: downloadManager)
         downloadManager.configure(service: service)
         downloadManager.configure(coverArtManager: coverArtManager)
         favoritesManager.configure(service: service)
@@ -136,7 +154,6 @@ final class AppInitializer {
         favoritesManager: FavoritesManager,
         musicLibraryManager: MusicLibraryManager
     ) async {
-        // Change: Only check for .completed
         guard state == .completed else {
             AppLogger.general.warn("[AppInitializer] Cannot load data - not initialized (state: \(state))")
             return

@@ -76,7 +76,7 @@ struct NetworkDebugView: View {
                 VStack(spacing: 12) {
                     Button {
                         Task {
-                            await connectionManager.testConnection()
+                            await connectionManager.testConnection(credentials: AppConfig.shared.getCredentials())
                         }
                     } label: {
                         HStack {

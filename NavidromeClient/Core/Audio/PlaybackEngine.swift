@@ -1,7 +1,24 @@
+//
+//  PlaybackEngine.swift
+//  NavidromeClient
+//
+//  FIXED Bug 16: statusObservers changed from [Task] array to
+//  [ObjectIdentifier: Task] dictionary. This ensures:
+//    - Each AVPlayerItem has exactly one status observer task at a time.
+//    - When an item is unregistered (song finishes / queue cleared), its
+//      task is cancelled immediately rather than accumulating indefinitely.
+//    - cleanupQueue() still cancels everything in one sweep.
+//
+//  Previously the array grew by one entry per registered item and was only
+//  fully cleared in cleanupQueue(). Between songs — while new items were
+//  added and old items finished — dead tasks piled up, each holding a live
+//  AsyncStream that kept a KVO observation on a dead AVPlayerItem alive.
+//
+
 @preconcurrency import Foundation
 import AVFoundation
 
-// MARK: - PlaybackEngine Delegate Protocol
+// MARK: - PlaybackEngineDelegate Protocol
 
 @MainActor
 protocol PlaybackEngineDelegate: AnyObject {
@@ -34,10 +51,14 @@ class PlaybackEngine {
     private var isExtendingQueue = false
     
     nonisolated(unsafe) private var itemObservers: [NSObjectProtocol] = []
-    nonisolated(unsafe) private var statusObservers: [Task<Void, Never>] = []
 
+    // FIXED Bug 16: was [Task<Void, Never>] — grew unbounded because tasks
+    // were only removed en-masse in cleanupQueue(). Now keyed by the item's
+    // ObjectIdentifier so unregisterItem() can cancel exactly the one task
+    // that belongs to the departing item, keeping the dictionary at the same
+    // size as the live item set.
+    nonisolated(unsafe) private var statusObservers: [ObjectIdentifier: Task<Void, Never>] = [:]
 
-    
     var currentQueueSize: Int {
         queuePlayer.items().count
     }
@@ -66,7 +87,7 @@ class PlaybackEngine {
     init() {
         queuePlayer.volume = 0.7
         queuePlayer.automaticallyWaitsToMinimizeStalling = true
-        queuePlayer.actionAtItemEnd = .advance  // Ensure automatic advancement
+        queuePlayer.actionAtItemEnd = .advance
     }
     
     // MARK: - Queue Management
@@ -198,6 +219,14 @@ class PlaybackEngine {
     
     private func unregisterItem(_ item: AVPlayerItem) {
         let itemId = ObjectIdentifier(item)
+
+        // FIXED Bug 16: cancel and remove this item's status task immediately.
+        // In the old array-based approach this task would linger until the next
+        // cleanupQueue() call. With many track advances the array could hold
+        // dozens of tasks, each keeping a KVO observation on a dead item alive.
+        statusObservers[itemId]?.cancel()
+        statusObservers.removeValue(forKey: itemId)
+
         if let songId = itemToSongId[itemId] {
             itemToSongId.removeValue(forKey: itemId)
             songIdToItem.removeValue(forKey: songId)
@@ -213,6 +242,10 @@ class PlaybackEngine {
             
             let itemsToRemove = itemToSongId.filter { !currentItemIds.contains($0.key) }
             for (itemId, songId) in itemsToRemove {
+                // Cancel the status task for each pruned item.
+                statusObservers[itemId]?.cancel()
+                statusObservers.removeValue(forKey: itemId)
+
                 itemToSongId.removeValue(forKey: itemId)
                 songIdToItem.removeValue(forKey: songId)
             }
@@ -292,9 +325,7 @@ class PlaybackEngine {
         
         let queueSize = currentQueueSize
         
-        guard queueSize < queueTargetSize else {
-            return
-        }
+        guard queueSize < queueTargetSize else { return }
         
         isExtendingQueue = true
         defer { isExtendingQueue = false }
@@ -303,17 +334,23 @@ class PlaybackEngine {
         await delegate?.playbackEngineNeedsMoreItems(self)
     }
     
-    
     private func setupStatusObserver(for item: AVPlayerItem) {
+        let itemId = ObjectIdentifier(item)
+
+        // FIXED Bug 16: guard against double-registration for the same item.
+        // If registerItem is somehow called twice for the same AVPlayerItem,
+        // cancel the previous task before creating a new one.
+        statusObservers[itemId]?.cancel()
+
         let task = Task { [weak self] in
             guard let self = self else { return }
-            
             for await status in item.observeStatus() {
                 await self.handlePlayerStatus(status, for: item)
             }
         }
-        
-        statusObservers.append(task)
+
+        // Store keyed by item identity — O(1) lookup in unregisterItem.
+        statusObservers[itemId] = task
     }
     
     private func handlePlayerStatus(_ status: AVPlayerItem.Status, for item: AVPlayerItem) async {
@@ -357,40 +394,34 @@ class PlaybackEngine {
     // MARK: - Cleanup
     
     private func cleanupQueue() {
-        // Clean up time observer
         if let observer = timeObserver {
             queuePlayer.removeTimeObserver(observer)
             timeObserver = nil
         }
         
-        // Clean up current item observer
         currentItemObserver?.invalidate()
         currentItemObserver = nil
         
-        // Clean up item observers
         itemObservers.forEach {
             NotificationCenter.default.removeObserver($0)
         }
         itemObservers.removeAll()
         
-        // Clean up status observers
-        statusObservers.forEach { $0.cancel() }
+        // FIXED Bug 16: cancel all tasks in the dictionary and clear it.
+        statusObservers.values.forEach { $0.cancel() }
         statusObservers.removeAll()
         
-        // Clean up player
         queuePlayer.pause()
         queuePlayer.removeAllItems()
         
-        // Clean up tracking
         itemToSongId.removeAll()
         songIdToItem.removeAll()
         currentSongId = nil
     }
 
     deinit {
-        // Only Task.cancel() and NotificationCenter.removeObserver() are
-        // safe to call from deinit — they don't touch MainActor state
-        statusObservers.forEach { $0.cancel() }
+        // Task.cancel() and NotificationCenter.removeObserver() are safe from deinit.
+        statusObservers.values.forEach { $0.cancel() }
         itemObservers.forEach { NotificationCenter.default.removeObserver($0) }
         AppLogger.general.warn("PlaybackEngine: Deinitialized - call shutdown() before release")
     }
@@ -399,7 +430,6 @@ class PlaybackEngine {
     func shutdown() {
         cleanupQueue()
     }
-
 }
 
 // MARK: - AVPlayerItem Extension

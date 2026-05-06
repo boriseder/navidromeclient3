@@ -1,5 +1,9 @@
 //
-//  Song+Extensions.swift - Simple Initializer for Downloaded Songs
+//  SongModel.swift
+//  NavidromeClient
+//
+//  FIXED Bug 08: createFromDownload no longer uses fatalError.
+//  Returns Song? and logs the error instead of crashing in production.
 //
 
 import Foundation
@@ -48,6 +52,11 @@ struct Song: Codable, Identifiable, Sendable {
 }
 
 extension Song {
+    /// Creates a Song from locally downloaded metadata.
+    ///
+    /// Returns `nil` if JSON serialisation or decoding fails, rather than
+    /// crashing with `fatalError`. Callers must handle the optional — see
+    /// `DownloadedSong.toSong()` and `DownloadManager.getSongsForPlayback`.
     static func createFromDownload(
         id: String,
         title: String,
@@ -60,7 +69,7 @@ extension Song {
         year: Int? = nil,
         genre: String? = nil,
         contentType: String? = nil
-    ) -> Song {
+    ) -> Song? {
         let songData: [String: Any?] = [
             "id": id,
             "title": title,
@@ -78,14 +87,19 @@ extension Song {
             "suffix": "mp3",
             "path": nil
         ]
-        
+
         do {
-            let jsonData = try JSONSerialization.data(withJSONObject: songData.compactMapValues { $0 })
-            let song = try JSONDecoder().decode(Song.self, from: jsonData)
-            return song
+            let jsonData = try JSONSerialization.data(
+                withJSONObject: songData.compactMapValues { $0 }
+            )
+            return try JSONDecoder().decode(Song.self, from: jsonData)
         } catch {
-            AppLogger.ui.error("❌ Failed to create Song from download data: \(error)")
-            fatalError("Could not create Song object")
+            // Log and return nil — never crash in production over a missing
+            // downloaded song. The caller skips it via compactMap.
+            AppLogger.ui.error(
+                "❌ createFromDownload failed for '\(title)' (id: \(id)): \(error)"
+            )
+            return nil
         }
     }
 }

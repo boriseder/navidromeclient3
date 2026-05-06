@@ -13,9 +13,8 @@ struct GenreView: View {
     @Environment(ThemeManager.self) var theme
     @Environment(MusicLibraryManager.self) var musicLibraryManager
     @Environment(NetworkMonitor.self) var networkMonitor
-    
-    private var offlineManager = OfflineManager.shared
-    
+    @Environment(OfflineManager.self) var offlineManager
+
     @State private var searchText = ""
     @State private var debouncer = Debouncer()
     

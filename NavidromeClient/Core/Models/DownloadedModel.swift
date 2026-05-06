@@ -1,9 +1,11 @@
 //
-//  DownloadedAlbum.swift
+//  DownloadedModel.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 15.09.25.
+//  FIXED Bug 08: toSong() now returns Song? to propagate the optional from
+//  Song.createFromDownload. Callers use compactMap to drop nil entries.
 //
+
 import Foundation
 
 struct DownloadedAlbum: Codable, Equatable, Sendable {
@@ -19,7 +21,6 @@ struct DownloadedAlbum: Codable, Equatable, Sendable {
         songs.map { $0.id }
     }
     
-    // SWIFT 6 FIX: Make folderPath a static method to avoid @MainActor issues
     static func folderPath(for albumId: String) -> String {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return documentsPath
@@ -28,7 +29,6 @@ struct DownloadedAlbum: Codable, Equatable, Sendable {
             .path
     }
     
-    // Convenience computed property for this instance
     var folderPath: String {
         Self.folderPath(for: albumId)
     }
@@ -49,7 +49,12 @@ struct DownloadedSong: Codable, Equatable, Identifiable, Sendable {
     let fileSize: Int64
     let downloadDate: Date
     
-    func toSong() -> Song {
+    /// Converts this downloaded song record into a playable `Song` model.
+    ///
+    /// Returns `nil` if the conversion fails (malformed stored data). The
+    /// caller in `DownloadManager.getSongsForPlayback` uses `compactMap` so
+    /// a single corrupt entry does not take down the rest of the album.
+    func toSong() -> Song? {
         Song.createFromDownload(
             id: id,
             title: title,

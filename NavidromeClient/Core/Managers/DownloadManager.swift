@@ -282,7 +282,7 @@ class DownloadManager {
         downloadedAlbums.first { $0.albumId == albumId }?.songs ?? []
     }
     func getSongsForPlayback(albumId: String) -> [Song] {
-        getDownloadedSongs(for: albumId).map { $0.toSong() }
+        getDownloadedSongs(for: albumId).compactMap { $0.toSong() }
     }
 
     func getLocalFileURL(for songId: String) -> URL? {

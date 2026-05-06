@@ -18,8 +18,9 @@ class ConnectionViewModel {
     var isTestingConnection: Bool = false
     
     // Test already-saved credentials (used in SettingsView)
-    func testConnection() async {
-        guard let credentials = AppConfig.shared.getCredentials() else {
+
+    func testConnection(credentials: ServerCredentials?) async {
+        guard let credentials = credentials else {
             isConnected = false
             connectionStatusText = "Not configured"
             return
