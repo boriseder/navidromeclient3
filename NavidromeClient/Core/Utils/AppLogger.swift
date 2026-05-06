@@ -46,12 +46,14 @@ enum AppLogger {
     static let ui      = LogWrapper(logger: Logger(subsystem: subsystem, category: "UI"), category: "UI")
     static let network = LogWrapper(logger: Logger(subsystem: subsystem, category: "Network"), category: "Network")
     static let audio   = LogWrapper(logger: Logger(subsystem: subsystem, category: "Audio"), category: "Audio")
-    static let cache   = LogWrapper(logger: Logger(subsystem: subsystem, category: "Cache"), category: "Cache")
-
-    // MARK: - File Logging
+    static let cache   = LogWrapper(logger: Logger(subsystem: subsystem, category: "Cache"), category: "Cache")// MARK: - File Logging
     
     // Serial queue for thread-safe file writing
     private static let fileQueue = DispatchQueue(label: "at.amtabor.NavidromeClient.LogFileQueue", qos: .utility)
+    
+    // Swift 6: We use nonisolated(unsafe) because thread safety is manually guaranteed
+    // by ONLY ever accessing this variable from within the serial `fileQueue`.
+    nonisolated(unsafe) private static var _fileHandle: FileHandle?
 
     private static let logFileURL: URL = {
         let fm = FileManager.default
@@ -63,24 +65,29 @@ enum AppLogger {
         return url
     }()
 
+    private static func openedFileHandle() -> FileHandle? {
+        if let h = _fileHandle { return h }
+        guard let h = try? FileHandle(forWritingTo: logFileURL) else { return nil }
+        
+        if #available(iOS 13.4, *) {
+            _ = try? h.seekToEnd() // Explicitly discard the returned file offset to silence warning
+        } else {
+            h.seekToEndOfFile()
+        }
+        
+        _fileHandle = h
+        return h
+    }
+
     static func writeToFile(_ text: String) {
         // Offload to background serial queue to prevent blocking caller
         fileQueue.async {
             guard let data = (text + "\n").data(using: .utf8) else { return }
+            guard let handle = openedFileHandle() else { return }
             
-            // Use FileHandle in a do-catch block for safety
             do {
-                let handle = try FileHandle(forWritingTo: logFileURL)
-                defer { try? handle.close() }
-                
-                if #available(iOS 13.4, *) {
-                    try handle.seekToEnd()
-                } else {
-                    handle.seekToEndOfFile()
-                }
-                handle.write(data)
+                try handle.write(contentsOf: data)
             } catch {
-                // Fail silently if logging fails to prevent loops
                 print("Failed to write to log file: \(error)")
             }
         }

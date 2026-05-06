@@ -63,8 +63,6 @@ actor PersistentImageCache {
     func image(for key: String, size: Int) async -> UIImage? {
         await ensureMetadataLoaded()
 
-        guard let meta = metadata[key] else { return nil }
-
         guard let data = await storage.loadImage(key: key, size: size) else {
             // File disappeared — evict stale metadata entry
             metadata.removeValue(forKey: key)

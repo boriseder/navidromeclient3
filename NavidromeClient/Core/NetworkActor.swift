@@ -198,7 +198,7 @@ actor NetworkActor {
             "getCoverArt", "stream", "download", "getGenres", "search2",
             "star", "unstar", "getStarred2"
         ]
-        return allowed.contains(endpoint) && endpoint.allSatisfy { $0.isLetter || $0.isNumber }
+        return allowed.contains(endpoint)
     }
 
     private nonisolated func validateParameter(key: String, value: String) -> Bool {
