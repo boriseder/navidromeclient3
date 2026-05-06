@@ -169,7 +169,7 @@ struct AlbumHeaderView: View {
         let shuffledSongs = songs.shuffled()
         await playerVM.setPlaylist(shuffledSongs, startIndex: 0, albumId: album.id)
         if !playerVM.isShuffling {
-            playerVM.playlistManager.isShuffling = true
+            playerVM.toggleShuffle()
         }
     }
 

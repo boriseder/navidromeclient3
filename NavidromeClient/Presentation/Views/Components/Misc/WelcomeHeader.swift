@@ -15,6 +15,7 @@ struct WelcomeHeader: View {
     
     @State private var showingNetworkTestView = false
     @State private var showingCoverArtDebugView = false
+    @State private var greeting: String = ""
     
     // MARK: - Mehrsprachige Grüße nach Tageszeit
     private let greetingsByTime: [String: [String]] = [
@@ -42,7 +43,7 @@ struct WelcomeHeader: View {
             // Inhalt
             HStack {
                 VStack(alignment: .leading, spacing: DSLayout.tightGap) {
-                    Text("\(timeBasedGreeting()), \(username)")
+                    Text("\(greeting), \(username)")
                         .font(.title2.weight(.bold))
                         .foregroundStyle(.white)
                 }
@@ -63,6 +64,11 @@ struct WelcomeHeader: View {
             .padding(.horizontal, DSLayout.screenPadding)
         }
         .padding(.top, DSLayout.contentPadding)
+        .onAppear { // <-- ADD THIS BLOCK
+            if greeting.isEmpty {
+                greeting = timeBasedGreeting()
+            }
+        }
     }
 
     // MARK: - Helper Methods

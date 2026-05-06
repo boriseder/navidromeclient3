@@ -7,7 +7,8 @@ import AVFoundation
 class PlaylistManager {
     private(set) var currentPlaylist: [Song] = []
     private(set) var currentIndex: Int = 0
-    var isShuffling: Bool = false
+    private(set) var isShuffling: Bool = false
+
     var repeatMode: RepeatMode = .off
 
     enum RepeatMode { case off, all, one }

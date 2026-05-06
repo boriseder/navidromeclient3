@@ -110,6 +110,9 @@ struct NavidromeClientApp: App {
             .environment(coverArtManager)
             .environment(playerVM)
             .preferredColorScheme(theme.colorScheme)
+            .onAppear {
+                musicLibraryManager.setupObservers() // <-- ADD THIS LINE
+            }
     }
 
     // MARK: - Initialization Logic

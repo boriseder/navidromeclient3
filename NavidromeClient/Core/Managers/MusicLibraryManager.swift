@@ -60,8 +60,19 @@ class MusicLibraryManager {
     }
     
     nonisolated init() {
-        setupFactoryResetObserver()
-    }
+            // Observers are set up after initialization via NavidromeClientApp
+        }
+    
+    func setupObservers() {
+            let observer = NotificationCenter.default.addObserver(
+                forName: .factoryResetRequested,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.reset() }
+            }
+            observers.append(observer) // synchronous — no race
+        }
     
     // FIXED: Use MainActor-isolated cleanup instead of deinit
     func cleanup() {
@@ -133,24 +144,7 @@ class MusicLibraryManager {
     }
     
     // MARK: - Network State Handling
-    
-    // FIXED: Observer now properly stored and cleaned up
-    private nonisolated func setupFactoryResetObserver() {
-        let observer = NotificationCenter.default.addObserver(
-            forName: .factoryResetRequested,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.reset()
-            }
-        }
-        // FIXED: Remove await since storeObserver is sync
-        Task { @MainActor in
-            self.storeObserver(observer)
-        }
-    }
-    
+        
     private func storeObserver(_ observer: NSObjectProtocol) {
         observers.append(observer)
     }

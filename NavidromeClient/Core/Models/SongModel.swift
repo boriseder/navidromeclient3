@@ -89,17 +89,12 @@ extension Song {
         ]
 
         do {
-            let jsonData = try JSONSerialization.data(
-                withJSONObject: songData.compactMapValues { $0 }
-            )
-            return try JSONDecoder().decode(Song.self, from: jsonData)
+            let jsonData = try JSONSerialization.data(withJSONObject: songData.compactMapValues { $0 })
+            let song = try JSONDecoder().decode(Song.self, from: jsonData)
+            return song
         } catch {
-            // Log and return nil — never crash in production over a missing
-            // downloaded song. The caller skips it via compactMap.
-            AppLogger.ui.error(
-                "❌ createFromDownload failed for '\(title)' (id: \(id)): \(error)"
-            )
-            return nil
+            AppLogger.ui.error("❌ Failed to create Song from download data: \(error)")
+            return nil // Replaced fatalError with safe nil return
         }
     }
 }

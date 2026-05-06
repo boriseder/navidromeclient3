@@ -43,6 +43,7 @@ class NetworkMonitor {
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private let workerQueue = DispatchQueue(label: "NetworkMonitor")
     @ObservationIgnored private weak var service: UnifiedSubsonicService?
+    @ObservationIgnored private var pendingServerCheckTask: Task<Void, Never>? // <-- ADD THIS
     
     private init() {
         startMonitoring()
@@ -75,17 +76,22 @@ class NetworkMonitor {
         var newState = self.state
         newState.isConnected = isConnected
         newState.connectionType = type
+        self.state = newState
         
-        // If we regained connection, check server
-        if isConnected && !self.state.isConnected {
-            self.state = newState // Update immediately to show "Connecting..." state if needed
-            Task { await checkServerReachability() }
-        } else {
-            self.state = newState
+        guard isConnected else {
+            pendingServerCheckTask?.cancel()
             updateStrategy()
+            return
+        }
+        
+        // Debounce: cancel any in-flight check and wait 1.5s before pinging
+        pendingServerCheckTask?.cancel()
+        pendingServerCheckTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s debounce
+            guard !Task.isCancelled else { return }
+            await self?.checkServerReachability()
         }
     }
-    
     func recheckConnection() async {
         await checkServerReachability()
     }

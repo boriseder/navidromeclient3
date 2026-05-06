@@ -62,6 +62,7 @@ final class AppInitializer {
         //
         // The fix uses a switch to pattern-match on the *case*, ignoring the
         // associated value entirely.
+
         switch state {
         case .notStarted, .failed:
             break          // proceed with initialization

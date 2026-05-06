@@ -2,7 +2,7 @@
 //  DownloadManager.swift
 //  NavidromeClient
 //
-//  REFACTORED: Step 5 — Managers
+//  REFACTORED: Step 5 — Managers + Bug 06 Fixes
 //  MainActor holds only observable UI state.
 //  All URLSession, FileManager, and Data I/O moved off MainActor.
 //
@@ -25,6 +25,9 @@ class DownloadManager {
     @ObservationIgnored private weak var service: UnifiedSubsonicService?
     @ObservationIgnored private weak var coverArtManager: CoverArtManager?
     @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
+    
+    // BUG 06: Dictionary to track active download tasks for true cancellation
+    @ObservationIgnored private var downloadTasks: [String: Task<Void, Error>] = [:]
 
     // STEP 5: Storage actor owns all disk I/O
     @ObservationIgnored private let storage = AppStorageActor.shared
@@ -72,11 +75,23 @@ class DownloadManager {
         setDownloadState(.downloading, for: album.id)
         downloadErrors.removeValue(forKey: album.id)
 
-        do {
+        // BUG 06: Wrap the download in a tracked task
+        let task = Task {
             try await downloadAlbum(songs: songs, album: album, service: service)
+        }
+        downloadTasks[album.id] = task
+
+        do {
+            try await task.value
+            downloadTasks.removeValue(forKey: album.id)
             setDownloadState(.downloaded, for: album.id)
             NotificationCenter.default.post(name: .downloadCompleted, object: album.id)
         } catch {
+            downloadTasks.removeValue(forKey: album.id)
+            
+            // BUG 06: Ignore errors caused by intentional cancellation
+            guard !(error is CancellationError) else { return }
+            
             let msg = "Download failed: \(error.localizedDescription)"
             downloadErrors[album.id] = msg
             setDownloadState(.error(msg), for: album.id)
@@ -112,6 +127,12 @@ class DownloadManager {
         await downloadArtistImage(for: albumMeta)
 
         for (index, song) in songs.enumerated() {
+            // BUG 06: Cooperative and Manual cancellation checks
+            try Task.checkCancellation()
+            guard isDownloading.contains(albumId) else {
+                throw CancellationError()
+            }
+            
             guard let streamURL = service.streamURL(for: song.id) else { continue }
 
             let sanitized = sanitizeFileName(song.title)
@@ -242,6 +263,11 @@ class DownloadManager {
 
     func cancelDownload(albumId: String) {
         guard getDownloadState(for: albumId).canCancel else { return }
+        
+        // BUG 06: Cancel the underlying Swift Task
+        downloadTasks[albumId]?.cancel()
+        downloadTasks.removeValue(forKey: albumId)
+        
         setDownloadState(.cancelling, for: albumId)
         isDownloading.remove(albumId)
         downloadProgress.removeValue(forKey: albumId)
@@ -282,7 +308,7 @@ class DownloadManager {
         downloadedAlbums.first { $0.albumId == albumId }?.songs ?? []
     }
     func getSongsForPlayback(albumId: String) -> [Song] {
-        getDownloadedSongs(for: albumId).compactMap { $0.toSong() }
+        getDownloadedSongs(for: albumId).compactMap { $0.toSong() } // Step 5 already had compactMap!
     }
 
     func getLocalFileURL(for songId: String) -> URL? {
