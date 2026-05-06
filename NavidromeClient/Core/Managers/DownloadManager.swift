@@ -102,46 +102,61 @@ class DownloadManager {
 
     // MARK: - Core download (all heavy work off MainActor)
 
-    private func downloadAlbum(
+    nonisolated private func downloadAlbum(
         songs: [Song],
         album: Album,
         service: UnifiedSubsonicService
     ) async throws {
         let albumId = album.id
-        guard !isDownloading.contains(albumId) else { throw DownloadError.alreadyInProgress }
+        
+        // 1. Check state on MainActor, then step off
+        let isAlreadyDownloading = await MainActor.run { isDownloading.contains(albumId) }
+        guard !isAlreadyDownloading else { throw DownloadError.alreadyInProgress }
+        
         guard let albumMeta = await AlbumMetadataCache.shared.getAlbum(id: albumId)
         else { throw DownloadError.missingMetadata }
 
-        isDownloading.insert(albumId)
-        downloadProgress[albumId] = 0
+        await MainActor.run {
+            isDownloading.insert(albumId)
+            downloadProgress[albumId] = 0
+        }
 
+        // Fetch properties safely from the MainActor
+        let storageInstance = await MainActor.run { self.storage }
+        let baseFolder = await MainActor.run { self.downloadsFolder }
+        
         // STEP 5: folder creation via StorageActor
-        let albumFolder = downloadsFolder.appendingPathComponent(albumId, isDirectory: true)
-        await storage.createDirectory(at: albumFolder)
+        let albumFolder = baseFolder.appendingPathComponent(albumId, isDirectory: true)
+        await storageInstance.createDirectory(at: albumFolder)
 
         var downloadedSongsMeta: [DownloadedSong] = []
         let total = songs.count
         let downloadDate = Date()
 
-        await downloadAlbumCoverArt(album: albumMeta)
-        await downloadArtistImage(for: albumMeta)
+        // Kick off cover art downloads safely on the MainActor
+        Task { @MainActor in
+            await self.downloadAlbumCoverArt(album: albumMeta)
+            await self.downloadArtistImage(for: albumMeta)
+        }
 
         for (index, song) in songs.enumerated() {
             // BUG 06: Cooperative and Manual cancellation checks
             try Task.checkCancellation()
-            guard isDownloading.contains(albumId) else {
+            
+            let stillDownloading = await MainActor.run { isDownloading.contains(albumId) }
+            guard stillDownloading else {
                 throw CancellationError()
             }
             
             guard let streamURL = service.streamURL(for: song.id) else { continue }
 
-            let sanitized = sanitizeFileName(song.title)
+            let sanitized = await MainActor.run { sanitizeFileName(song.title) }
             let track = String(format: "%02d", song.track ?? index + 1)
             let fileName = "\(track) - \(sanitized).mp3"
             let fileURL = albumFolder.appendingPathComponent(fileName)
 
             do {
-                // STEP 5: URLSession call in a detached task — off MainActor
+                // STEP 5: URLSession call is safely detached
                 let (data, response) = try await Task.detached(priority: .medium) {
                     try await URLSession.shared.data(from: streamURL)
                 }.value
@@ -149,17 +164,22 @@ class DownloadManager {
                 if let http = response as? HTTPURLResponse, http.statusCode != 200 { continue }
 
                 // STEP 5: file write via StorageActor
-                try await storage.writeSongFile(data: data, to: fileURL)
+                try await storageInstance.writeSongFile(data: data, to: fileURL)
 
-                downloadedSongsMeta.append(DownloadedSong(
+                let meta = DownloadedSong(
                     id: song.id, title: song.title, artist: song.artist,
                     album: song.album, albumId: song.albumId, track: song.track,
                     duration: song.duration, year: song.year, genre: song.genre,
                     contentType: song.contentType, fileName: fileName,
                     fileSize: Int64(data.count), downloadDate: downloadDate
-                ))
-                downloadedSongs.insert(song.id)
-                downloadProgress[albumId] = Double(index + 1) / Double(total)
+                )
+                downloadedSongsMeta.append(meta)
+                
+                // Hop back to MainActor ONLY for UI updates
+                await MainActor.run {
+                    downloadedSongs.insert(song.id)
+                    downloadProgress[albumId] = Double(index + 1) / Double(total)
+                }
             } catch {
                 throw DownloadError.songDownloadFailed(song.title, error)
             }
@@ -171,20 +191,30 @@ class DownloadManager {
                 year: albumMeta.year, genre: albumMeta.genre,
                 songs: downloadedSongsMeta, downloadDate: downloadDate
             )
-            if let i = downloadedAlbums.firstIndex(where: { $0.albumId == albumId }) {
-                downloadedAlbums[i] = da
-            } else {
-                downloadedAlbums.append(da)
+            
+            // Hop to main actor to update the UI array, then snapshot it to save
+            let currentAlbums = await MainActor.run {
+                if let i = downloadedAlbums.firstIndex(where: { $0.albumId == albumId }) {
+                    downloadedAlbums[i] = da
+                } else {
+                    downloadedAlbums.append(da)
+                }
+                return downloadedAlbums
             }
-            await persistDownloadedAlbums()
+            
+            await storageInstance.saveDownloadedAlbums(currentAlbums)
         }
 
-        isDownloading.remove(albumId)
-        downloadProgress[albumId] = 1.0
+        await MainActor.run {
+            isDownloading.remove(albumId)
+            downloadProgress[albumId] = 1.0
+        }
         try? await Task.sleep(nanoseconds: 2_000_000_000)
-        downloadProgress.removeValue(forKey: albumId)
+        await MainActor.run {
+            _ = downloadProgress.removeValue(forKey: albumId)
+        }
     }
-
+    
     // MARK: - Persistence (all via StorageActor)
 
     private func loadDownloadedAlbumsFromDisk() async {

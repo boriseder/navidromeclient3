@@ -3,20 +3,19 @@
 //  NavidromeClient
 //
 //  REFACTORED: Step 2 — NetworkActor
-//  Facade remains @MainActor (injected into @MainActor managers).
-//  All sub-services are now nonisolated Sendable final classes.
+//  Facade is now a Sendable final class, off the MainActor.
+//  Connection testing delegates directly to NetworkActor.
 //
 
 import Foundation
 import UIKit
 
-@MainActor
-class UnifiedSubsonicService {
+final class UnifiedSubsonicService: Sendable {
 
     let baseURL: URL
-    let connectionService: ConnectionService
     let authHeader: [String: String]
 
+    private let network: NetworkActor
     private let discoveryService: DiscoveryService
     private let mediaService: MediaService
     private let contentService: ContentService
@@ -26,9 +25,7 @@ class UnifiedSubsonicService {
         self.baseURL = baseURL
 
         let network = NetworkActor(baseURL: baseURL, username: username, password: password)
-        let connection = ConnectionService(baseURL: baseURL, username: username, password: password)
-
-        self.connectionService = connection
+        self.network = network
         self.authHeader = network.authHeader()
 
         self.discoveryService  = DiscoveryService(network: network)
@@ -41,7 +38,14 @@ class UnifiedSubsonicService {
 
     // MARK: - Connection
 
-    func ping() async -> Bool { await connectionService.ping() }
+    func ping() async -> Bool {
+        do {
+            _ = try await network.ping()
+            return true
+        } catch {
+            return false
+        }
+    }
 
     // MARK: - Discovery
 

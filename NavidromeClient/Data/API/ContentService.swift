@@ -18,6 +18,8 @@ final class ContentService: Sendable {
 
     // MARK: - Albums
 
+    // MARK: - Albums
+
     func getAllAlbums(
         sortBy: AlbumSortType = .alphabetical,
         size: Int = 500,
@@ -31,7 +33,7 @@ final class ContentService: Sendable {
         let decoded: SubsonicResponse<AlbumListContainer> = try await network.fetchData(
             endpoint: "getAlbumList2",
             params: params,
-            using: await network.contentURLSession
+            using: network.contentURLSession // removed await
         )
         return decoded.subsonicResponse.albumList2?.album ?? []
     }
@@ -63,7 +65,7 @@ final class ContentService: Sendable {
     func getArtists() async throws -> [Artist] {
         let decoded: SubsonicResponse<ArtistsContainer> = try await network.fetchData(
             endpoint: "getArtists",
-            using: await network.contentURLSession
+            using: network.contentURLSession // removed await
         )
         return decoded.subsonicResponse.artists?.index?.flatMap { $0.artist ?? [] } ?? []
     }
@@ -73,7 +75,7 @@ final class ContentService: Sendable {
         let decoded: SubsonicResponse<AlbumWithSongsContainer> = try await network.fetchData(
             endpoint: "getAlbum",
             params: ["id": albumId],
-            using: await network.contentURLSession
+            using: network.contentURLSession // removed await
         )
         return decoded.subsonicResponse.album.song ?? []
     }

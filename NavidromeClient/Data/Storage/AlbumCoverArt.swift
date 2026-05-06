@@ -31,7 +31,9 @@ class AlbumCoverArt {
                 ? baseImage
                 : (scaledVariants[largerSize] ?? baseImage)
 
-            let scaled = scaleImageHighQuality(sourceImage, to: requestedSize)
+            // FIX: Call the static method explicitly using the class type
+            let scaled = AlbumCoverArt.scaleImageHighQuality(sourceImage, to: requestedSize)
+            
             cacheVariant(scaled, size: requestedSize)
             return scaled
         }
@@ -46,18 +48,10 @@ class AlbumCoverArt {
 
         let source = baseImage
         let targetSize = requestedSize
-        // Capture the nonisolated function as a value to avoid sending `self`
-        let scaler = scaleImageHighQuality(_:to:)
         
-        // EDB to check
-        /*
         let scaled = await Task.detached {
-            scaler(source, targetSize)
+            AlbumCoverArt.scaleImageHighQuality(source, to: targetSize)
         }.value
-        */
-        // ---
-        
-        let scaled = scaler(source, targetSize)
         
         cacheVariant(scaled, size: requestedSize)
     }
@@ -71,7 +65,7 @@ class AlbumCoverArt {
     }
 
     // nonisolated: UIGraphicsImageRenderer is documented thread-safe
-    nonisolated func scaleImageHighQuality(_ image: UIImage, to size: Int) -> UIImage {
+    static func scaleImageHighQuality(_ image: UIImage, to size: Int) -> UIImage {
         let targetSize = CGSize(width: size, height: size)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
