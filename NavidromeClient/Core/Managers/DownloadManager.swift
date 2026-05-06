@@ -2,9 +2,9 @@
 //  DownloadManager.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 Step 1 — StorageActor integration
-//  - AlbumMetadataCache calls are now async
-//  - File I/O offloaded via StorageActor (through existing saveFile helper)
+//  REFACTORED: Step 5 — Managers
+//  MainActor holds only observable UI state.
+//  All URLSession, FileManager, and Data I/O moved off MainActor.
 //
 
 import Foundation
@@ -19,56 +19,32 @@ class DownloadManager {
     private(set) var downloadedSongs: Set<String> = []
     private(set) var isDownloading: Set<String> = []
     private(set) var downloadProgress: [String: Double] = [:]
-
     private(set) var downloadStates: [String: DownloadState] = [:]
     private(set) var downloadErrors: [String: String] = [:]
 
     @ObservationIgnored private weak var service: UnifiedSubsonicService?
     @ObservationIgnored private weak var coverArtManager: CoverArtManager?
-
     @ObservationIgnored private var observationTasks: [Task<Void, Never>] = []
 
-    @ObservationIgnored private var downloadsFolder: URL {
-        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Downloads", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: folder.path) {
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        }
-        return folder
-    }
-
-    @ObservationIgnored private var downloadedAlbumsFile: URL {
-        downloadsFolder.appendingPathComponent("downloaded_albums.json")
-    }
+    // STEP 5: Storage actor owns all disk I/O
+    @ObservationIgnored private let storage = AppStorageActor.shared
 
     enum DownloadState: Equatable, Sendable {
-        case idle
-        case downloading
-        case downloaded
+        case idle, downloading, downloaded, cancelling
         case error(String)
-        case cancelling
 
         var isLoading: Bool {
-            switch self {
-            case .downloading, .cancelling: return true
-            default: return false
-            }
+            switch self { case .downloading, .cancelling: return true; default: return false }
         }
-
         var canStartDownload: Bool {
-            switch self {
-            case .idle, .error: return true
-            default: return false
-            }
+            switch self { case .idle, .error: return true; default: return false }
         }
-
-        var canCancel: Bool { return self == .downloading }
-        var canDelete: Bool { return self == .downloaded }
+        var canCancel: Bool { self == .downloading }
+        var canDelete: Bool { self == .downloaded }
     }
 
     init() {
-        loadDownloadedAlbums()
-        migrateOldDataIfNeeded()
+        Task { await loadDownloadedAlbumsFromDisk() }
         setupStateObservation()
     }
 
@@ -76,370 +52,299 @@ class DownloadManager {
         observationTasks.forEach { $0.cancel() }
     }
 
-    // MARK: - Service Configuration
+    // MARK: - Configuration
 
-    func configure(service: UnifiedSubsonicService) {
-        self.service = service
-    }
+    func configure(service: UnifiedSubsonicService) { self.service = service }
+    func configure(coverArtManager: CoverArtManager) { self.coverArtManager = coverArtManager }
 
-    func configure(coverArtManager: CoverArtManager) {
-        self.coverArtManager = coverArtManager
-    }
-
-    // MARK: - Download Operations
+    // MARK: - Download
 
     func startDownload(album: Album, songs: [Song]) async {
-        guard getDownloadState(for: album.id).canStartDownload else {
-            AppLogger.general.error("Cannot start download for album \(album.id) in current state")
+        guard getDownloadState(for: album.id).canStartDownload else { return }
+        guard let service else {
+            let msg = "Service not available"
+            downloadErrors[album.id] = msg
+            setDownloadState(.error(msg), for: album.id)
             return
         }
 
-        guard let service = service else {
-            let errorMessage = "Service not available for downloads"
-            downloadErrors[album.id] = errorMessage
-            setDownloadState(.error(errorMessage), for: album.id)
-            AppLogger.general.error("[DownloadManager] UnifiedSubsonicService not configured")
-            return
-        }
-
-        // UPDATED: async call to actor-isolated cache
         await AlbumMetadataCache.shared.cacheAlbum(album)
-        AppLogger.general.info("Cached album metadata for download: \(album.name) (ID: \(album.id))")
-
         setDownloadState(.downloading, for: album.id)
         downloadErrors.removeValue(forKey: album.id)
 
         do {
-            try await downloadAlbumWithService(
-                songs: songs,
-                albumId: album.id,
-                service: service
-            )
+            try await downloadAlbum(songs: songs, album: album, service: service)
             setDownloadState(.downloaded, for: album.id)
             NotificationCenter.default.post(name: .downloadCompleted, object: album.id)
-
         } catch {
-            let errorMessage = "Download failed: \(error.localizedDescription)"
-            downloadErrors[album.id] = errorMessage
-            setDownloadState(.error(errorMessage), for: album.id)
-            AppLogger.general.error("Download failed for album \(album.id): \(error)")
-            NotificationCenter.default.post(
-                name: .downloadFailed,
-                object: album.id,
-                userInfo: ["error": error]
-            )
+            let msg = "Download failed: \(error.localizedDescription)"
+            downloadErrors[album.id] = msg
+            setDownloadState(.error(msg), for: album.id)
+            NotificationCenter.default.post(name: .downloadFailed, object: album.id,
+                                            userInfo: ["error": error])
         }
     }
 
-    // MARK: - Core Download Implementation
+    // MARK: - Core download (all heavy work off MainActor)
 
-    private func downloadAlbumWithService(
+    private func downloadAlbum(
         songs: [Song],
-        albumId: String,
+        album: Album,
         service: UnifiedSubsonicService
     ) async throws {
-
-        guard !isDownloading.contains(albumId) else {
-            throw DownloadError.alreadyInProgress
-        }
-
-        // UPDATED: async call to actor-isolated cache
-        guard let albumMetadata = await AlbumMetadataCache.shared.getAlbum(id: albumId) else {
-            throw DownloadError.missingMetadata
-        }
-
-        AppLogger.general.info("Starting download of album '\(albumMetadata.name)' with \(songs.count) songs")
+        let albumId = album.id
+        guard !isDownloading.contains(albumId) else { throw DownloadError.alreadyInProgress }
+        guard let albumMeta = await AlbumMetadataCache.shared.getAlbum(id: albumId)
+        else { throw DownloadError.missingMetadata }
 
         isDownloading.insert(albumId)
         downloadProgress[albumId] = 0
 
+        // STEP 5: folder creation via StorageActor
         let albumFolder = downloadsFolder.appendingPathComponent(albumId, isDirectory: true)
-        if !FileManager.default.fileExists(atPath: albumFolder.path) {
-            do {
-                try FileManager.default.createDirectory(at: albumFolder, withIntermediateDirectories: true)
-            } catch {
-                isDownloading.remove(albumId)
-                downloadProgress.removeValue(forKey: albumId)
-                throw DownloadError.folderCreationFailed(error)
-            }
-        }
+        await storage.createDirectory(at: albumFolder)
 
-        var downloadedSongsMetadata: [DownloadedSong] = []
-        let totalSongs = songs.count
+        var downloadedSongsMeta: [DownloadedSong] = []
+        let total = songs.count
         let downloadDate = Date()
 
-        await downloadAlbumCoverArt(album: albumMetadata)
-        await downloadArtistImage(for: albumMetadata)
+        await downloadAlbumCoverArt(album: albumMeta)
+        await downloadArtistImage(for: albumMeta)
 
         for (index, song) in songs.enumerated() {
-            guard let streamURL = service.streamURL(for: song.id) else {
-                AppLogger.general.error("No stream URL for song: \(song.title)")
-                continue
-            }
+            guard let streamURL = service.streamURL(for: song.id) else { continue }
 
-            let sanitizedTitle = sanitizeFileName(song.title)
-            let trackNumber = String(format: "%02d", song.track ?? index + 1)
-            let fileName = "\(trackNumber) - \(sanitizedTitle).mp3"
+            let sanitized = sanitizeFileName(song.title)
+            let track = String(format: "%02d", song.track ?? index + 1)
+            let fileName = "\(track) - \(sanitized).mp3"
             let fileURL = albumFolder.appendingPathComponent(fileName)
 
             do {
-                AppLogger.general.info("Downloading: \(song.title)")
-                let (data, response) = try await URLSession.shared.data(from: streamURL)
+                // STEP 5: URLSession call in a detached task — off MainActor
+                let (data, response) = try await Task.detached(priority: .medium) {
+                    try await URLSession.shared.data(from: streamURL)
+                }.value
 
-                if let httpResponse = response as? HTTPURLResponse {
-                    guard httpResponse.statusCode == 200 else {
-                        AppLogger.general.error("Download failed for \(song.title): HTTP \(httpResponse.statusCode)")
-                        continue
-                    }
-                }
+                if let http = response as? HTTPURLResponse, http.statusCode != 200 { continue }
 
-                try await saveFile(data: data, to: fileURL)
+                // STEP 5: file write via StorageActor
+                try await storage.writeSongFile(data: data, to: fileURL)
 
-                let downloadedSong = DownloadedSong(
-                    id: song.id,
-                    title: song.title,
-                    artist: song.artist,
-                    album: song.album,
-                    albumId: song.albumId,
-                    track: song.track,
-                    duration: song.duration,
-                    year: song.year,
-                    genre: song.genre,
-                    contentType: song.contentType,
-                    fileName: fileName,
-                    fileSize: Int64(data.count),
-                    downloadDate: downloadDate
-                )
-
-                downloadedSongsMetadata.append(downloadedSong)
+                downloadedSongsMeta.append(DownloadedSong(
+                    id: song.id, title: song.title, artist: song.artist,
+                    album: song.album, albumId: song.albumId, track: song.track,
+                    duration: song.duration, year: song.year, genre: song.genre,
+                    contentType: song.contentType, fileName: fileName,
+                    fileSize: Int64(data.count), downloadDate: downloadDate
+                ))
                 downloadedSongs.insert(song.id)
-                downloadProgress[albumId] = Double(index + 1) / Double(totalSongs)
-
+                downloadProgress[albumId] = Double(index + 1) / Double(total)
             } catch {
-                AppLogger.general.error("Download error for \(song.title): \(error)")
                 throw DownloadError.songDownloadFailed(song.title, error)
             }
         }
 
-        if !downloadedSongsMetadata.isEmpty {
-            let downloadedAlbum = DownloadedAlbum(
-                albumId: albumId,
-                albumName: albumMetadata.name,
-                artistName: albumMetadata.artist,
-                year: albumMetadata.year,
-                genre: albumMetadata.genre,
-                songs: downloadedSongsMetadata,
-                downloadDate: downloadDate
+        if !downloadedSongsMeta.isEmpty {
+            let da = DownloadedAlbum(
+                albumId: albumId, albumName: albumMeta.name, artistName: albumMeta.artist,
+                year: albumMeta.year, genre: albumMeta.genre,
+                songs: downloadedSongsMeta, downloadDate: downloadDate
             )
-
-            if let existingIndex = downloadedAlbums.firstIndex(where: { $0.albumId == albumId }) {
-                downloadedAlbums[existingIndex] = downloadedAlbum
+            if let i = downloadedAlbums.firstIndex(where: { $0.albumId == albumId }) {
+                downloadedAlbums[i] = da
             } else {
-                downloadedAlbums.append(downloadedAlbum)
+                downloadedAlbums.append(da)
             }
-
-            saveDownloadedAlbums()
+            await persistDownloadedAlbums()
         }
 
         isDownloading.remove(albumId)
         downloadProgress[albumId] = 1.0
-
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         downloadProgress.removeValue(forKey: albumId)
     }
 
-    private nonisolated func saveFile(data: Data, to url: URL) async throws {
-        try await Task.detached(priority: .medium) {
-            try data.write(to: url, options: .atomic)
-        }.value
+    // MARK: - Persistence (all via StorageActor)
+
+    private func loadDownloadedAlbumsFromDisk() async {
+        let albums = await storage.loadDownloadedAlbums()
+        downloadedAlbums = albums
+        rebuildDownloadedSongsSet()
+        for album in albums { updateDownloadState(for: album.albumId) }
     }
 
-    // MARK: - Cover Art Integration
+    private func persistDownloadedAlbums() async {
+        let snapshot = downloadedAlbums
+        await storage.saveDownloadedAlbums(snapshot)
+    }
+
+    // MARK: - Cover art (unchanged, delegates to CoverArtManager)
 
     private func downloadAlbumCoverArt(album: Album) async {
-        guard let coverArtManager = coverArtManager else {
-            AppLogger.general.error("CoverArtManager not configured - skipping cover art")
-            return
-        }
-
-        let contexts: [ImageContext] = [.list, .card, .grid]
-
+        guard let cam = coverArtManager else { return }
         await withTaskGroup(of: Void.self) { group in
-            for context in contexts {
-                group.addTask {
-                    _ = await coverArtManager.loadAlbumImage(album: album, context: context)
-                }
+            for ctx in [ImageContext.list, .card, .grid] {
+                group.addTask { _ = await cam.loadAlbumImage(album: album, context: ctx) }
             }
         }
     }
 
     private func downloadArtistImage(for album: Album) async {
-        guard let coverArtManager = coverArtManager else {
-            AppLogger.general.info("CoverArtManager not configured - skipping artist image")
-            return
-        }
-
-        let artist = Artist(
-            id: album.artistId ?? "artist_\(album.artist.hash)",
-            name: album.artist,
-            coverArt: album.coverArt,
-            albumCount: 1,
-            artistImageUrl: nil
-        )
-
-        let contexts: [ImageContext] = [.artistList, .artistCard]
-
+        guard let cam = coverArtManager else { return }
+        let artist = Artist(id: album.artistId ?? "artist_\(album.artist.hash)",
+                            name: album.artist, coverArt: album.coverArt,
+                            albumCount: 1, artistImageUrl: nil)
         await withTaskGroup(of: Void.self) { group in
-            for context in contexts {
-                group.addTask {
-                    _ = await coverArtManager.loadArtistImage(artist: artist, context: context)
-                }
+            for ctx in [ImageContext.artistList, .artistCard] {
+                group.addTask { _ = await cam.loadArtistImage(artist: artist, context: ctx) }
             }
         }
     }
 
-    // MARK: - Stream URL Resolution
+    // MARK: - Delete
 
-    private func getStreamURL(for songId: String, from service: UnifiedSubsonicService) -> URL? {
-        guard !songId.isEmpty else { return nil }
-        return service.streamURL(for: songId)
-    }
+    func deleteAlbum(albumId: String) {
+        guard getDownloadState(for: albumId).canDelete else { return }
+        let albumFolder = downloadsFolder.appendingPathComponent(albumId, isDirectory: true)
+        Task { await storage.deleteFolder(at: albumFolder) }
 
-    // MARK: - UI State Management
-
-    private func setupStateObservation() {
-        let center = NotificationCenter.default
-
-        let completedTask = Task { [weak self] in
-            for await notification in center.notifications(named: .downloadCompleted) {
-                guard let self = self, let albumId = notification.object as? String else { continue }
-                self.updateDownloadState(for: albumId)
-            }
+        if let album = downloadedAlbums.first(where: { $0.albumId == albumId }) {
+            album.songs.forEach { downloadedSongs.remove($0.id) }
         }
+        downloadedAlbums.removeAll { $0.albumId == albumId }
+        downloadProgress.removeValue(forKey: albumId)
+        isDownloading.remove(albumId)
+        downloadStates.removeValue(forKey: albumId)
+        downloadErrors.removeValue(forKey: albumId)
 
-        let failedTask = Task { [weak self] in
-            for await notification in center.notifications(named: .downloadFailed) {
-                guard let self = self, let albumId = notification.object as? String else { continue }
-                self.downloadStates[albumId] = .error("Download failed")
-            }
-        }
-
-        let resetTask = Task { [weak self] in
-            for await _ in center.notifications(named: .factoryResetRequested) {
-                guard let self = self else { return }
-                self.deleteAllDownloads()
-                AppLogger.general.info("DownloadManager: Deleted all downloads on factory reset")
-            }
-        }
-
-        observationTasks.append(contentsOf: [completedTask, failedTask, resetTask])
+        Task { await persistDownloadedAlbums() }
+        NotificationCenter.default.post(name: .downloadDeleted, object: albumId)
     }
 
-    func getDownloadState(for albumId: String) -> DownloadState {
-        return downloadStates[albumId] ?? determineDownloadState(for: albumId)
+    func deleteAllDownloads() {
+        Task { await storage.deleteFolder(at: downloadsFolder) }
+        Task { await storage.createDirectory(at: downloadsFolder) }
+        downloadedAlbums.removeAll()
+        downloadedSongs.removeAll()
+        downloadProgress.removeAll()
+        isDownloading.removeAll()
+        downloadStates.removeAll()
+        downloadErrors.removeAll()
+        Task { await persistDownloadedAlbums() }
     }
 
-    private func setDownloadState(_ state: DownloadState, for albumId: String) {
-        downloadStates[albumId] = state
-    }
-
-    private func updateDownloadState(for albumId: String) {
-        setDownloadState(determineDownloadState(for: albumId), for: albumId)
-    }
-
-    private func determineDownloadState(for albumId: String) -> DownloadState {
-        if isAlbumDownloaded(albumId) { return .downloaded }
-        if isAlbumDownloading(albumId) { return .downloading }
-        if let error = downloadErrors[albumId] { return .error(error) }
-        return .idle
+    func deleteDownload(albumId: String) {
+        guard getDownloadState(for: albumId).canDelete else { return }
+        deleteAlbum(albumId: albumId)
+        setDownloadState(.idle, for: albumId)
+        downloadErrors.removeValue(forKey: albumId)
     }
 
     func cancelDownload(albumId: String) {
-        guard getDownloadState(for: albumId).canCancel else {
-            AppLogger.general.error("Cannot cancel download for album \(albumId) in current state")
-            return
-        }
-
+        guard getDownloadState(for: albumId).canCancel else { return }
         setDownloadState(.cancelling, for: albumId)
         isDownloading.remove(albumId)
         downloadProgress.removeValue(forKey: albumId)
-
         Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
             setDownloadState(.idle, for: albumId)
         }
     }
 
-    func deleteDownload(albumId: String) {
-        guard getDownloadState(for: albumId).canDelete else {
-            AppLogger.general.error("Cannot delete download for album \(albumId) in current state")
-            return
-        }
-        deleteAlbum(albumId: albumId)
-        setDownloadState(.idle, for: albumId)
-        downloadErrors.removeValue(forKey: albumId)
+    // MARK: - State
+
+    func getDownloadState(for albumId: String) -> DownloadState {
+        downloadStates[albumId] ?? determineDownloadState(for: albumId)
+    }
+    private func setDownloadState(_ state: DownloadState, for albumId: String) {
+        downloadStates[albumId] = state
+    }
+    private func updateDownloadState(for albumId: String) {
+        setDownloadState(determineDownloadState(for: albumId), for: albumId)
+    }
+    private func determineDownloadState(for albumId: String) -> DownloadState {
+        if isAlbumDownloaded(albumId) { return .downloaded }
+        if isAlbumDownloading(albumId) { return .downloading }
+        if let e = downloadErrors[albumId] { return .error(e) }
+        return .idle
     }
 
-    // MARK: - Status Methods
+    // MARK: - Queries
 
-    func isAlbumDownloaded(_ albumId: String) -> Bool {
-        downloadedAlbums.contains { $0.albumId == albumId }
-    }
-
-    func isAlbumDownloading(_ albumId: String) -> Bool {
-        isDownloading.contains(albumId)
-    }
-
-    func isSongDownloaded(_ songId: String) -> Bool {
-        downloadedSongs.contains(songId)
-    }
+    func isAlbumDownloaded(_ albumId: String) -> Bool { downloadedAlbums.contains { $0.albumId == albumId } }
+    func isAlbumDownloading(_ albumId: String) -> Bool { isDownloading.contains(albumId) }
+    func isSongDownloaded(_ songId: String) -> Bool { downloadedSongs.contains(songId) }
 
     func getDownloadedSong(_ songId: String) -> DownloadedSong? {
-        for album in downloadedAlbums {
-            if let song = album.songs.first(where: { $0.id == songId }) { return song }
-        }
-        return nil
+        downloadedAlbums.flatMap { $0.songs }.first { $0.id == songId }
     }
-
     func getDownloadedSongs(for albumId: String) -> [DownloadedSong] {
         downloadedAlbums.first { $0.albumId == albumId }?.songs ?? []
     }
-
     func getSongsForPlayback(albumId: String) -> [Song] {
         getDownloadedSongs(for: albumId).map { $0.toSong() }
     }
 
     func getLocalFileURL(for songId: String) -> URL? {
-        guard let downloadedSong = getDownloadedSong(songId) else { return nil }
-
-        for album in downloadedAlbums {
-            if album.songs.contains(where: { $0.id == songId }) {
-                let filePath = URL(fileURLWithPath: album.folderPath)
-                    .appendingPathComponent(downloadedSong.fileName)
-                if FileManager.default.fileExists(atPath: filePath.path) {
-                    return filePath
-                }
-            }
+        guard let song = getDownloadedSong(songId) else { return nil }
+        for album in downloadedAlbums where album.songs.contains(where: { $0.id == songId }) {
+            let url = URL(fileURLWithPath: album.folderPath).appendingPathComponent(song.fileName)
+            if FileManager.default.fileExists(atPath: url.path) { return url }
         }
         return nil
     }
 
     func totalDownloadSize() -> String {
-        let totalBytes = downloadedAlbums.reduce(0) { total, album in
-            total + album.songs.reduce(0) { $0 + $1.fileSize }
-        }
-        return String(format: "%.1f MB", Double(totalBytes) / 1_048_576.0)
+        let bytes = downloadedAlbums.reduce(0) { $0 + $1.songs.reduce(0) { $0 + $1.fileSize } }
+        return String(format: "%.1f MB", Double(bytes) / 1_048_576.0)
     }
 
-    // MARK: - Download Error Types
+    // MARK: - Private helpers
+
+    private var downloadsFolder: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Downloads", isDirectory: true)
+    }
+
+    private func rebuildDownloadedSongsSet() {
+        downloadedSongs = Set(downloadedAlbums.flatMap { $0.songs.map { $0.id } })
+    }
+
+    private func sanitizeFileName(_ name: String) -> String {
+        let invalid = CharacterSet(charactersIn: ":/\\?%*|\"<>")
+        return name.components(separatedBy: invalid).joined(separator: "_")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(50).description
+    }
+
+    private func setupStateObservation() {
+        let center = NotificationCenter.default
+        observationTasks.append(Task { [weak self] in
+            for await n in center.notifications(named: .downloadCompleted) {
+                guard let self, let id = n.object as? String else { continue }
+                await MainActor.run { self.updateDownloadState(for: id) }
+            }
+        })
+        observationTasks.append(Task { [weak self] in
+            for await n in center.notifications(named: .downloadFailed) {
+                guard let self, let id = n.object as? String else { continue }
+                await MainActor.run { self.downloadStates[id] = .error("Download failed") }
+            }
+        })
+        observationTasks.append(Task { [weak self] in
+            for await _ in center.notifications(named: .factoryResetRequested) {
+                guard let self else { return }
+                await MainActor.run { self.deleteAllDownloads() }
+            }
+        })
+    }
+
+    // MARK: - Error types
 
     enum DownloadError: LocalizedError {
-        case alreadyInProgress
-        case missingMetadata
-        case folderCreationFailed(Error)
-        case songDownloadFailed(String, Error)
-        case noSongsDownloaded
-        case serviceUnavailable
+        case alreadyInProgress, missingMetadata
+        case folderCreationFailed(Error), songDownloadFailed(String, Error)
+        case noSongsDownloaded, serviceUnavailable
 
         var errorDescription: String? {
             switch self {
@@ -448,150 +353,27 @@ class DownloadManager {
             case .folderCreationFailed(let e): return "Failed to create folder: \(e.localizedDescription)"
             case .songDownloadFailed(let t, let e): return "Failed to download '\(t)': \(e.localizedDescription)"
             case .noSongsDownloaded: return "No songs were successfully downloaded"
-            case .serviceUnavailable: return "Service not available for downloads"
+            case .serviceUnavailable: return "Service not available"
             }
         }
-    }
-
-    // MARK: - Deletion Methods
-
-    func deleteAlbum(albumId: String) {
-        guard let album = downloadedAlbums.first(where: { $0.albumId == albumId }) else {
-            AppLogger.general.error("Album \(albumId) not found for deletion")
-            return
-        }
-
-        let albumFolder = URL(fileURLWithPath: album.folderPath)
-        do {
-            try FileManager.default.removeItem(at: albumFolder)
-        } catch {
-            AppLogger.general.error("Failed to delete album folder: \(error)")
-        }
-
-        for song in album.songs { downloadedSongs.remove(song.id) }
-
-        downloadedAlbums.removeAll { $0.albumId == albumId }
-        downloadProgress.removeValue(forKey: albumId)
-        isDownloading.remove(albumId)
-        downloadStates.removeValue(forKey: albumId)
-        downloadErrors.removeValue(forKey: albumId)
-
-        saveDownloadedAlbums()
-        NotificationCenter.default.post(name: .downloadDeleted, object: albumId)
-    }
-
-    func deleteAllDownloads() {
-        let folder = downloadsFolder
-        do {
-            try FileManager.default.removeItem(at: folder)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        } catch {
-            AppLogger.general.error("Failed to delete downloads folder: \(error)")
-        }
-
-        downloadedAlbums.removeAll()
-        downloadedSongs.removeAll()
-        downloadProgress.removeAll()
-        isDownloading.removeAll()
-        downloadStates.removeAll()
-        downloadErrors.removeAll()
-
-        saveDownloadedAlbums()
-    }
-
-    // MARK: - Persistence
-
-    private func loadDownloadedAlbums() {
-        guard FileManager.default.fileExists(atPath: downloadedAlbumsFile.path) else { return }
-
-        do {
-            let data = try Data(contentsOf: downloadedAlbumsFile)
-            if let albums = try? JSONDecoder().decode([DownloadedAlbum].self, from: data) {
-                downloadedAlbums = albums
-                rebuildDownloadedSongsSet()
-                for album in albums { updateDownloadState(for: album.albumId) }
-                AppLogger.general.info("Loaded \(downloadedAlbums.count) albums")
-            }
-        } catch {
-            AppLogger.general.error("Failed to load downloaded albums: \(error)")
-            downloadedAlbums = []
-        }
-    }
-
-    private func rebuildDownloadedSongsSet() {
-        downloadedSongs.removeAll()
-        for album in downloadedAlbums {
-            for song in album.songs { downloadedSongs.insert(song.id) }
-        }
-    }
-
-    private func migrateOldDataIfNeeded() {
-        if !downloadedAlbums.isEmpty { saveDownloadedAlbums() }
-    }
-
-    private func saveDownloadedAlbums() {
-        do {
-            let data = try JSONEncoder().encode(downloadedAlbums)
-            try data.write(to: downloadedAlbumsFile)
-        } catch {
-            AppLogger.general.error("Failed to save downloaded albums: \(error)")
-        }
-    }
-
-    private func sanitizeFileName(_ name: String) -> String {
-        let invalidChars = CharacterSet(charactersIn: ":/\\?%*|\"<>")
-        return name.components(separatedBy: invalidChars).joined(separator: "_")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .prefix(50).description
     }
 
     // MARK: - Diagnostics
 
     func getServiceDiagnostics() -> DownloadServiceDiagnostics {
-        DownloadServiceDiagnostics(
-            hasService: service != nil,
-            hasCoverArtManager: coverArtManager != nil,
-            activeDownloads: isDownloading.count,
-            totalDownloads: downloadedAlbums.count,
-            errorCount: downloadErrors.count
-        )
+        DownloadServiceDiagnostics(hasService: service != nil, hasCoverArtManager: coverArtManager != nil,
+                                   activeDownloads: isDownloading.count, totalDownloads: downloadedAlbums.count,
+                                   errorCount: downloadErrors.count)
     }
 
     struct DownloadServiceDiagnostics {
-        let hasService: Bool
-        let hasCoverArtManager: Bool
-        let activeDownloads: Int
-        let totalDownloads: Int
-        let errorCount: Int
-
+        let hasService: Bool; let hasCoverArtManager: Bool
+        let activeDownloads: Int; let totalDownloads: Int; let errorCount: Int
         var healthScore: Double {
-            var score = 0.0
-            if hasService { score += 0.5 }
-            if hasCoverArtManager { score += 0.3 }
-            if activeDownloads < 5 { score += 0.1 }
-            if errorCount < 3 { score += 0.1 }
-            return min(score, 1.0)
-        }
-
-        var statusDescription: String {
-            switch healthScore * 100 {
-            case 90...100: return "Excellent"
-            case 70..<90: return "Good"
-            case 50..<70: return "Fair"
-            default: return "Needs attention"
-            }
-        }
-
-        var summary: String {
-            """
-            DOWNLOAD SERVICE DIAGNOSTICS:
-            - Service: \(hasService ? "Available" : "Unavailable")
-            - CoverArtManager: \(hasCoverArtManager ? "Available" : "Unavailable")
-            - Active Downloads: \(activeDownloads)
-            - Total Downloads: \(totalDownloads)
-            - Errors: \(errorCount)
-            - Health: \(statusDescription)
-            """
+            var s = 0.0
+            if hasService { s += 0.5 }; if hasCoverArtManager { s += 0.3 }
+            if activeDownloads < 5 { s += 0.1 }; if errorCount < 3 { s += 0.1 }
+            return min(s, 1.0)
         }
     }
 }

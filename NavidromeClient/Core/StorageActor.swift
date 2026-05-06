@@ -61,6 +61,10 @@ actor StorageActor {
         return try? Data(contentsOf: url)
     }
 
+    func createDirectory(at url: URL) {
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
     func deleteImage(key: String, size: Int) {
         let url = imageURL(for: key, size: size)
         try? FileManager.default.removeItem(at: url)
