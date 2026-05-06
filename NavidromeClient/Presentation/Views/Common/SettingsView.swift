@@ -34,80 +34,77 @@ struct SettingsView: View {
         // Create Bindable scope for theme to allow Picker bindings
         @Bindable var bindableTheme = theme
         
-        NavigationStack {
-            List {
-                Section(header: Text("Debug")) {
-                    NavigationLink(destination: CoverArtDebugView()) {
-                        Label("Cover Art Debug", systemImage: "photo")
-                    }
-                    NavigationLink(destination: NetworkDebugView()) {
-                        Label("Network Debug", systemImage: "network")
-                    }
+        // BUG 13: Removed the duplicate NavigationStack wrapper here
+        List {
+            Section(header: Text("Debug")) {
+                NavigationLink(destination: CoverArtDebugView()) {
+                    Label("Cover Art Debug", systemImage: "photo")
                 }
-                
-                Section(header: Text("Appearance")) {
-                    Picker("Select Theme", selection: $bindableTheme.backgroundStyle) {
-                        ForEach(UserBackgroundStyle.allCases, id: \.self) { option in
-                            Text(option.rawValue.capitalized).tag(option)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    HStack {
-                        Text("Accent Color")
-                        Spacer()
-                        Menu {
-                            ForEach(UserAccentColor.allCases) { colorOption in
-                                Button {
-                                    theme.accentColor = colorOption
-                                } label: {
-                                    Label(colorOption.rawValue.capitalized, systemImage: "circle.fill")
-                                    if theme.accentColor == colorOption {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                                .tint(colorOption.color)
-                            }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "circle.fill")
-                                    .foregroundStyle(theme.accent)
-                                Text(theme.accentColor.rawValue.capitalized)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                
-                NavidromeSection
-                
-                
-                if appInitializer.isConfigured {
-                    CacheSection
-                    ServerDetailsSection
-                    DangerZoneSection
+                NavigationLink(destination: NetworkDebugView()) {
+                    Label("Network Debug", systemImage: "network")
                 }
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle(appInitializer.isConfigured ? "Settings" : "Initial Setup")
-            .toolbarColorScheme(.light, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .disabled(isPerformingReset)
-            .overlay { if isPerformingReset { FactoryResetOverlayView() } }
-            .confirmationDialog(
-                "Logout & Factory Reset",
-                isPresented: $showingFactoryResetConfirmation
-            ) {
-                Button("Reset App", role: .destructive) {
-                    Task { await performFactoryReset() }
+            
+            Section(header: Text("Appearance")) {
+                Picker("Select Theme", selection: $bindableTheme.backgroundStyle) {
+                    ForEach(UserBackgroundStyle.allCases, id: \.self) { option in
+                        Text(option.rawValue.capitalized).tag(option)
+                    }
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will delete ALL data including downloads, server settings and cache.")
+                .pickerStyle(.menu)
+                
+                HStack {
+                    Text("Accent Color")
+                    Spacer()
+                    Menu {
+                        ForEach(UserAccentColor.allCases) { colorOption in
+                            Button {
+                                theme.accentColor = colorOption
+                            } label: {
+                                Label(colorOption.rawValue.capitalized, systemImage: "circle.fill")
+                                if theme.accentColor == colorOption {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            .tint(colorOption.color)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "circle.fill")
+                                .foregroundStyle(theme.accent)
+                            Text(theme.accentColor.rawValue.capitalized)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            
+            NavidromeSection
+            
+            if appInitializer.isConfigured {
+                CacheSection
+                ServerDetailsSection
+                DangerZoneSection
             }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle(appInitializer.isConfigured ? "Settings" : "Initial Setup")
+        .toolbarColorScheme(.light, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .disabled(isPerformingReset)
+        .overlay { if isPerformingReset { FactoryResetOverlayView() } }
+        .confirmationDialog(
+            "Logout & Factory Reset",
+            isPresented: $showingFactoryResetConfirmation
+        ) {
+            Button("Reset App", role: .destructive) {
+                Task { await performFactoryReset() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will delete ALL data including downloads, server settings and cache.")
+        }
     }
-
     // MARK: - Sections
 
     private var NavidromeSection: some View {

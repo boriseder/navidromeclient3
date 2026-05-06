@@ -3,6 +3,7 @@
 //  NavidromeClient
 //
 //  Swift 6 Compliance with improved skeleton, error handling, and performance
+//  - REFACTORED: Bug 10 - Replaced boolean soup with clean ViewState Enum
 //
 
 import SwiftUI
@@ -20,17 +21,31 @@ struct ExploreView: View {
     
     @State private var cachedUsername: String = "User"
     
-    // FIX #1: Proper skeleton logic - show while loading, not after failure
-    private var shouldShowSkeleton: Bool {
-        let isLoading = !exploreManager.hasCompletedInitialLoad
-        let isOnlineMode = networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent
-        let hasNoContent = !exploreManager.hasExploreViewData
-        
-        return isLoading && isOnlineMode && hasNoContent
+    // FIX #1 & BUG 10: Unified ViewState Enum replaces scattered boolean checks
+    private enum ViewState: Equatable {
+        case loading
+        case online
+        case offline
+        case empty
     }
     
-    private var contentLoadingStrategy: ContentLoadingStrategy {
-        networkMonitor.contentLoadingStrategy
+    private var currentViewState: ViewState {
+        let strategy = networkMonitor.contentLoadingStrategy
+        
+        // Show skeleton if we are online, but haven't finished loading and have no data
+        if strategy == .online && !exploreManager.hasCompletedInitialLoad && !exploreManager.hasExploreViewData {
+            return .loading
+        }
+        
+        // Otherwise, map directly to the strategy
+        switch strategy {
+        case .online:
+            return .online
+        case .offlineOnly:
+            return .offline
+        case .setupRequired, .initializing:
+            return .empty
+        }
     }
     
     var body: some View {
@@ -42,7 +57,7 @@ struct ExploreView: View {
                 contentView
             }
             // FIX #2: Removed artificial delays and consolidated task
-            .task(id: contentLoadingStrategy) {
+            .task(id: networkMonitor.contentLoadingStrategy) {
                 await loadInitialData()
             }
             .task(id: exploreManager.hasExploreViewData) {
@@ -92,35 +107,27 @@ struct ExploreView: View {
     private var contentView: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSLayout.contentGap) {
-                if shouldShowSkeleton {
+                switch currentViewState {
+                case .loading:
                     skeletonContent
                         .transition(.opacity)
-                } else {
-                    switch contentLoadingStrategy {
-                    
-                    case .online:
-                        onlineContent
-                            .transition(.opacity)
-                        
-                    case .offlineOnly:
-                        offlineContent
-                            .transition(.opacity)
-                        
-                    case .setupRequired, .initializing:
-                        EmptyView()
-                            .transition(.opacity)
-                        
-                    }
+                case .online:
+                    onlineContent
+                        .transition(.opacity)
+                case .offline:
+                    offlineContent
+                        .transition(.opacity)
+                case .empty:
+                    EmptyView()
+                        .transition(.opacity)
                 }
             }
             .padding(.bottom, DSLayout.miniPlayerHeight)
         }
         .scrollIndicators(.hidden)
         .padding(.horizontal, DSLayout.screenPadding)
-        .animation(.easeInOut(duration: 0.3), value: shouldShowSkeleton)
+        .animation(.easeInOut(duration: 0.3), value: currentViewState)
     }
-    
-    
     
     // MARK: - Skeleton View
     
@@ -236,32 +243,6 @@ struct ExploreView: View {
             }
         }
     }
-    
-    /*
-     private var offlineEmptyState: some View {
-     VStack(spacing: DSLayout.sectionGap) {
-     Spacer()
-     
-     Image(systemName: "arrow.down.circle")
-     .font(.system(size: 64))
-     .foregroundColor(.gray)
-     
-     Text("No Downloaded Albums")
-     .font(DSText.prominent)
-     .foregroundColor(theme.textColor)
-     
-     Text("Download some albums while online to listen offline")
-     .font(DSText.body)
-     .foregroundColor(theme.textColor)
-     .multilineTextAlignment(.center)
-     .padding(.horizontal, DSLayout.contentGap)
-     
-     Spacer()
-     }
-     .frame(maxWidth: .infinity)
-     .padding(.top, DSLayout.screenGap)
-     }
-     */
     
     // MARK: - Business Logic
     

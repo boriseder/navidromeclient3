@@ -11,22 +11,36 @@ import SwiftUI
 
 struct AlbumImageView: View {
     @Environment(CoverArtManager.self) var coverArtManager
-
-    let album: Album
+    
+    // Support both full album objects and raw IDs
+    private let album: Album?
+    private let rawAlbumId: String?
+    
     let context: ImageContext
     
-    // Fix: Local state to force UI update when data arrives
     @State private var image: UIImage?
     
     private var displaySize: CGFloat {
         return context.displaySize
     }
     
+    private var targetAlbumId: String {
+        return album?.id ?? rawAlbumId ?? ""
+    }
+    
     init(album: Album, context: ImageContext) {
         self.album = album
+        self.rawAlbumId = nil
         self.context = context
     }
-        
+    
+    // BUG 13: New initializer to prevent fake Album object creation
+    init(albumId: String, context: ImageContext) {
+        self.album = nil
+        self.rawAlbumId = albumId
+        self.context = context
+    }
+    
     var body: some View {
         ZStack {
             placeholderView
@@ -43,16 +57,16 @@ struct AlbumImageView: View {
         }
         .frame(width: displaySize, height: displaySize)
         .animation(.easeInOut(duration: 0.3), value: image != nil)
-        .task(id: "\(album.id)_\(context.size)") {
+        .task(id: "\(targetAlbumId)_\(context.size)") {
             // Fast path: check actor memory cache
             if let cached = await coverArtManager.imageCache.cachedImage(
-                for: album.id, type: .album, size: context.size
+                for: targetAlbumId, type: .album, size: context.size
             ) {
                 self.image = cached
                 return
             }
             // Slow path: disk → network
-            self.image = await coverArtManager.loadAlbumImage(for: album.id, context: context)
+            self.image = await coverArtManager.loadAlbumImage(for: targetAlbumId, context: context)
         }
     }
     
@@ -70,13 +84,14 @@ struct AlbumImageView: View {
             .overlay(placeholderOverlay)
     }
     
+    // Update the placeholderOverlay
     @ViewBuilder
     private var placeholderOverlay: some View {
-        if coverArtManager.isLoadingImage(for: album.id, size: context.size) {
+        if coverArtManager.isLoadingImage(for: targetAlbumId, size: context.size) {
             ProgressView()
                 .scaleEffect(0.7)
                 .tint(.white)
-        } else if let _ = coverArtManager.getImageError(for: album.id, size: context.size) {
+        } else if let _ = coverArtManager.getImageError(for: targetAlbumId, size: context.size) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: DSLayout.smallIcon))
                 .foregroundStyle(.white.opacity(0.8))

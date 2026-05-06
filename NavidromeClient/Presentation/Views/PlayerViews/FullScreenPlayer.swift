@@ -3,9 +3,8 @@
 //  NavidromeClient
 //
 //  UPDATED: Swift 6 & iOS 17+ Modernization
-//  - Migrated to @Environment(Type.self)
-//  - Uses @Bindable for UI bindings
-//  - Modern Concurrency
+//  - FIXED Bug 11: Removed duplicated image state.
+//  - Extracted image loading logic directly into autonomous CoverArtCards.
 //
 
 import SwiftUI
@@ -14,7 +13,6 @@ import AVKit
 struct FullScreenPlayerView: View {
     @Environment(PlayerViewModel.self) var playerVM
     @Environment(AudioSessionManager.self) var audioSessionManager
-    @Environment(CoverArtManager.self) var coverArtManager
     @Environment(\.dismiss) private var dismiss
     
     @State private var dragOffset: CGFloat = 0
@@ -22,15 +20,6 @@ struct FullScreenPlayerView: View {
     @State private var horizontalDragOffset: CGFloat = 0
     @State private var isHorizontalDragging = false
     @State private var showingQueue = false
-    @State private var fullscreenImage: UIImage?
-    @State private var previousImage: UIImage?
-    @State private var nextImage: UIImage?
-    @State private var isLoadingFullscreen = false
-    @State private var animatingTrackChange = false
-    
-    private enum TrackDirection {
-        case previous, next
-    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -41,12 +30,9 @@ struct FullScreenPlayerView: View {
                     Spacer(minLength: 30)
                     
                     SpotifyStackedAlbumArt(
-                        currentCover: fullscreenImage,
-                        previousCover: previousImage,
-                        nextCover: nextImage,
+                        playerVM: playerVM,
                         horizontalDragOffset: horizontalDragOffset,
                         isHorizontalDragging: isHorizontalDragging,
-                        isLoadingFullscreen: isLoadingFullscreen,
                         screenWidth: geometry.size.width
                     )
                     .scaleEffect(isDragging ? 0.95 : 1.0)
@@ -86,81 +72,8 @@ struct FullScreenPlayerView: View {
         .animation(.interactiveSpring(), value: dragOffset)
         .sheet(isPresented: $showingQueue) {
             QueueView()
-                // Environment cascades automatically in new observation,
-                // but explicit injection ensures safety if sheet creates new hierarchy context
                 .environment(playerVM)
-                .environment(coverArtManager)
         }
-        .task(id: "\(playerVM.currentSong?.albumId ?? "")_\(coverArtManager.cacheGeneration)") {
-            await loadFullscreenImage()
-            await preloadAdjacentCovers()
-        }
-    }
-    
-    private func loadFullscreenImage() async {
-        guard let albumId = playerVM.currentSong?.albumId else {
-            fullscreenImage = nil
-            isLoadingFullscreen = false
-            return
-        }
-        
-        if let cached = coverArtManager.getAlbumImage(for: albumId, context: .fullscreen) {
-            fullscreenImage = cached
-            isLoadingFullscreen = false
-            await preloadAdjacentCovers()
-            return
-        }
-        
-        isLoadingFullscreen = true
-        let image = await coverArtManager.loadAlbumImage(for: albumId, context: .fullscreen)
-        fullscreenImage = image
-        isLoadingFullscreen = false
-        
-        await preloadAdjacentCovers()
-    }
-    
-    private func preloadAdjacentCovers() async {
-        let playlist = playerVM.currentPlaylist
-        let currentIdx = playerVM.currentIndex
-        
-        guard !playlist.isEmpty else { return }
-        
-        async let previous = loadPreviousCover(playlist: playlist, currentIndex: currentIdx)
-        async let next = loadNextCover(playlist: playlist, currentIndex: currentIdx)
-        
-        let (prevImg, nextImg) = await (previous, next)
-        
-        previousImage = prevImg
-        nextImage = nextImg
-    }
-    
-    private func loadPreviousCover(playlist: [Song], currentIndex: Int) async -> UIImage? {
-        guard currentIndex > 0 else {
-            if playerVM.repeatMode == .all && !playlist.isEmpty {
-                return await loadCoverForSong(playlist[playlist.count - 1])
-            }
-            return nil
-        }
-        return await loadCoverForSong(playlist[currentIndex - 1])
-    }
-    
-    private func loadNextCover(playlist: [Song], currentIndex: Int) async -> UIImage? {
-        guard currentIndex + 1 < playlist.count else {
-            if playerVM.repeatMode == .all && !playlist.isEmpty {
-                return await loadCoverForSong(playlist[0])
-            }
-            return nil
-        }
-        return await loadCoverForSong(playlist[currentIndex + 1])
-    }
-    
-    private func loadCoverForSong(_ song: Song) async -> UIImage? {
-        guard let albumId = song.albumId else { return nil }
-        
-        if let cached = coverArtManager.getAlbumImage(for: albumId, context: .fullscreen) {
-            return cached
-        }
-        return await coverArtManager.loadAlbumImage(for: albumId, context: .fullscreen)
     }
     
     private func combinedGesture(screenWidth: CGFloat) -> some Gesture {
@@ -198,80 +111,39 @@ struct FullScreenPlayerView: View {
         let spacing: CGFloat = 20
         let snapDistance = coverWidth + spacing
         
-        if translation > threshold && previousImage != nil {
-            animatingTrackChange = true
-            
+        let hasPrevious = playerVM.currentIndex > 0 || (playerVM.repeatMode == .all && !playerVM.currentPlaylist.isEmpty)
+        let hasNext = playerVM.currentIndex + 1 < playerVM.currentPlaylist.count || (playerVM.repeatMode == .all && !playerVM.currentPlaylist.isEmpty)
+        
+        if translation > threshold && hasPrevious {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
                 horizontalDragOffset = snapDistance
             }
             
             Task { @MainActor in
-                try? await Task.sleep(for: .seconds(0.5))
+                try? await Task.sleep(for: .seconds(0.3)) // Let swipe finish visually
+                await playerVM.playPrevious()
                 
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
                     horizontalDragOffset = 0
-                    
-                    let oldPrevious = previousImage
-                    let oldCurrent = fullscreenImage
-                    
-                    fullscreenImage = oldPrevious
-                    nextImage = oldCurrent
-                }
-                
-                await playerVM.playPrevious()
-                animatingTrackChange = false
-                
-                let playlist = playerVM.currentPlaylist
-                let currentIdx = playerVM.currentIndex
-                
-                if currentIdx > 0 {
-                    previousImage = await loadCoverForSong(playlist[currentIdx - 1])
-                } else if playerVM.repeatMode == .all && !playlist.isEmpty {
-                    previousImage = await loadCoverForSong(playlist[playlist.count - 1])
-                } else {
-                    previousImage = nil
                 }
             }
-            
-        } else if translation < -threshold && nextImage != nil {
-            animatingTrackChange = true
-            
+        } else if translation < -threshold && hasNext {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
                 horizontalDragOffset = -snapDistance
             }
             
             Task { @MainActor in
-                try? await Task.sleep(for: .seconds(0.5))
+                try? await Task.sleep(for: .seconds(0.3)) // Let swipe finish visually
+                await playerVM.playNext()
                 
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
                     horizontalDragOffset = 0
-                    
-                    let oldCurrent = fullscreenImage
-                    let oldNext = nextImage
-                    
-                    fullscreenImage = oldNext
-                    previousImage = oldCurrent
-                }
-                
-                await playerVM.playNext()
-                animatingTrackChange = false
-                
-                let playlist = playerVM.currentPlaylist
-                let currentIdx = playerVM.currentIndex
-                
-                if currentIdx + 1 < playlist.count {
-                    nextImage = await loadCoverForSong(playlist[currentIdx + 1])
-                } else if playerVM.repeatMode == .all && !playlist.isEmpty {
-                    nextImage = await loadCoverForSong(playlist[0])
-                } else {
-                    nextImage = nil
                 }
             }
-            
         } else {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                 horizontalDragOffset = 0
@@ -291,28 +163,43 @@ struct FullScreenPlayerView: View {
 // MARK: - Subcomponents
 
 struct SpotifyStackedAlbumArt: View {
-    let currentCover: UIImage?
-    let previousCover: UIImage?
-    let nextCover: UIImage?
+    var playerVM: PlayerViewModel
     let horizontalDragOffset: CGFloat
     let isHorizontalDragging: Bool
-    let isLoadingFullscreen: Bool
     let screenWidth: CGFloat
     
     var body: some View {
+        let playlist = playerVM.currentPlaylist
+        let currentIdx = playerVM.currentIndex
+        let repeatMode = playerVM.repeatMode
+        
+        let currentAlbumId = playlist.indices.contains(currentIdx) ? playlist[currentIdx].albumId : nil
+        
+        let prevAlbumId: String? = {
+            if currentIdx > 0 { return playlist[currentIdx - 1].albumId }
+            if repeatMode == .all && !playlist.isEmpty { return playlist.last?.albumId }
+            return nil
+        }()
+        
+        let nextAlbumId: String? = {
+            if currentIdx + 1 < playlist.count { return playlist[currentIdx + 1].albumId }
+            if repeatMode == .all && !playlist.isEmpty { return playlist.first?.albumId }
+            return nil
+        }()
+        
         ZStack {
-            if let previous = previousCover {
-                AlbumCoverCard(cover: previous, screenWidth: screenWidth)
+            if let prevId = prevAlbumId {
+                AlbumCoverCard(albumId: prevId, screenWidth: screenWidth)
                     .offset(x: calculateOffset(for: .previous))
                     .zIndex(5)
             }
             
-            AlbumCoverCard(cover: currentCover, screenWidth: screenWidth, isLoading: isLoadingFullscreen)
+            AlbumCoverCard(albumId: currentAlbumId, screenWidth: screenWidth)
                 .offset(x: calculateOffset(for: .current))
                 .zIndex(10)
             
-            if let next = nextCover {
-                AlbumCoverCard(cover: next, screenWidth: screenWidth)
+            if let nextId = nextAlbumId {
+                AlbumCoverCard(albumId: nextId, screenWidth: screenWidth)
                     .offset(x: calculateOffset(for: .next))
                     .zIndex(5)
             }
@@ -339,9 +226,12 @@ struct SpotifyStackedAlbumArt: View {
 }
 
 struct AlbumCoverCard: View {
-    let cover: UIImage?
+    let albumId: String?
     let screenWidth: CGFloat
-    var isLoading: Bool = false
+    @Environment(CoverArtManager.self) var coverArtManager
+    
+    @State private var cover: UIImage?
+    @State private var isLoading: Bool = false
     
     var body: some View {
         Group {
@@ -372,6 +262,40 @@ struct AlbumCoverCard: View {
                     .tint(.white)
             }
         }
+        .onAppear { resolveCacheSynchronously() }
+        .onChange(of: albumId) { _, _ in
+            resolveCacheSynchronously()
+            Task { await fetchImageAsynchronously() }
+        }
+        .task(id: albumId) {
+            await fetchImageAsynchronously()
+        }
+    }
+    
+    // Check memory cache instantly to prevent view flashing during track changes
+    private func resolveCacheSynchronously() {
+        guard let id = albumId else {
+            cover = nil
+            return
+        }
+        if let cached = coverArtManager.getAlbumImage(for: id, context: .fullscreen) {
+            cover = cached
+        }
+    }
+    
+    private func fetchImageAsynchronously() async {
+        guard let id = albumId else {
+            cover = nil
+            isLoading = false
+            return
+        }
+        if let cached = coverArtManager.getAlbumImage(for: id, context: .fullscreen) {
+            cover = cached
+            return
+        }
+        isLoading = true
+        cover = await coverArtManager.loadAlbumImage(for: id, context: .fullscreen)
+        isLoading = false
     }
 }
 
@@ -425,7 +349,6 @@ struct SpotifySongInfoView: View {
 }
 
 struct ProgressSection: View {
-    // Regular var for Observable object when no binding needed
     var playerVM: PlayerViewModel
     
     let screenWidth: CGFloat

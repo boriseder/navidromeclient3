@@ -156,29 +156,16 @@ struct SongRow: View {
     
     // MARK: - Album Thumbnail (The Visual Anchor)
     
+    // MARK: - Album Thumbnail (The Visual Anchor)
+        
     @ViewBuilder
     private var albumThumbnail: some View {
         ZStack {
             if isPlaying && showPlayIndicator {
                 // Show equalizer over dimmed artwork
                 ZStack {
-                    // Create a temporary Album object with just the coverArt ID
-                    if let coverArt = song.coverArt, let albumId = song.albumId {
-                        let thumbnailAlbum = Album(
-                            id: albumId,
-                            parent: song.album ?? "",
-                            album: song.album ?? "",
-                            title: song.album ?? "",
-                            name: song.album ?? "",
-                            coverArt: coverArt,
-                            artist: song.artist ?? "",
-                            duration: 0,
-                            songCount: 0,
-                            year: song.year,
-                            genre: song.genre
-                        )
-                        
-                        AlbumImageView(album: thumbnailAlbum, context: .list)
+                    if let albumId = song.albumId {
+                        AlbumImageView(albumId: albumId, context: .list)
                             .frame(width: 48, height: 48)
                             .overlay(Color.black.opacity(0.4))
                     } else {
@@ -194,22 +181,8 @@ struct SongRow: View {
                 }
             } else {
                 // Normal state
-                if let coverArt = song.coverArt, let albumId = song.albumId {
-                    let thumbnailAlbum = Album(
-                        id: albumId,
-                        parent: song.album ?? "",
-                        album: song.album ?? "",
-                        title: song.album ?? "",
-                        name: song.album ?? "",
-                        coverArt: coverArt,
-                        artist: song.artist ?? "",
-                        duration: 0,
-                        songCount: 0,
-                        year: song.year,
-                        genre: song.genre
-                    )
-                    
-                    AlbumImageView(album: thumbnailAlbum, context: .list)
+                if let albumId = song.albumId {
+                    AlbumImageView(albumId: albumId, context: .list)
                         .frame(width: 48, height: 48)
                         .overlay(playOverlay)
                 } else {
@@ -222,7 +195,7 @@ struct SongRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
     }
-    
+
     private var placeholderArtwork: some View {
         ZStack {
             Color.gray.opacity(0.2)
