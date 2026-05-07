@@ -39,28 +39,23 @@ struct ContentView: View {
                 
             case .online, .offlineOnly:
 
-                ZStack(alignment: .bottom) {
-                    // Layer 1: Deine Tabs
-                    TabView {
-                        ExploreView().tabItem { Label("Explore", systemImage: "music.note.house") }.tag(0)
-                        AlbumsView().tabItem { Label("Albums", systemImage: "record.circle") }.tag(1)
-                        ArtistsView().tabItem { Label("Artists", systemImage: "person.2") }.tag(2)
-                        GenreView().tabItem { Label("Genres", systemImage: "music.note.list") }.tag(3)
-                        FavoritesView().tabItem { Label("Favorites", systemImage: "heart") }.tag(4)
-                    }
-                    .tint(theme.accent)
-                    .id(theme.accent)
-                    
-                    // Layer 2: Der MiniPlayer, der sich NICHT über die TabBar legt
-                    VStack(spacing: 0) {
-                        Spacer()
-                            .allowsHitTesting(false)  // ← only the empty area ignores taps
+                // ContentView.swift — replace the ZStack with:
+                TabView {
+                    ExploreView().tabItem { Label("Explore", systemImage: "music.note.house") }.tag(0)
+                    AlbumsView().tabItem { Label("Albums", systemImage: "record.circle") }.tag(1)
+                    ArtistsView().tabItem { Label("Artists", systemImage: "person.2") }.tag(2)
+                    GenreView().tabItem { Label("Genres", systemImage: "music.note.list") }.tag(3)
+                    FavoritesView().tabItem { Label("Favorites", systemImage: "heart") }.tag(4)
+                }
+                .tint(theme.accent)
+                .id(theme.accent)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if playerVM.currentSong != nil {
                         MiniPlayerView()
                             .padding(.bottom, 49)
                     }
                 }
                 .overlay(networkStatusOverlay, alignment: .top)
-
             }
         }
         .sheet(isPresented: $showingSettings) {
