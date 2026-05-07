@@ -1,12 +1,3 @@
-//
-//  DownloadButton.swift
-//  NavidromeClient
-//
-//  UPDATED: Swift 6 Concurrency Compliance
-//  - Proper state observation with @Observable
-//  - Modern Styling (foregroundStyle)
-//
-
 import SwiftUI
 
 struct DownloadButton: View {
@@ -14,131 +5,83 @@ struct DownloadButton: View {
     let songs: [Song]
     
     @Environment(DownloadManager.self) var downloadManager
-    @State private var showingDeleteConfirmation = false
-    @State private var isProcessing = false
-    
-    @State private var currentState: DownloadManager.DownloadState = .idle
-    @State private var currentProgress: Double = 0.0
     
     var body: some View {
+        // Direkter Zugriff auf die reaktiven Properties des DownloadManagers
+        let state = downloadManager.getDownloadState(for: album.id)
+        let progress = downloadManager.downloadProgress[album.id] ?? 0.0
+        
         Button {
-            handleButtonTap()
+            handleButtonTap(state: state)
         } label: {
-            buttonContent
-        }
-        .disabled(isProcessing)
-        .onAppear {
-            updateState()
-        }
-        .onChange(of: downloadManager.downloadStates[album.id]) { _, _ in
-            updateState()
-        }
-        .onChange(of: downloadManager.downloadProgress[album.id]) { _, _ in
-            updateState()
-        }
-        .confirmationDialog(
-            "Delete Downloaded Album?",
-            isPresented: $showingDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                deleteDownload()
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This will remove the downloaded songs from your device.")
-        }
-    }
-    
-    private func updateState() {
-        currentState = downloadManager.getDownloadState(for: album.id)
-        currentProgress = downloadManager.downloadProgress[album.id] ?? 0.0
-    }
-    
-    @ViewBuilder
-    private var buttonContent: some View {
-        HStack(spacing: 8) {
-            Group {
-                switch currentState {
-                case .idle:
-                    Image(systemName: "icloud.and.arrow.down")
-                        .font(.system(size: 18, weight: .medium))
+            ZStack {
+                switch state {
+                case .idle, .error:
+                    Image(systemName: "arrow.down")
+                        .font(DSText.largeButton)
+                
                 case .downloading:
                     ZStack {
+                        // Hintergrund-Ring
                         Circle()
                             .stroke(.white.opacity(0.3), lineWidth: 2)
                         
+                        // Progress-Donut
                         Circle()
-                            .trim(from: 0, to: max(0.05, currentProgress))
-                            .stroke(.white, lineWidth: 2)
+                            .trim(from: 0, to: max(0.05, progress))
+                            .stroke(.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                             .rotationEffect(.degrees(-90))
-                            .animation(.easeInOut(duration: 0.2), value: currentProgress)
+                            .animation(.linear(duration: 0.2), value: progress)
                         
-                        Text("\(Int(max(0.05, currentProgress) * 100))%")
-                            .font(.system(size: 6, weight: .bold))
-                            .foregroundStyle(.white)
+                        // Stop-Icon
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 10, weight: .bold))
                     }
+                    
                 case .downloaded:
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18, weight: .medium))
-                case .error:
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 18, weight: .medium))
+                    Image(systemName: "checkmark")
+                        .font(DSText.largeButton)
+                    
                 case .cancelling:
                     ProgressView()
-                        .scaleEffect(0.6)
-                        .tint(.white)
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.8)
                 }
             }
-            .frame(width: 20, height: 20)
+            .foregroundStyle(state == .downloaded ? .white : .blue)
+            // Passe die Größen an dein DSLayout an
+            .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
+            .background(
+                Circle()
+                    .fill(state == .downloaded ? .blue : .black)
+                    .overlay(Circle().stroke(.blue, lineWidth: 1.5))
+                    .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 4)
+            )
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(buttonBackgroundColor)
-        .clipShape(Capsule())
-        .shadow(radius: 4)
+        .disabled(state == .cancelling)
     }
     
-    private var buttonBackgroundColor: Color {
-        switch currentState {
-        case .idle, .downloading: return .blue
-        case .downloaded: return .green
-        case .error: return .red
-        case .cancelling: return .gray
-        }
-    }
+    // MARK: - Actions & Haptics
     
-    private func handleButtonTap() {
-        guard !isProcessing else { return }
+    private func handleButtonTap(state: DownloadManager.DownloadState) {
+        // Haptisches Feedback
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
         
-        switch currentState {
+        switch state {
         case .idle, .error:
-            startDownload()
+            AppLogger.ui.info("[DownloadButton] Starte Download für: \(album.id)")
+            Task {
+                await downloadManager.startDownload(album: album, songs: songs)
+            }
         case .downloading:
-            cancelDownload()
+            AppLogger.ui.info("[DownloadButton] Breche Download ab für: \(album.id)")
+            downloadManager.cancelDownload(albumId: album.id)
         case .downloaded:
-            showingDeleteConfirmation = true
+            AppLogger.ui.info("[DownloadButton] Lösche Download für: \(album.id)")
+            downloadManager.deleteDownload(albumId: album.id)
         case .cancelling:
             break
         }
-    }
-    
-    private func startDownload() {
-        guard !isProcessing else { return }
-        
-        isProcessing = true
-        Task {
-            await downloadManager.startDownload(album: album, songs: songs)
-            isProcessing = false
-        }
-    }
-    
-    private func cancelDownload() {
-        downloadManager.cancelDownload(albumId: album.id)
-    }
-    
-    private func deleteDownload() {
-        downloadManager.deleteDownload(albumId: album.id)
     }
 }

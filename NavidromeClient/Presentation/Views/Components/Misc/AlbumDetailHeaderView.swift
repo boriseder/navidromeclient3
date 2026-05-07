@@ -18,24 +18,10 @@ struct AlbumHeaderView: View {
     @Environment(PlayerViewModel.self) var playerVM
     @Environment(DownloadManager.self) var downloadManager
 
-    @State private var isDownloaded = false
-    @State private var isDownloading = false
-
     var body: some View {
         VStack {
             albumHeroContent
         }
-        .onAppear {
-            updateDownloadState()
-        }
-        .onChange(of: downloadManager.downloadStates[album.id]) { _, _ in
-            updateDownloadState()
-        }
-    }
-
-    private func updateDownloadState() {
-        isDownloaded = downloadManager.isAlbumDownloaded(album.id)
-        isDownloading = downloadManager.isAlbumDownloading(album.id)
     }
 
     @ViewBuilder
@@ -77,6 +63,7 @@ struct AlbumHeaderView: View {
     @ViewBuilder
     private var actionButtonsFloating: some View {
         HStack(spacing: 12) {
+            // PLAY BUTTON
             Button {
                 Task {
                     if isAlbumCurrentlyLoaded {
@@ -103,6 +90,7 @@ struct AlbumHeaderView: View {
                 .overlay(Capsule().stroke(.green, lineWidth: 1.5))
             }
 
+            // SHUFFLE BUTTON
             Button {
                 Task {
                     if isAlbumCurrentlyLoaded {
@@ -129,35 +117,12 @@ struct AlbumHeaderView: View {
                 )
             }
 
-            Button {
-                Task { await downloadAlbum() }
-            } label: {
-                downloadButtonIcon
-                    .font(DSText.emphasized)
-                    .foregroundStyle(isDownloaded ? .white : .blue)
-                    .frame(width: DSLayout.largeIcon, height: DSLayout.largeIcon)
-                    .background(
-                        Circle()
-                            .fill(isDownloaded ? .blue : .black)
-                            .overlay(Circle().stroke(.blue, lineWidth: 1.5))
-                            .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 4)
-                    )
-            }
-            .disabled(isDownloading)
+            // DOWNLOAD BUTTON (Neu: Managed sich selbst & zeigt Progress)
+            DownloadButton(album: album, songs: songs)
         }
     }
+    
 
-    @ViewBuilder
-    private var downloadButtonIcon: some View {
-        if isDownloading {
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                .scaleEffect(0.8)
-        } else {
-            Image(systemName: isDownloaded ? "checkmark" : "arrow.down")
-                .font(DSText.largeButton)
-        }
-    }
 
     private func playAlbum() async {
         guard !songs.isEmpty else { return }
@@ -170,15 +135,6 @@ struct AlbumHeaderView: View {
         await playerVM.setPlaylist(shuffledSongs, startIndex: 0, albumId: album.id)
         if !playerVM.isShuffling {
             playerVM.toggleShuffle()
-        }
-    }
-
-    private func downloadAlbum() async {
-        guard !isDownloading else { return }
-        if isDownloaded {
-            downloadManager.deleteAlbum(albumId: album.id)
-        } else {
-            await downloadManager.startDownload(album: album, songs: songs)
         }
     }
 

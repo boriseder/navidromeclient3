@@ -1,8 +1,8 @@
 //
-//  ArtistsView.swift - RESTORED: Full Swift 5 Functionality
+//  ArtistsView.swift
 //  NavidromeClient
 //
-//  Swift 6 Compliance with ALL original features restored
+//  UPDATED: Swift 6 Compliance & Phase 3.1 Refactoring (ListLayoutWrapper + EntityRow)
 //
 
 import SwiftUI
@@ -86,30 +86,24 @@ struct ArtistsView: View {
         }
     }
     
+    // MARK: - Refactored Content View mit ListLayoutWrapper
     @ViewBuilder
     private var contentView: some View {
-        ScrollView {
-            LazyVStack(spacing: DSLayout.tightGap) {
-                ForEach(displayedArtists.indices, id: \.self) { index in
-                    let artist = displayedArtists[index]
-                    
-                    NavigationLink(value: artist) {
-                        ArtistRowView(artist: artist)
-                    }
-                    .buttonStyle(.plain)
-                    .onAppear {
-                        if index > lastPreloadedCount - 10 && index < displayedArtists.count - 1 {
-                            Task {
-                                await preloadNextBatch(from: index)
-                            }
+        ListLayoutWrapper {
+            ForEach(Array(displayedArtists.enumerated()), id: \.element.id) { index, artist in
+                NavigationLink(value: artist) {
+                    ArtistListRow(artist: artist)
+                }
+                .buttonStyle(.plain)
+                .onAppear {
+                    if index > lastPreloadedCount - 10 && index < displayedArtists.count - 1 {
+                        Task {
+                            await preloadNextBatch(from: index)
                         }
                     }
                 }
             }
-            .padding(.bottom, DSLayout.miniPlayerHeight)
         }
-        .scrollIndicators(.hidden)
-        .padding(.horizontal, DSLayout.screenPadding)
     }
     
     // MARK: - Business Logic
@@ -170,58 +164,36 @@ struct ArtistsView: View {
     }
 }
 
-// MARK: - Artist Row View
+// MARK: - Refactored Artist Row (Nutzt die generische EntityRow)
 
-struct ArtistRowView: View {
+struct ArtistListRow: View {
     let artist: Artist
     
-    @Environment(CoverArtManager.self) var coverArtManager
-    @Environment(ThemeManager.self) var theme
     @Environment(OfflineManager.self) var offlineManager
 
     var body: some View {
-        HStack(spacing: DSLayout.contentGap) {
-            ArtistImageView(artist: artist, context: .artistList)
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(.black.opacity(0.2), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                .padding(.vertical, DSLayout.tightPadding)
-                .padding(.leading, DSLayout.tightPadding)
-            
-            Text(artist.name)
-                .font(DSText.emphasized)
-                .foregroundStyle(DSColor.onDark)
-                .lineLimit(1)
+        let count = artist.albumCount ?? 0
+        let isAvailableOffline = offlineManager.isArtistAvailableOffline(artist.name)
         
-            Spacer()
-            
-            if let count = artist.albumCount {
-                if isAvailableOffline {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(DSText.fine)
-                        .foregroundStyle(DSColor.onDark)
-                } else {
-                    Image(systemName: "record.circle")
-                        .font(DSText.fine)
-                        .foregroundStyle(DSColor.onDark)
-                }
-                
-                Text("\(count) Album\(count != 1 ? "s" : "")")
-                    .font(DSText.fine)
+        EntityRow(
+            title: artist.name,
+            leading: {
+                ArtistImageView(artist: artist, context: .artistList)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(.black.opacity(0.2), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+            },
+            trailing: {
+                if count > 0 {
+                    HStack(spacing: DSLayout.tightGap) {
+                        Image(systemName: isAvailableOffline ? "arrow.down.circle.fill" : "record.circle")
+                            .font(DSText.fine)
+                        Text("\(count) Album\(count != 1 ? "s" : "")")
+                            .font(DSText.fine)
+                    }
                     .foregroundStyle(DSColor.onDark)
-                    .padding(.trailing, DSLayout.contentPadding)
+                }
             }
-        }
-        .background(
-            theme.backgroundContrastColor.opacity(0.44),
-            in: RoundedRectangle(cornerRadius: DSCorners.tight)
         )
-    }
-    
-    private var isAvailableOffline: Bool {
-        offlineManager.isArtistAvailableOffline(artist.name)
     }
 }

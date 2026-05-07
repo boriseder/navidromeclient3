@@ -355,7 +355,12 @@ struct ExploreSection: View {
                     ForEach(albums.indices, id: \.self) { index in
                         let album = albums[index]
                         NavigationLink(value: album) {
-                            CardItemContainer(content: .album(album), index: index)
+                            EntityCard(
+                                title: album.name,
+                                subtitle: album.artist
+                            ) {
+                                AlbumImageView(album: album, context: .card)
+                            }
                         }
                     }
                 }

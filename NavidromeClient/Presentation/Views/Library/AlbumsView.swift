@@ -1,8 +1,8 @@
 //
-//  AlbumsView.swift - RESTORED: Full Swift 5 Functionality
+//  AlbumsView.swift
 //  NavidromeClient
 //
-//  Swift 6 Compliance with ALL original features restored
+//  UPDATED: Phase 3.3 Refactoring (GridLayoutWrapper + EntityCard)
 //
 
 import SwiftUI
@@ -150,41 +150,41 @@ struct AlbumsView: View {
         }
     }
     
+    // MARK: - Refactored Content View mit GridLayoutWrapper
     @ViewBuilder
     private var contentView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: DSLayout.contentGap) {
-                LazyVGrid(columns: GridColumns.two, spacing: DSLayout.contentGap) {
-                    ForEach(displayedAlbums.indices, id: \.self) { index in
-                        let album = displayedAlbums[index]
-                        
-                        NavigationLink(value: album) {
-                            CardItemContainer(content: .album(album), index: index)
+        GridLayoutWrapper {
+            // Arrays sicher über .enumerated iterieren für Swift 6
+            ForEach(Array(displayedAlbums.enumerated()), id: \.element.id) { index, album in
+                NavigationLink(value: album) {
+                    // Nutzung der neuen, sauberen EntityCard
+                    EntityCard(
+                        title: album.name,
+                        subtitle: album.artist
+                    ) {
+                        AlbumImageView(album: album, context: .card)
+                    }
+                }
+                .buttonStyle(.plain)
+                .onAppear {
+                    if networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent &&
+                       index >= displayedAlbums.count - 5 {
+                        Task {
+                            await musicLibraryManager.loadMoreAlbumsIfNeeded()
                         }
-                        .onAppear {
-                            if networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent &&
-                               index >= displayedAlbums.count - 5 {
-                                Task {
-                                    await musicLibraryManager.loadMoreAlbumsIfNeeded()
-                                }
-                            }
-                            
-                            if index > lastPreloadedCount - 10 && index < displayedAlbums.count - 1 {
-                                Task {
-                                    await preloadNextBatch(from: index)
-                                }
-                            }
+                    }
+                    
+                    if index > lastPreloadedCount - 10 && index < displayedAlbums.count - 1 {
+                        Task {
+                            await preloadNextBatch(from: index)
                         }
                     }
                 }
-                .padding(.bottom, DSLayout.miniPlayerHeight)
             }
         }
-        .scrollIndicators(.hidden)
-        .padding(.horizontal, DSLayout.screenPadding)
     }
     
-    // MARK: - Business Logic
+    // MARK: - Business Logic (Unverändert)
     
     private func refreshAllData() async {
         await musicLibraryManager.refreshAllData()

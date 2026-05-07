@@ -38,50 +38,35 @@ struct ContentView: View {
                 }
                 
             case .online, .offlineOnly:
-                TabView {
-                    ExploreView()
-                        .tabItem {
-                            Image(systemName: "music.note.house")
-                            Text("Explore")
-                        }
-                        .tag(0)
+
+                ZStack(alignment: .bottom) {
+                    // Layer 1: Deine Tabs
+                    TabView {
+                        ExploreView().tabItem { Label("Explore", systemImage: "music.note.house") }.tag(0)
+                        AlbumsView().tabItem { Label("Albums", systemImage: "record.circle") }.tag(1)
+                        ArtistsView().tabItem { Label("Artists", systemImage: "person.2") }.tag(2)
+                        GenreView().tabItem { Label("Genres", systemImage: "music.note.list") }.tag(3)
+                        FavoritesView().tabItem { Label("Favorites", systemImage: "heart") }.tag(4)
+                    }
+                    .tint(theme.accent)
+                    .id(theme.accent)
                     
-                    AlbumsView()
-                        .tabItem {
-                            Image(systemName: "record.circle")
-                            Text("Albums")
-                        }
-                        .tag(1)
-                    
-                    ArtistsView()
-                        .tabItem {
-                            Image(systemName: "person.2")
-                            Text("Artists")
-                        }
-                        .tag(2)
-                    
-                    GenreView()
-                        .tabItem {
-                            Image(systemName: "music.note.list")
-                            Text("Genres")
-                        }
-                        .tag(3)
-                    
-                    FavoritesView()
-                        .tabItem {
-                            Image(systemName: "heart")
-                            Text("Favorites")
-                        }
-                        .tag(4)
+                    // Layer 2: Der MiniPlayer, der sich NICHT über die TabBar legt
+                    VStack(spacing: 0) {
+                        Spacer() // Drückt den Player nach unten
+                        
+                        MiniPlayerView()
+                            .environment(playerVM)
+                            // Hier schieben wir den Player so hoch, dass er exakt über der TabBar sitzt.
+                            // 49 ist die Standard-Höhe einer TabBar auf dem iPhone. Du kannst hier auch
+                            // einen festen Wert aus deinem DSLayout verwenden, falls du einen hast.
+                            .padding(.bottom, 49)
+                    }
+                    // Verhindert, dass der VStack selbst Taps abfängt, wenn man ins Leere klickt
+                    .allowsHitTesting(false)
                 }
-                .tint(theme.accent)
-                .id(theme.accent)
                 .overlay(networkStatusOverlay, alignment: .top)
-                .overlay(alignment: .bottom) {
-                    MiniPlayerView()
-                        .environment(playerVM)
-                        .padding(.bottom, DSLayout.miniPlayerHeight)
-                }
+
             }
         }
         .sheet(isPresented: $showingSettings) {

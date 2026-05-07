@@ -1,8 +1,9 @@
 //
-//  AlbumCollectionView.swift - RESTORED: Full Swift 5 Functionality
+//  AlbumCollectionView.swift
 //  NavidromeClient
 //
-//  Swift 6 Compliance with ALL original features restored
+//  UPDATED: Phase 3.4 Refactoring (ListLayoutWrapper + EntityCard)
+//  - Nutzt das globale Design System und die generische EntityCard
 //
 
 import SwiftUI
@@ -63,8 +64,8 @@ struct AlbumCollectionView: View {
             theme.backgroundColor.opacity(0.3)
                 .ignoresSafeArea()
 
-            // Content Layer
-            ScrollView {
+            // Content Layer: Nutzt den zentralen ListLayoutWrapper
+            ListLayoutWrapper(spacing: 0) {
                 VStack(spacing: 0) {
                     if case .byArtist = context {
                         artistHeroHeader
@@ -75,13 +76,10 @@ struct AlbumCollectionView: View {
                     contentView
                         .padding(.top, DSLayout.contentPadding)
                 }
-                .padding(.horizontal, DSLayout.screenPadding)
-                .padding(.bottom, DSLayout.miniPlayerHeight)
-                .padding(.top, -40)
+                .padding(.top, -40) // Zieht den Hero-Header unter die Navbar
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollIndicators(.hidden)
             .task {
                 if case .byArtist(let artist) = context {
                     await loadBackgroundImage(for: artist)
@@ -115,7 +113,7 @@ struct AlbumCollectionView: View {
         }
     }
     
-    // MARK: - Content View
+    // MARK: - Refactored Content View (Grid with EntityCard)
     
     @ViewBuilder
     private var contentView: some View {
@@ -124,11 +122,15 @@ struct AlbumCollectionView: View {
             alignment: .leading,
             spacing: DSLayout.elementGap
         ) {
-            ForEach(displayedAlbums.indices, id: \.self) { index in
-                let album = displayedAlbums[index]
-                
+            ForEach(Array(displayedAlbums.enumerated()), id: \.element.id) { index, album in
                 NavigationLink(value: album) {
-                    CardItemContainer(content: .album(album), index: index)
+                    // Einheitliche Nutzung der EntityCard anstatt des veralteten CardItemContainers
+                    EntityCard(
+                        title: album.name,
+                        subtitle: album.artist
+                    ) {
+                        AlbumImageView(album: album, context: .card)
+                    }
                 }
                 .buttonStyle(PlainButtonStyle())
             }
@@ -235,18 +237,8 @@ struct AlbumCollectionView: View {
         VStack {
             if let artist {
                 ArtistImageView(artist: artist, context: .detail)
-                    .shadow(
-                        color: .black.opacity(0.6),
-                        radius: 20,
-                        x: 0,
-                        y: 10
-                    )
-                    .shadow(
-                        color: .black.opacity(0.3),
-                        radius: 40,
-                        x: 0,
-                        y: 20
-                    )
+                    .shadow(color: .black.opacity(0.6), radius: 20, x: 0, y: 10)
+                    .shadow(color: .black.opacity(0.3), radius: 40, x: 0, y: 20)
             }
                 
             VStack(spacing: DSLayout.elementGap) {

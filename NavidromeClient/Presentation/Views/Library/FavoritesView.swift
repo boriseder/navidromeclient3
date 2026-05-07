@@ -2,15 +2,8 @@
 //  FavoritesView.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 04.01.26.
-//
-
-
-//
-//  FavoritesView.swift - FIXED: Compiler Errors Resolved
-//  NavidromeClient
-//
-//  Swift 6 Compliance with ALL original features restored
+//  UPDATED: Phase 3.5 Refactoring (ListLayoutWrapper + SongRow Consistency)
+//  - Nutzt den globalen LayoutWrapper für reduzierten Boilerplate-Code
 //
 
 import SwiftUI
@@ -27,7 +20,6 @@ struct FavoritesView: View {
     @State private var debouncer: Debouncer = Debouncer()
     @State private var searchText: String = ""
     @State private var showingClearConfirmation: Bool = false
-    @State private var selection: Int = 0
     @State private var filteredSongs: [Song] = []
     @State private var baseSongs: [Song] = []
         
@@ -140,58 +132,54 @@ struct FavoritesView: View {
         updateFilteredSongs()
     }
 
+    // MARK: - Refactored Content View (Nutzt den ListLayoutWrapper)
     @ViewBuilder
     private var contentView: some View {
-        ScrollView {
-            LazyVStack(spacing: 1) {
-                if favoritesManager.favoriteSongs.isEmpty {
-                    Text("No favorites available")
-                        .font(DSText.sectionTitle)
-                        .padding(.top, DSLayout.tightGap)
-                        .padding(.bottom, DSLayout.sectionGap)
-                }
-                
-                let songs = filteredSongs
-                ForEach(Array(songs.enumerated()), id: \.0) { index, song in
-                    let isCurrentlyPlaying = playerVM.currentSong?.id == song.id && playerVM.isPlaying
-                    let isLast = index == songs.count - 1
-                    
-                    SongRow(
-                        song: song,
-                        index: index + 1,
-                        isPlaying: isCurrentlyPlaying,
-                        action: {
-                            Task {
-                                await playerVM.setPlaylist(
-                                    songs,
-                                    startIndex: index,
-                                    albumId: nil
-                                )
-                            }
-                        },
-                        favoriteAction: {
-                            Task {
-                                await favoritesManager.toggleFavorite(song)
-                            }
-                        },
-                        context: .favorites,
-                        isLastInGroup: isLast,
-                        isFavorited: true
-                    )
-                }
+        ListLayoutWrapper(spacing: 1) { // 1pt Spacing für SongRows beibehalten
+            if favoritesManager.favoriteSongs.isEmpty {
+                Text("No favorites available")
+                    .font(DSText.sectionTitle)
+                    .padding(.top, DSLayout.tightGap)
+                    .padding(.bottom, DSLayout.sectionGap)
             }
-            .padding(.bottom, DSLayout.miniPlayerHeight)
-            .padding(.horizontal, DSLayout.screenPadding)
+            
+            let songs = filteredSongs
+            // Sichere Iteration über Array mit id: \.element.id
+            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                let isCurrentlyPlaying = playerVM.currentSong?.id == song.id && playerVM.isPlaying
+                let isLast = index == songs.count - 1
+                
+                SongRow(
+                    song: song,
+                    index: index + 1,
+                    isPlaying: isCurrentlyPlaying,
+                    action: {
+                        Task {
+                            await playerVM.setPlaylist(
+                                songs,
+                                startIndex: index,
+                                albumId: nil
+                            )
+                        }
+                    },
+                    favoriteAction: {
+                        Task {
+                            await favoritesManager.toggleFavorite(song)
+                        }
+                    },
+                    context: .favorites,
+                    isLastInGroup: isLast,
+                    isFavorited: true
+                )
+            }
         }
     }
     
-    
-    // MARK: - Business Logic
+    // MARK: - Business Logic (Unverändert)
     
     private func updateBaseSongs() {
         let allFavorites: [Song] = favoritesManager.favoriteSongs
         
-        // Check if we should load online content
         let monitor: NetworkMonitor = networkMonitor
         let strategy: ContentLoadingStrategy = monitor.contentLoadingStrategy
         let shouldLoadOnline: Bool = strategy.shouldLoadOnlineContent
@@ -201,7 +189,6 @@ struct FavoritesView: View {
             return
         }
         
-        // Filter for downloaded songs only
         var downloaded: [Song] = []
         let manager: DownloadManager = downloadManager
         

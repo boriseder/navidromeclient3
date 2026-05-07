@@ -275,7 +275,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NavidromeClient/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = MyMusic;
+				INFOPLIST_KEY_CFBundleDisplayName = NavidromeClient3;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "This app uses Bluetooth to stream audio to external devices.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "This app uses Bluetooth to stream audio to external devices.";
@@ -311,7 +311,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NavidromeClient/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = MyMusic;
+				INFOPLIST_KEY_CFBundleDisplayName = NavidromeClient3;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "This app uses Bluetooth to stream audio to external devices.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "This app uses Bluetooth to stream audio to external devices.";
