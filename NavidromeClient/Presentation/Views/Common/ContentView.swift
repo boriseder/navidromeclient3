@@ -53,17 +53,11 @@ struct ContentView: View {
                     
                     // Layer 2: Der MiniPlayer, der sich NICHT über die TabBar legt
                     VStack(spacing: 0) {
-                        Spacer() // Drückt den Player nach unten
-                        
+                        Spacer()
+                            .allowsHitTesting(false)  // ← only the empty area ignores taps
                         MiniPlayerView()
-                            .environment(playerVM)
-                            // Hier schieben wir den Player so hoch, dass er exakt über der TabBar sitzt.
-                            // 49 ist die Standard-Höhe einer TabBar auf dem iPhone. Du kannst hier auch
-                            // einen festen Wert aus deinem DSLayout verwenden, falls du einen hast.
                             .padding(.bottom, 49)
                     }
-                    // Verhindert, dass der VStack selbst Taps abfängt, wenn man ins Leere klickt
-                    .allowsHitTesting(false)
                 }
                 .overlay(networkStatusOverlay, alignment: .top)
 

@@ -108,7 +108,7 @@ struct MiniPlayerView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: dragOffset)
             }
             // STEP 3: Load cover via ImageCacheActor
-            .task(id: song.albumId) {
+            .task(id: song.id) {
                 await loadCover(albumId: song.albumId)
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))

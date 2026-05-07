@@ -27,7 +27,7 @@ protocol PlaybackEngineDelegate: AnyObject {
     func playbackEngine(_ engine: PlaybackEngine, didChangePlayingState isPlaying: Bool)
     func playbackEngine(_ engine: PlaybackEngine, didFinishPlaying successfully: Bool)
     func playbackEngine(_ engine: PlaybackEngine, didEncounterError error: String)
-    
+    func playbackEngine(_ engine: PlaybackEngine, didAdvanceToSongId songId: String)
     func playbackEngineNeedsMoreItems(_ engine: PlaybackEngine) async
 }
 
@@ -282,6 +282,7 @@ class PlaybackEngine {
                     if let songId = self.itemToSongId[itemId] {
                         self.currentSongId = songId
                         AppLogger.general.info("PlaybackEngine: Current item changed to: \(songId)")
+                        self.delegate?.playbackEngine(self, didAdvanceToSongId: songId)
                         await self.checkAndExtendQueue()
                     }
                 }

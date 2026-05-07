@@ -18,13 +18,14 @@ class PlayerViewModel: NSObject {
     var playbackProgress: Double = 0
     var isLoading = false
     var errorMessage: String?
-    
+
     var volume: Float = 0.7 {
         didSet { playbackEngine.volume = volume }
     }
     
     var playlistManager = PlaylistManager()
-    
+    private var songsAheadInEngine: Int = 0
+
     // MARK: - Playlist Delegation
     var isShuffling: Bool { playlistManager.isShuffling }
     var repeatMode: PlaylistManager.RepeatMode { playlistManager.repeatMode }
@@ -161,7 +162,33 @@ class PlayerViewModel: NSObject {
     func toggleShuffle() { playlistManager.toggleShuffle() }
     func toggleRepeat() { playlistManager.toggleRepeat() }
     
+    func playbackEngine(_ engine: PlaybackEngine, didAdvanceToSongId songId: String) {
+        guard let index = playlistManager.currentPlaylist.firstIndex(where: { $0.id == songId }),
+              index != playlistManager.currentIndex else { return }
+
+        playlistManager.jumpToSong(at: index)
+        songsAheadInEngine = max(0, songsAheadInEngine - 1)  // consumed one
+
+
+        guard let song = playlistManager.currentSong else { return }
+        currentSong = song
+        currentAlbumId = song.albumId
+        duration = Double(song.duration ?? 0)
+        currentTime = 0
+
+        if let albumId = song.albumId {
+            coverArtManager.preloadForFullscreen(albumId: albumId)
+        }
+
+        updateNowPlayingInfo()
+        AppLogger.general.info("PlayerViewModel: UI synced to gapless advance → \(song.title)")
+    }
+
+    
+    
     // MARK: - Private Core Playback
+    
+    
     
     private func playCurrent() async {
         guard let song = playlistManager.currentSong else {
@@ -178,7 +205,7 @@ class PlayerViewModel: NSObject {
         if let albumId = song.albumId {
             coverArtManager.preloadForFullscreen(albumId: albumId)
         }
-        
+
         // Get upcoming songs for gapless playback
         let upcomingSongs = playlistManager.getUpcoming(count: 2)
         
@@ -199,7 +226,7 @@ class PlayerViewModel: NSObject {
             primaryId: song.id,
             upcomingURLs: upcomingURLs
         )
-        
+        songsAheadInEngine = upcomingSongs.count
         isLoading = false
         
         AppLogger.general.info("PlayerViewModel: Started playback: \(song.title) with \(upcomingURLs.count) upcoming")
@@ -353,32 +380,28 @@ extension PlayerViewModel: PlaybackEngineDelegate {
     
     func playbackEngineNeedsMoreItems(_ engine: PlaybackEngine) async {
         let currentQueueSize = engine.currentQueueSize
-        
-        guard currentQueueSize < 3 else {
-            AppLogger.general.info("PlayerViewModel: Queue sufficient (\(currentQueueSize) items)")
-            return
-        }
+        guard currentQueueSize < 3 else { return }
         
         let itemsNeeded = 3 - currentQueueSize
         AppLogger.general.info("PlayerViewModel: Need \(itemsNeeded) more items for queue")
         
-        let nextSongs = playlistManager.getUpcoming(count: itemsNeeded)
+        // Skip songs already buffered in the engine
+        let offset = songsAheadInEngine
+        let lookahead = offset + itemsNeeded
+        let allUpcoming = playlistManager.getUpcoming(count: lookahead)
+        let nextSongs = Array(allUpcoming.dropFirst(offset))
         
         guard !nextSongs.isEmpty else {
             AppLogger.general.info("PlayerViewModel: No more songs available in playlist")
             return
         }
         
-        AppLogger.general.info("PlayerViewModel: Loading \(nextSongs.count) upcoming songs")
         let urls = await resolveUpcomingURLs(for: nextSongs)
-        
-        guard !urls.isEmpty else {
-            AppLogger.general.info("PlayerViewModel: Failed to resolve URLs for upcoming songs")
-            return
-        }
+        guard !urls.isEmpty else { return }
         
         await playbackEngine.addItemsToQueue(urls)
-        AppLogger.general.info("PlayerViewModel: Successfully added \(urls.count) items to queue")
+        songsAheadInEngine += urls.count
+        AppLogger.general.info("PlayerViewModel: Added \(urls.count) items, \(songsAheadInEngine) now buffered ahead")
     }
 }
 
