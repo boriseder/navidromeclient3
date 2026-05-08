@@ -182,7 +182,7 @@ struct ExploreView: View {
                 username: cachedUsername,
                 nowPlaying: playerVM.currentSong
             )
-            
+                        
             if !exploreManager.recentAlbums.isEmpty {
                 ExploreSection(
                     title: "Recently played",

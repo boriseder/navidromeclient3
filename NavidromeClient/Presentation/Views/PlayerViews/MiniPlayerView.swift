@@ -71,18 +71,17 @@ struct MiniPlayerView: View {
                     .padding(.trailing, 12)
                 }
                 .frame(maxWidth: .infinity)
-                .background(.red)
-
-/*
                 .background {
                     // Blurred cover behind text+controls area
                     ZStack {
                         if let img = coverImage {
                             Image(uiImage: img)
                                 .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .blur(radius: 30)
-                                .opacity(0.4)
+                                .aspectRatio(contentMode: .fill)   // ← before frame
+                                .frame(maxWidth: .infinity, maxHeight: playerHeight)
+                                .clipped()                          // ← contain the overflow
+                                .blur(radius: 3)
+                                .opacity(1)
                         }
                         // Dark base so text is always readable
                         Color.black.opacity(0.55)
@@ -90,10 +89,9 @@ struct MiniPlayerView: View {
                         Rectangle().fill(.ultraThinMaterial).opacity(0.6)
                     }
                     .clipped()
-                    .frame(height: playerHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 }
-*/
             }
             .frame(height: playerHeight)
             .overlay(alignment: .bottom) {

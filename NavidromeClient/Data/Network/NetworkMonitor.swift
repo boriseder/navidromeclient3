@@ -51,6 +51,12 @@ class NetworkMonitor {
     
     func configureService(_ service: UnifiedSubsonicService?) {
         self.service = service
+        // Bypass the debounce here — this is an explicit reconfiguration
+        // (first launch or after credentials change), not a flappy network event.
+        // We want the ping result immediately so the UI doesn't sit in
+        // .offlineOnly while the 1.5s debounce timer runs out.
+        pendingServerCheckTask?.cancel()
+        pendingServerCheckTask = nil
         Task { await checkServerReachability() }
     }
     
@@ -64,8 +70,13 @@ class NetworkMonitor {
     }
     
     func reset() {
+        // Cancel any in-flight debounced check first
+        pendingServerCheckTask?.cancel()
+        pendingServerCheckTask = nil
+        // .initial already sets serverReachability to .unknown —
+        // critical so stale .reachable/.unreachable state from a
+        // previous session doesn't cause a premature .offlineOnly emission
         state = .initial
-        Task { await checkServerReachability() }
     }
     
     private func updateNetworkStatus(path: NWPath) {

@@ -2,89 +2,51 @@
 //  SettingsView.swift
 //  NavidromeClient
 //
-//  UPDATED: Swift 6 & iOS 17+ Modernization
-//  - Added import Observation (Required for @Environment with Observable)
-//
 
 import SwiftUI
 import Observation
 
 struct SettingsView: View {
-    // MARK: - Environments
+
     @Environment(AppConfig.self) var appConfig
     @Environment(AppInitializer.self) var appInitializer
     @Environment(ThemeManager.self) var theme
-    
     @Environment(ConnectionViewModel.self) var connectionVM
-    @Environment(PlayerViewModel.self) var playerVM
     @Environment(SongManager.self) var songManager
     @Environment(DownloadManager.self) var downloadManager
-    @Environment(OfflineManager.self) var offlineManager
     @Environment(CoverArtManager.self) var coverArtManager
     @Environment(NetworkMonitor.self) var networkMonitor
-    
     @Environment(\.dismiss) private var dismiss
 
-    // MARK: - Local State
     @State private var showingFactoryResetConfirmation = false
     @State private var isPerformingReset = false
     @State private var coverArtCacheSize: String = "—"
 
     var body: some View {
-        // Create Bindable scope for theme to allow Picker bindings
+        // @Bindable must be declared at the top of body, not inside a section
         @Bindable var bindableTheme = theme
-        
-        // BUG 13: Removed the duplicate NavigationStack wrapper here
+
         List {
-            Section(header: Text("Debug")) {
-                NavigationLink(destination: CoverArtDebugView()) {
-                    Label("Cover Art Debug", systemImage: "photo")
-                }
-                NavigationLink(destination: NetworkDebugView()) {
-                    Label("Network Debug", systemImage: "network")
-                }
-            }
-            
-            Section(header: Text("Appearance")) {
-                Picker("Select Theme", selection: $bindableTheme.backgroundStyle) {
-                    ForEach(UserBackgroundStyle.allCases, id: \.self) { option in
-                        Text(option.rawValue.capitalized).tag(option)
-                    }
-                }
-                .pickerStyle(.menu)
-                
-                HStack {
-                    Text("Accent Color")
-                    Spacer()
-                    Menu {
-                        ForEach(UserAccentColor.allCases) { colorOption in
-                            Button {
-                                theme.accentColor = colorOption
-                            } label: {
-                                Label(colorOption.rawValue.capitalized, systemImage: "circle.fill")
-                                if theme.accentColor == colorOption {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                            .tint(colorOption.color)
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "circle.fill")
-                                .foregroundStyle(theme.accent)
-                            Text(theme.accentColor.rawValue.capitalized)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-            
-            NavidromeSection
-            
+            // 1. Appearance — most frequently changed
+            AppearanceSection(backgroundStyle: $bindableTheme.backgroundStyle)
+
+            // 2. Server — primary configuration
+            ServerSection()
+
+            // 3. Cache — informational + navigation
             if appInitializer.isConfigured {
-                CacheSection
-                ServerDetailsSection
-                DangerZoneSection
+                CacheOverviewSection(coverArtCacheSize: coverArtCacheSize)
+            }
+
+            // 4. Debug — hidden at the bottom where it belongs
+            DebugSection()
+
+            // 5. Danger Zone — always last
+            if appInitializer.isConfigured {
+                DangerZoneSection(
+                    isPerformingReset: isPerformingReset,
+                    onReset: { showingFactoryResetConfirmation = true }
+                )
             }
         }
         .listStyle(.insetGrouped)
@@ -92,7 +54,13 @@ struct SettingsView: View {
         .toolbarColorScheme(.light, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .disabled(isPerformingReset)
-        .overlay { if isPerformingReset { FactoryResetOverlayView() } }
+        .overlay {
+            if isPerformingReset { FactoryResetOverlayView() }
+        }
+        .task {
+            let stats = await PersistentImageCache.shared.getCacheStats()
+            coverArtCacheSize = stats.diskSizeFormatted
+        }
         .confirmationDialog(
             "Logout & Factory Reset",
             isPresented: $showingFactoryResetConfirmation
@@ -105,222 +73,12 @@ struct SettingsView: View {
             Text("This will delete ALL data including downloads, server settings and cache.")
         }
     }
-    // MARK: - Sections
 
-    private var NavidromeSection: some View {
-        Section {
-            if let creds = appConfig.getCredentials() {
-                SettingsRow(title: "Server:", value: creds.baseURL.absoluteString)
-                SettingsRow(title: "User:", value: creds.username)
-            }
-            NavigationLink(destination: ServerEditView()) {
-                Text("Edit Server")
-            }
-        } header: {
-            Text("Navidrome Server Settings")
-        } footer: {
-            Text("Your (self-)hosted Navidrome server. Don't forget to add port (usually 4533).")
-        }
-    }
-
-    private var CacheSection: some View {
-        Section {
-            NavigationLink("Cache Settings") { CacheSettingsView() }
-            SettingsRow(title: "Cover Art Cache", value: coverArtCacheSize)
-            SettingsRow(title: "Download Cache", value: downloadManager.totalDownloadSize())
-        } header: {
-            Text("Cache & Downloads")
-        }
-        .task {
-            let stats = await PersistentImageCache.shared.getCacheStats()
-            coverArtCacheSize = stats.diskSizeFormatted
-        }
-    }
-    
-    private var ServerDetailsSection: some View {
-        Section {
-            SettingsRow(
-                title: "Connection:",
-                value: connectionVM.isConnected ?
-                    "Connected via \(networkMonitor.currentConnectionType.displayName)" :
-                    networkMonitor.connectionStatusDescription
-            )
-        } header: {
-            Text("Server Info")
-        }
-    }
-
-    private var DangerZoneSection: some View {
-        Section {
-            Button(role: .destructive) {
-                showingFactoryResetConfirmation = true
-            } label: {
-                Label("Logout & Factory Reset", systemImage: "exclamationmark.triangle.fill")
-            }
-            .disabled(isPerformingReset)
-        } header: {
-            Text("Danger Zone")
-        } footer: {
-            Text("This will reset the app to its initial state. All local data will be lost.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-    
-    // MARK: - Actions
-    
     private func performFactoryReset() async {
         isPerformingReset = true
         defer { isPerformingReset = false }
-        
         await appInitializer.performFactoryReset()
         songManager.reset()
         dismiss()
-    }
-}
-
-// MARK: - Helper Components
-
-struct SettingsRow: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
-        }
-    }
-}
-
-struct FactoryResetOverlayView: View {
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.3).ignoresSafeArea()
-            VStack(spacing: 16) {
-                ProgressView().scaleEffect(1.5).tint(.white)
-                Text("Factory Reset in Progress...").foregroundStyle(.white)
-                Text("Clearing all data and resetting app").foregroundStyle(.white.opacity(0.8))
-            }
-            .padding()
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        }
-    }
-}
-
-// MARK: - CacheSettingsView
-
-struct CacheSettingsView: View {
-    @Environment(DownloadManager.self) var downloadManager
-    @Environment(CoverArtManager.self) var coverArtManager
-
-    // FIX: Cannot call async getCacheStats() in property initializer.
-    // Use a default empty value; .task loads the real data.
-    @State private var cacheStats = PersistentImageCache.CacheStats(
-        memoryCount: 0,
-        diskCount: 0,
-        diskSize: 0,
-        maxSize: 1
-    )
-    @State private var showingClearConfirmation = false
-    @State private var showingClearSuccess = false
-
-    var body: some View {
-        List {
-            Section("Cover Art Cache") {
-                CacheStatsRow(title: "Cached Images", value: "\(cacheStats.diskCount)", icon: "photo.stack")
-                CacheStatsRow(title: "Cache Size", value: cacheStats.diskSizeFormatted, icon: "internaldrive")
-                CacheStatsRow(title: "Usage", value: String(format: "%.1f%%", cacheStats.usagePercentage), icon: "chart.pie")
-
-                Button(role: .destructive) {
-                    showingClearConfirmation = true
-                } label: {
-                    Label("Clear Cover Art Cache", systemImage: "trash")
-                }
-            }
-
-            Section("Downloaded Music") {
-                CacheStatsRow(
-                    title: "Downloaded Albums",
-                    value: "\(downloadManager.downloadedAlbums.count)",
-                    icon: "arrow.down.circle.fill"
-                )
-                CacheStatsRow(
-                    title: "Total Size",
-                    value: downloadManager.totalDownloadSize(),
-                    icon: "internaldrive"
-                )
-                CacheStatsRow(
-                    title: "Songs Available Offline",
-                    value: "\(downloadManager.downloadedAlbums.reduce(0) { $0 + $1.songs.count })",
-                    icon: "music.note"
-                )
-
-                Button(role: .destructive) {
-                    downloadManager.deleteAllDownloads()
-                } label: {
-                    Label("Delete ALL Music", systemImage: "trash")
-                }
-            }
-
-            Section {
-                Button("Clear Memory Cache") {
-                    coverArtManager.clearMemoryCache()
-                    Task { await updateCacheStats() }
-                }
-            } header: {
-                Text("Memory Management")
-            } footer: {
-                Text("Clears in-memory cached images. They will be reloaded from disk or network as needed.")
-                    .font(.caption)
-            }
-        }
-        .navigationTitle("Cache Management")
-        .confirmationDialog("Clear Cover Art Cache?", isPresented: $showingClearConfirmation) {
-            Button("Clear Cache", role: .destructive) {
-                Task { await clearCoverArtCache() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will remove all cached cover art images.")
-        }
-        .alert("Cache Cleared", isPresented: $showingClearSuccess) {
-            Button("OK") {}
-        } message: {
-            Text("Cover art cache has been successfully cleared.")
-        }
-        .task { await updateCacheStats() }
-        .refreshable { await updateCacheStats() }
-    }
-
-    // FIX: async so it can await the actor-isolated getCacheStats()
-    private func updateCacheStats() async {
-        cacheStats = await PersistentImageCache.shared.getCacheStats()
-    }
-
-    // FIX: async so it can await the actor-isolated clearCache()
-    private func clearCoverArtCache() async {
-        await PersistentImageCache.shared.clearCache()
-        coverArtManager.clearMemoryCache()
-        await updateCacheStats()
-        showingClearSuccess = true
-    }
-}
-
-struct CacheStatsRow: View {
-    let title: String
-    let value: String
-    let icon: String
-
-    var body: some View {
-        HStack {
-            Image(systemName: icon).frame(width: 20)
-            Text(title)
-            Spacer()
-            Text(value).foregroundStyle(.secondary)
-        }
     }
 }

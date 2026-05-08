@@ -103,8 +103,12 @@ final class AppInitializer {
             password: creds.password
         )
 
-        NetworkMonitor.shared.configureService(unifiedService)
+        // updateConfiguration MUST come before configureService.
+        // configureService triggers a ping; if isConfigured is still false
+        // at that point, updateStrategy() emits .offlineOnly before the
+        // ping completes and the UI shows "no connection" on first launch.
         NetworkMonitor.shared.updateConfiguration(isConfigured: true)
+        NetworkMonitor.shared.configureService(unifiedService)
         
         AppLogger.general.info("[AppInitializer] UnifiedSubsonicService created and configured")
     }

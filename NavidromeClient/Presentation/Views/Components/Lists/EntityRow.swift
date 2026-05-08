@@ -6,10 +6,10 @@ struct EntityRow<Leading: View, Trailing: View>: View {
     @ViewBuilder let trailing: Trailing
     
     @Environment(ThemeManager.self) var theme
+    @State private var isHovering = false
 
     var body: some View {
-        // HStack Spacing 12: In deinem DSLayout gibt es keine 12.
-        // Wir setzen es aus elementGap (8) + tightGap (4) zusammen.
+        // Spacing 12
         HStack(spacing: DSLayout.elementGap + DSLayout.tightGap) {
             leading
             
@@ -22,14 +22,26 @@ struct EntityRow<Leading: View, Trailing: View>: View {
             
             trailing
         }
-        // Horizontal 16 = contentPadding
+        // Padding 16 horizontal, 12 vertikal
         .padding(.horizontal, DSLayout.contentPadding)
-        // Vertikal 12 = elementPadding (8) + tightPadding (4)
         .padding(.vertical, DSLayout.elementPadding + DSLayout.tightPadding)
         .background(
-            // Transparenz (0.3) und Ecken (8 = DSCorners.element)
-            theme.backgroundContrastColor.opacity(0.3),
-            in: RoundedRectangle(cornerRadius: DSCorners.element)
+            // Hintergrund wie in SongRow: Nur bei Interaktion/Hover leicht sichtbar
+            ZStack {
+                if isHovering {
+                    RoundedRectangle(cornerRadius: DSCorners.element)
+                        .fill(theme.backgroundContrastColor.opacity(0.15))
+                } else {
+                    Color.clear
+                }
+            }
         )
+        // Wichtig, damit die ganze (transparente) Zeile klickbar bleibt
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(DSAnimations.ease) {
+                isHovering = hovering
+            }
+        }
     }
 }
