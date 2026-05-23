@@ -76,18 +76,18 @@ class CoverArtManager {
         cacheGeneration += 1
     }
 
-    // MARK: - Synchronous memory reads (for views)
+    // MARK: - Synchronous memory reads (for views and lock screen)
+    // These are hot-path reads that must not suspend. They use the nonisolated
+    // NSCache peek on ImageCacheActor, which is thread-safe.
+    // If the image hasn't been loaded yet they return nil — callers that need
+    // a guaranteed result should use loadAlbumImage(for:context:) in a .task.
 
     func getAlbumImage(for albumId: String, context: ImageContext) -> UIImage? {
-        // This is a synchronous call into the actor — not allowed directly.
-        // We use a detached task pattern here and rely on the view's .task
-        // to have already populated the cache. See AlbumImageView.
-        // For immediate cache checks we expose a non-isolated helper below.
-        return nil // Views use loadAlbumImage(for:context:) in .task
+        imageCache.peekCachedImage(for: albumId, type: .album, size: context.size)
     }
 
     func getArtistImage(for artistId: String, context: ImageContext) -> UIImage? {
-        return nil
+        imageCache.peekCachedImage(for: artistId, type: .artist, size: context.size)
     }
 
     func getSongImage(for song: Song, context: ImageContext) -> UIImage? {
@@ -300,13 +300,18 @@ class CoverArtManager {
 
     // MARK: - Cache management
 
+    // MARK: - Cache management
+
     func clearMemoryCache() {
         Task { await imageCache.clearMemory() }
         loadingStates.removeAll()
         errorStates.removeAll()
         incrementCacheGeneration()
-        Task { await PersistentImageCache.shared.clearCache() }
-        AppLogger.cache.info("[CoverArtManager] Caches cleared")
+        // NOTE: Does NOT clear PersistentImageCache here.
+        // Callers that want a full wipe (e.g. CacheSettingsView) call
+        // PersistentImageCache.shared.clearCache() directly before this.
+        // Calling it here too would cause a double-clear race.
+        AppLogger.cache.info("[CoverArtManager] Memory cache cleared")
     }
 
     // MARK: - Diagnostics

@@ -40,14 +40,16 @@ final class FavoritesService: Sendable {
     func starSongs(_ ids: [String]) async throws {
         for id in ids {
             try await starSong(id)
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            // Propagate cancellation: try await (not try?) so that if the
+            // enclosing Task is cancelled the loop exits immediately.
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 
     func unstarSongs(_ ids: [String]) async throws {
         for id in ids {
             try await unstarSong(id)
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 }

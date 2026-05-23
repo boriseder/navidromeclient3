@@ -11,22 +11,22 @@ import UIKit
 final class MediaService: Sendable {
 
     private let network: NetworkActor
-    private let persistentCache: PersistentImageCache
 
-    init(network: NetworkActor, persistentCache: PersistentImageCache = .shared) {
+    init(network: NetworkActor) {
         self.network = network
-        self.persistentCache = persistentCache
     }
 
+    // NOTE: Does NOT write to PersistentImageCache here.
+    // CoverArtManager.fetchFromNetwork() stores the result via ImageCacheActor
+    // (memory + disk). Writing here too would double every disk write and
+    // trigger two metadata-save debounce resets per image.
     func getCoverArt(for coverId: String, size: Int = 300) async -> UIImage? {
         do {
             let data = try await network.fetchRawData(
                 endpoint: "getCoverArt",
                 params: ["id": coverId, "size": "\(size)"]
             )
-            guard let image = UIImage(data: data) else { return nil }
-            await persistentCache.store(image, for: coverId, size: size)
-            return image
+            return UIImage(data: data)
         } catch {
             AppLogger.ui.error("❌ Cover art load error: \(error)")
             return nil
@@ -42,15 +42,6 @@ final class MediaService: Sendable {
         var params = ["id": songId]
         if let bitRate = maxBitRate { params["maxBitRate"] = "\(bitRate)" }
         return network.buildURL(endpoint: "download", params: params)
-    }
-
-    func clearCoverArtCache() async {
-        await persistentCache.clearCache()
-    }
-
-    func getCacheStats() async -> MediaCacheStats {
-        let stats = await persistentCache.getCacheStats()
-        return MediaCacheStats(imageCount: stats.diskCount, cacheSize: stats.diskSize, activeRequests: 0)
     }
 }
 

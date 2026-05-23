@@ -2,14 +2,6 @@
 //  NetworkActor.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 05.05.26.
-//
-
-
-//
-//  NetworkActor.swift
-//  NavidromeClient
-//
 //  NEW: Swift 6 Concurrency Refactoring — Step 2
 //  Owns ALL URLSession calls, URL building, and auth token generation.
 //  No UI state. No MainActor. Sendable.
@@ -28,7 +20,8 @@ actor NetworkActor {
     private let password: String
     
     // MARK: - URLSession per timeout profile
-    
+    // `let` + `Sendable` type on an actor is sufficient — the compiler allows
+    // nonisolated reads of immutable Sendable stored properties automatically.
     private let defaultSession: URLSession    // 10s request / 30s resource
     private let contentSession: URLSession    // 15s request / 60s resource
     private let mediaSession: URLSession      // 20s request / 120s resource
@@ -126,12 +119,20 @@ actor NetworkActor {
         
         do {
             let (data, response) = try await mediaSession.data(from: url)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            guard let http = response as? HTTPURLResponse else {
                 throw SubsonicError.unknown
             }
-            return data
+            switch http.statusCode {
+            case 200: return data
+            case 401: throw SubsonicError.unauthorized
+            case 429: throw SubsonicError.rateLimited
+            default:  throw SubsonicError.server(statusCode: http.statusCode)
+            }
         } catch {
             if error is SubsonicError { throw error }
+            if let urlError = error as? URLError, urlError.code == .timedOut {
+                throw SubsonicError.timeout(endpoint: endpoint)
+            }
             throw SubsonicError.network(underlying: error)
         }
     }

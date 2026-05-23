@@ -220,6 +220,13 @@ class PlayerViewModel: NSObject {
         // Resolve URLs for upcoming songs
         let upcomingURLs = await resolveUpcomingURLs(for: upcomingSongs)
         
+        // Reset buffered-ahead count before rebuilding the engine queue.
+        // If we arrived here via an error recovery path (didEncounterError →
+        // playNext → playCurrent), songsAheadInEngine could still hold a
+        // non-zero value from the previous queue, causing playbackEngineNeedsMoreItems
+        // to skip songs it thinks are already buffered but aren't.
+        songsAheadInEngine = 0
+
         // Set the queue with current song + upcoming
         await playbackEngine.setQueue(
             primaryURL: url,
@@ -299,7 +306,8 @@ class PlayerViewModel: NSObject {
     }
     
     private func configureAudioSession() {
-        _ = audioSessionManager.isAudioSessionActive
+        // AudioSessionManager.shared initialises eagerly (static let + private init),
+        // so setup has already run by the time this is called. Nothing to do here.
     }
     
     private func updateNowPlayingInfo() {

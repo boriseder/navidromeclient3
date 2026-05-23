@@ -194,6 +194,9 @@ class PlaybackEngine {
         guard let currentItem = queuePlayer.currentItem else { return }
         
         let duration = currentItem.duration.seconds
+        // duration can be NaN or infinite for HTTP streams before the item is ready;
+        // CMTime(seconds: NaN) produces an invalid seek target.
+        guard duration.isFinite else { return }
         let clampedTime = max(0, min(time, duration))
         let cmTime = CMTime(seconds: clampedTime, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         
@@ -305,11 +308,14 @@ class PlaybackEngine {
                 if let songId = self.itemToSongId[itemId] {
                     AppLogger.general.info("PlaybackEngine: Item finished playing: \(songId)")
                 }
-                
-                let hasMoreItems = self.queuePlayer.items().count > 0
+
+                // Check BEFORE unregistering: if this is the only item left,
+                // the queue is exhausted. Checking after unregister would always
+                // see count == 0 and could race with AVQueuePlayer's own advance.
+                let isLastItem = self.queuePlayer.items().count == 1
                 self.unregisterItem(finishedItem)
-                
-                if !hasMoreItems {
+
+                if isLastItem {
                     AppLogger.general.info("PlaybackEngine: Queue finished - no more items")
                     self.delegate?.playbackEngine(self, didFinishPlaying: true)
                 } else {

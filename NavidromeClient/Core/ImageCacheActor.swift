@@ -2,14 +2,6 @@
 //  ImageCacheActor.swift
 //  NavidromeClient
 //
-//  Created by Boris Eder on 05.05.26.
-//
-
-
-//
-//  ImageCacheActor.swift
-//  NavidromeClient
-//
 //  NEW: Swift 6 Concurrency Refactoring — Step 3
 //  Owns image memory cache, decoding, scaling, and deduplication.
 //  No network. No UI state. No MainActor.
@@ -21,9 +13,11 @@ import UIKit
 actor ImageCacheActor {
 
     // MARK: - Memory Cache
-
-    private let albumCache  = NSCache<NSString, AlbumCoverArt>()
-    private let artistCache = NSCache<NSString, AlbumCoverArt>()
+    // nonisolated(unsafe): NSCache is thread-safe by design, so concurrent
+    // reads and writes from any context are safe. This lets peekCachedImage()
+    // read from them synchronously without an actor hop.
+    nonisolated(unsafe) private let albumCache  = NSCache<NSString, AlbumCoverArt>()
+    nonisolated(unsafe) private let artistCache = NSCache<NSString, AlbumCoverArt>()
 
     // MARK: - In-flight deduplication
     // Key: "\(type)_\(id)_\(size)"
@@ -72,6 +66,27 @@ actor ImageCacheActor {
             }
         }
 
+        return nil
+    }
+
+    /// Synchronous peek into the NSCache — safe to call from any isolation
+    /// context because NSCache itself is thread-safe. Used by
+    /// CoverArtManager.getAlbumImage() on the MainActor so that
+    /// updateNowPlayingInfo() can supply lock-screen artwork without an await.
+    nonisolated func peekCachedImage(for id: String, type: CacheType, size: Int) -> UIImage? {
+        let cache = type == .album ? albumCache : artistCache
+        let key   = "\(id)_\(size)" as NSString
+        if let art = cache.object(forKey: key) {
+            return art.getImage(for: size)
+        }
+        // Try any larger cached size
+        let commonSizes = [80, 100, 150, 200, 240, 300, 400, 800, 1000]
+        for larger in commonSizes.filter({ $0 > size }).sorted() {
+            let largerKey = "\(id)_\(larger)" as NSString
+            if let art = cache.object(forKey: largerKey) {
+                return art.getImage(for: size)
+            }
+        }
         return nil
     }
 

@@ -38,11 +38,13 @@ struct DownloadButton: View {
 
                 // Icon layer
                 switch state {
-                case .idle, .error:
+                case .idle:
                     Image(systemName: "arrow.down")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.8))
-
+                case .error:
+                    Image(systemName: "arrow.down")
+                        .foregroundStyle(.red.opacity(0.8))  // or an exclamationmark.triangle
                 case .downloading:
                     ZStack {
                         Circle()

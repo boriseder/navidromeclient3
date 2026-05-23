@@ -37,6 +37,11 @@ actor PersistentImageCache {
     private var metadata: [String: CacheMetadata] = [:]
     private var isMetadataLoaded = false
 
+    // Debounce handle — cancelled and replaced on every scheduleMetadataSave()
+    // call so that a burst of 150 store() calls during preload produces exactly
+    // one disk write after the burst settles, matching AlbumMetadataCache behaviour.
+    private var metadataSaveTask: Task<Void, Never>?
+
     // MARK: - Configuration
 
     private let maxCacheSize: Int64 = 200 * 1024 * 1024  // 200 MB
@@ -65,14 +70,14 @@ actor PersistentImageCache {
 
         guard let data = await storage.loadImage(key: key, size: size) else {
             // File disappeared — evict stale metadata entry
-            metadata.removeValue(forKey: key)
+            metadata.removeValue(forKey: "\(key)_\(size)")
             scheduleMetadataSave()
             return nil
         }
 
         guard let image = UIImage(data: data) else { return nil }
 
-        updateLastAccessed(for: key)
+        updateLastAccessed(for: key, size: size)
         return image
     }
 
@@ -84,15 +89,20 @@ actor PersistentImageCache {
 
         await storage.saveImage(data: data, key: key, size: size)
 
+        // BUG FIX: key metadata by "\(key)_\(size)" so different sizes of the
+        // same image don't clobber each other's metadata entry. Previously
+        // metadata[key] was overwritten on every store for a new size, causing
+        // getCacheStats() to undercount and LRU eviction to only track one size.
+        let metaKey = "\(key)_\(size)"
         let filename = storageFilename(for: key, size: size)
         let meta = CacheMetadata(
-            key: key,
+            key: metaKey,
             filename: filename,
             createdAt: Date(),
             size: Int64(data.count),
             lastAccessed: Date()
         )
-        metadata[key] = meta
+        metadata[metaKey] = meta
         scheduleMetadataSave()
 
         await checkCacheSizeAndCleanup()
@@ -105,22 +115,23 @@ actor PersistentImageCache {
 
         await storage.saveImage(data: data, key: key, size: size)
 
+        let metaKey = "\(key)_\(size)"
         let filename = storageFilename(for: key, size: size)
         let meta = CacheMetadata(
-            key: key,
+            key: metaKey,
             filename: filename,
             createdAt: Date(),
             size: Int64(data.count),
             lastAccessed: Date()
         )
-        metadata[key] = meta
+        metadata[metaKey] = meta
         scheduleMetadataSave()
     }
 
     func removeImage(for key: String, size: Int) async {
         await ensureMetadataLoaded()
         await storage.deleteImage(key: key, size: size)
-        metadata.removeValue(forKey: key)
+        metadata.removeValue(forKey: "\(key)_\(size)")
         scheduleMetadataSave()
     }
 
@@ -155,18 +166,25 @@ actor PersistentImageCache {
 
     // MARK: - Private helpers
 
-    private func updateLastAccessed(for key: String) {
-        guard var meta = metadata[key] else { return }
+    private func updateLastAccessed(for key: String, size: Int) {
+        let metaKey = "\(key)_\(size)"
+        guard var meta = metadata[metaKey] else { return }
         meta.lastAccessed = Date()
-        metadata[key] = meta
+        metadata[metaKey] = meta
         // Probabilistic save to avoid hammering disk on every read
         if Int.random(in: 1...20) == 1 { scheduleMetadataSave() }
     }
 
     private func scheduleMetadataSave() {
+        // Cancel any pending save and restart the window. A burst of N store()
+        // calls (e.g. 150 during a full preload) results in a single disk write
+        // once the burst is done, rather than N concurrent writes of the full JSON.
+        metadataSaveTask?.cancel()
         let snapshot = metadata
         let stor = storage
-        Task.detached {
+        metadataSaveTask = Task.detached { [snapshot, stor] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 s coalesce window
+            guard !Task.isCancelled else { return }
             await stor.saveImageMetadata(snapshot)
         }
     }
