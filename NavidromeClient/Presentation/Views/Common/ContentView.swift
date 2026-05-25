@@ -36,32 +36,35 @@ struct ContentView: View {
     // MARK: - Main Tab View
 
     private var mainTabView: some View {
-        TabView {
-            ExploreView()
-                .tabItem { Label("Explore", systemImage: "music.note.house") }
-                .tag(0)
-            AlbumsView()
-                .tabItem { Label("Albums", systemImage: "record.circle") }
-                .tag(1)
-            ArtistsView()
-                .tabItem { Label("Artists", systemImage: "person.2") }
-                .tag(2)
-            GenreView()
-                .tabItem { Label("Genres", systemImage: "music.note.list") }
-                .tag(3)
-            FavoritesView()
-                .tabItem { Label("Favorites", systemImage: "heart") }
-                .tag(4)
-        }
-        .tint(theme.accent)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        ZStack(alignment: .bottom) {
+            TabView {
+                ExploreView()
+                    .tabItem { Label("Explore", systemImage: "music.note.house") }
+                    .tag(0)
+                AlbumsView()
+                    .tabItem { Label("Albums", systemImage: "record.circle") }
+                    .tag(1)
+                ArtistsView()
+                    .tabItem { Label("Artists", systemImage: "person.2") }
+                    .tag(2)
+                GenreView()
+                    .tabItem { Label("Genres", systemImage: "music.note.list") }
+                    .tag(3)
+                FavoritesView()
+                    .tabItem { Label("Favorites", systemImage: "heart") }
+                    .tag(4)
+            }
+            .tint(theme.accent)
+
             if playerVM.currentSong != nil {
                 MiniPlayerView()
-                    .padding(.bottom, 49)
+                    .padding(.bottom, 49) // tab bar height
+                    .padding(.horizontal, 8)
+                    .allowsHitTesting(true) // explicit, but default
             }
         }
     }
-
+    
     // MARK: - Network Status Overlay
 
     @ViewBuilder

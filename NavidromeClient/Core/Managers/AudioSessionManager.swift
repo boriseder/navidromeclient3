@@ -262,21 +262,8 @@ class AudioSessionManager: NSObject {
     
     func handleAppEnteredBackground() {
         AppLogger.audio.info("⬛ App entered background")
-        
-        guard let player = playerViewModel,
-              let song = player.currentSong else {
-            return
-        }
-        
-        updateNowPlayingInfo(
-            title: song.title,
-            artist: song.artist ?? "Unknown Artist",
-            album: song.album,
-            artwork: nil, // Artwork usually managed by system cache if already set
-            duration: player.duration,
-            currentTime: player.currentTime,
-            playbackRate: player.isPlaying ? 1.0 : 0.0
-        )
+        // No need to update nowPlayingInfo here — the system retains it.
+        // Overwriting with artwork: nil was wiping the lock screen artwork.
     }
     
     func handleAppWillTerminate() {

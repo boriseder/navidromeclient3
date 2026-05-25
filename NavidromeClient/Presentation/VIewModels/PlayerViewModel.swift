@@ -316,19 +316,24 @@ class PlayerViewModel: NSObject {
             return
         }
         let albumId = currentAlbumId ?? ""
-        let artwork = coverArtManager.getAlbumImage(for: albumId, context: .detail)
-        
-        audioSessionManager.updateNowPlayingInfo(
-            title: song.title,
-            artist: song.artist ?? "Unknown",
-            album: song.album,
-            artwork: artwork,
-            duration: duration,
-            currentTime: currentTime,
-            playbackRate: isPlaying ? 1.0 : 0.0
-        )
+        let capturedDuration = duration
+        let capturedTime = currentTime
+        let capturedIsPlaying = isPlaying
+
+        Task {
+            let artwork = await coverArtManager.loadAlbumImage(for: albumId, context: .detail)
+            audioSessionManager.updateNowPlayingInfo(
+                title: song.title,
+                artist: song.artist ?? "Unknown",
+                album: song.album,
+                artwork: artwork,
+                duration: capturedDuration,
+                currentTime: capturedTime,
+                playbackRate: capturedIsPlaying ? 1.0 : 0.0
+            )
+        }
     }
-    
+
     private func updateProgress() {
         playbackProgress = duration > 0 ? currentTime / duration : 0
     }
