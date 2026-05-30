@@ -13,6 +13,7 @@ struct DownloadButton: View {
     let songs: [Song]
 
     @Environment(DownloadManager.self) var downloadManager
+    @Environment(ThemeManager.self) var theme
 
     var body: some View {
         let state = downloadManager.getDownloadState(for: album.id)
@@ -24,13 +25,11 @@ struct DownloadButton: View {
             ZStack {
                 // Background circle — matches pill style
                 Circle()
-                    .fill(state == .downloaded ? Color.white.opacity(0.15) : Color.white.opacity(0.08))
+                    .fill(state == .downloaded ? theme.textColor.opacity(0.15) : theme.textColor.opacity(0.08))
                     .overlay {
                         Circle()
                             .stroke(
-                                state == .downloaded
-                                    ? Color.white.opacity(0.35)
-                                    : Color.white.opacity(0.18),
+                                theme.textColor.opacity(0.18),
                                 lineWidth: 1
                             )
                     }
@@ -41,20 +40,20 @@ struct DownloadButton: View {
                 case .idle:
                     Image(systemName: "arrow.down")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(theme.textColor.opacity(0.8))
                 case .error:
                     Image(systemName: "arrow.down")
                         .foregroundStyle(.red.opacity(0.8))  // or an exclamationmark.triangle
                 case .downloading:
                     ZStack {
                         Circle()
-                            .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                            .stroke(theme.textColor.opacity(0.2), lineWidth: 2)
                             .frame(width: 22, height: 22)
 
                         Circle()
                             .trim(from: 0, to: max(0.05, progress))
                             .stroke(
-                                Color.white,
+                                theme.textColor,
                                 style: StrokeStyle(lineWidth: 2, lineCap: .round)
                             )
                             .frame(width: 22, height: 22)
@@ -63,13 +62,13 @@ struct DownloadButton: View {
 
                         Image(systemName: "stop.fill")
                             .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(theme.textColor.opacity(0.7))
                     }
 
                 case .downloaded:
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(theme.textColor)
 
                 case .cancelling:
                     ProgressView()

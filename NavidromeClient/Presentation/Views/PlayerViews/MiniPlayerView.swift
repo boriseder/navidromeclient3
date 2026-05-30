@@ -19,7 +19,7 @@ struct MiniPlayerView: View {
     var body: some View {
         if let song = playerVM.currentSong {
             HStack(spacing: 0) {
-
+                
                 // ── Album art: flush left, full height ──────────────────
                 Group {
                     if let img = coverImage {
@@ -38,7 +38,7 @@ struct MiniPlayerView: View {
                 .frame(width: playerHeight, height: playerHeight)
                 // Left corners round, right corners square — clips to pill left edge
                 .onTapGesture { showFullScreen = true }
-
+                
                 // ── Song info + controls ─────────────────────────────────
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -57,7 +57,7 @@ struct MiniPlayerView: View {
                     .padding(.leading, 12)
                     .contentShape(Rectangle())
                     .onTapGesture { showFullScreen = true }
-
+                    
                     // prev / play / next
                     HStack(spacing: 4) {
                         miniButton("backward.fill", size: 13) {
@@ -90,34 +90,22 @@ struct MiniPlayerView: View {
                     }
                     .clipped()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-
+                    
                 }
             }
             .frame(height: playerHeight)
             .overlay(alignment: .bottom) {
-                // Progress line flush at bottom
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Rectangle()
-                            .fill(.white.opacity(0.15))
-                            .frame(height: 2)
-                        Rectangle()
-                            .fill(.white.opacity(0.6))
-                            .frame(
-                                width: playerVM.duration > 0
-                                    ? geo.size.width * (playerVM.currentTime / playerVM.duration)
-                                    : 0,
-                                height: 2
-                            )
-                            .animation(.linear(duration: 0.1), value: playerVM.currentTime)
-                    }
-                }
-                .frame(height: 2)
+                ProgressLineView(
+                    progress: playerVM.duration > 0
+                    ? playerVM.currentTime / playerVM.duration
+                    : 0
+                )
             }
             .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 6)
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: dragOffset)
             .task(id: song.id) { await loadCover(albumId: song.albumId) }
             .fullScreenCover(isPresented: $showFullScreen) { FullScreenPlayerView() }
+
         }
     }
 
@@ -166,6 +154,27 @@ struct MiniPlayerView: View {
         coverImage = await coverArtManager.loadAlbumImage(for: albumId, context: .miniPlayer)
     }
 }
+
+private struct ProgressLineView: View {
+    let progress: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(.white.opacity(0.15))
+                    .frame(height: 2)
+                Rectangle()
+                    .fill(.white.opacity(0.6))
+                    .frame(width: geo.size.width * progress, height: 2)
+                    .animation(.linear(duration: 0.1), value: progress)
+            }
+        }
+        .frame(height: 2)
+        .allowsHitTesting(false)  // 👈 key — it's display-only
+    }
+}
+
 // MARK: - Progress Bar (2px flush bottom)
 
 struct MiniProgressBar: View {

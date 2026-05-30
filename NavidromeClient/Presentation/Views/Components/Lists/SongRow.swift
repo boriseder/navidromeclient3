@@ -51,11 +51,14 @@ struct SongRow: View {
                 }
             
             // Micro-spacing every 3-4 songs for visual rhythm
-            if shouldShowSpacing {
+            /*
+             if shouldShowSpacing {
                 Spacer()
-                    .frame(height: 10)
+                    .frame(height: 4)
             }
+             */
         }
+        .padding(.bottom, DSLayout.tightPadding)
         .opacity(hasAppeared ? 1 : 0)
         .offset(y: hasAppeared ? 0 : 8)
         .scaleEffect(isPressed ? 0.98 : 1.0)
@@ -135,26 +138,27 @@ struct SongRow: View {
     // MARK: - Main Content
     
     private var mainContent: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSLayout.elementGap) {
             // Album thumbnail (visual anchor)
-            albumThumbnail
-                .frame(width: 48, height: 48)
-            
+            if context == .favorites {
+                albumThumbnail
+                    .frame(width: 48, height: 48)
+            } else {
+                trackIndex
+                    .frame(width: 36, height: 36)
+
+            }
             // Song info with hierarchy
             songInfoSection
                 .frame(maxWidth: .infinity, alignment: .leading)
             
             // Duration
             durationSection
-            
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, DSLayout.tightPadding)
         .background(rowBackground)
         .contentShape(Rectangle())
     }
-    
-    // MARK: - Album Thumbnail (The Visual Anchor)
     
     // MARK: - Album Thumbnail (The Visual Anchor)
         
@@ -196,6 +200,30 @@ struct SongRow: View {
         .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
     }
 
+    @ViewBuilder
+    private var trackIndex: some View {
+        ZStack {
+            if isPlaying && showPlayIndicator {
+                // Show equalizer over dimmed artwork
+                ZStack {
+                    EqualizerBars(
+                        isActive: true,
+                        accentColor: .white
+                    )
+                    .frame(width: 28, height: 28)
+                }
+            } else {
+                // Normal state
+                Text(String(song.track ?? 0))
+                    .font(.system(size: 16, weight: isPlaying ? .semibold : .medium))
+                    .foregroundStyle(isPlaying ? DSColor.playing : theme.textColor)
+                    .lineLimit(1)
+
+            }
+        }
+    }
+
+    
     private var placeholderArtwork: some View {
         ZStack {
             Color.gray.opacity(0.2)
@@ -223,18 +251,18 @@ struct SongRow: View {
     // MARK: - Song Info with Proper Hierarchy
     
     private var songInfoSection: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DSLayout.tightGap) {
             // Title - prominent
             Text(song.title)
-                .font(.system(size: 17, weight: isPlaying ? .semibold : .medium))
-                .foregroundStyle(isPlaying ? DSColor.playing : DSColor.onDark)
+                .font(.system(size: 16, weight: isPlaying ? .semibold : .medium))
+                .foregroundStyle(isPlaying ? DSColor.playing : theme.textColor)
                 .lineLimit(1)
             
             // Artist/metadata - subtle
             if context != .album, let artist = song.artist, !artist.isEmpty {
                 Text(artist)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(DSColor.onDark.opacity(0.55))
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(theme.textColor.opacity(0.55))
                     .lineLimit(1)
             }
         }
@@ -245,7 +273,7 @@ struct SongRow: View {
     @ViewBuilder
     private var durationSection: some View {
         if let duration = song.duration, duration > 0 {
-            HStack(spacing: 4) {
+            HStack(spacing: DSLayout.tightGap) {
                 if isPlaying {
                     Circle()
                         .fill(DSColor.playing)
@@ -253,10 +281,11 @@ struct SongRow: View {
                 }
                 
                 Text(formatDuration(duration))
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(isPlaying ? DSColor.playing : DSColor.onDark.opacity(0.4))
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(isPlaying ? DSColor.playing : theme.textColor.opacity(0.4))
                     .monospacedDigit()
             }
+            .padding(.trailing, DSLayout.contentPadding)
         }
     }
     
@@ -268,7 +297,7 @@ struct SongRow: View {
             if isPlaying {
                 HStack(spacing: 0) {
                     // Left accent bar
-                    RoundedRectangle(cornerRadius: 2)
+                    RoundedRectangle(cornerRadius: DSCorners.tight)
                         .fill(DSColor.playing)
                         .frame(width: 3)
                         .padding(.vertical, 4)
@@ -280,7 +309,7 @@ struct SongRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 
                 // Subtle glow for depth
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: DSCorners.element)
                     .fill(DSColor.playing.opacity(0.06))
                     .blur(radius: 8)
                     .offset(y: 1)
@@ -288,14 +317,20 @@ struct SongRow: View {
             
             // Pressed state
             if isPressed {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(DSColor.accent.opacity(0.12))
+                RoundedRectangle(cornerRadius: DSCorners.element)
+                    .fill(DSColor.accent.opacity(0.22))
             }
             
             // Hover state (desktop)
             if isHoveringRow && !isPlaying && !isPressed {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(theme.backgroundContrastColor.opacity(0.3))
+                RoundedRectangle(cornerRadius: DSCorners.element)
+                    .fill(theme.backgroundContrastColor.opacity(0.8))
+            }
+            
+            // normal state
+            if !isHoveringRow && !isPlaying && !isPressed {
+                RoundedRectangle(cornerRadius: DSCorners.element)
+                    .fill(theme.textColor.opacity(0.02))
             }
         }
         .onHover { hovering in

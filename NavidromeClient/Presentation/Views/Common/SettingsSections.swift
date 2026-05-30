@@ -136,6 +136,9 @@ struct DebugSection: View {
             NavigationLink(destination: NetworkDebugView()) {
                 Label("Network Debug", systemImage: "network")
             }
+            NavigationLink(destination: DesignSystemGallery()) {
+                Label("Deign System Gallery", systemImage: "paintpalette")
+            }
         } header: {
             Text("Developer")
         }

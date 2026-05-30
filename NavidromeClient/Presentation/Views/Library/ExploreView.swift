@@ -21,7 +21,6 @@ struct ExploreView: View {
     
     @State private var cachedUsername: String = "User"
     
-    // FIX #1 & BUG 10: Unified ViewState Enum replaces scattered boolean checks
     private enum ViewState: Equatable {
         case loading
         case online
@@ -54,9 +53,9 @@ struct ExploreView: View {
                 if theme.backgroundStyle == .dynamic {
                     DynamicMusicBackground()
                 }
+                
                 contentView
             }
-            // FIX #2: Removed artificial delays and consolidated task
             .task(id: networkMonitor.contentLoadingStrategy) {
                 await loadInitialData()
             }
@@ -64,7 +63,7 @@ struct ExploreView: View {
                 guard exploreManager.hasExploreViewData else { return }
                 await preloadVisibleContent()
             }
-            .navigationTitle("Explore & listen")
+            .navigationTitle("Explore your music")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: Album.self) { album in
                 AlbumDetailView(album: album)
@@ -77,7 +76,6 @@ struct ExploreView: View {
                     makeToolbarMenu()
                 }
             }
-            // FIX #3: Better refresh handling
             .refreshable {
                 await handleRefresh()
             }
@@ -176,13 +174,17 @@ struct ExploreView: View {
         .shimmering()
     }
     
+    
+    // MARK: - Content
+    
     private var onlineContent: some View {
         LazyVStack(spacing: DSLayout.elementGap) {
+            /*
             WelcomeHeader(
                 username: cachedUsername,
                 nowPlaying: playerVM.currentSong
             )
-                        
+            */
             if !exploreManager.recentAlbums.isEmpty {
                 ExploreSection(
                     title: "Recently played",
@@ -223,7 +225,6 @@ struct ExploreView: View {
         }
     }
     
-    // FIX #6: Add empty state for offline mode
     private var offlineContent: some View {
         LazyVStack(alignment: .leading, spacing: DSLayout.screenGap) {
             OfflineWelcomeHeader(
@@ -246,7 +247,6 @@ struct ExploreView: View {
     
     // MARK: - Business Logic
     
-    // FIX #7: Proper initial load without artificial delays
     private func loadInitialData() async {
         // Cache username
         if let username = appConfig.getCredentials()?.username {
@@ -257,7 +257,6 @@ struct ExploreView: View {
         await exploreManager.loadExploreData()
     }
     
-    // FIX #8: Better refresh
     private func handleRefresh() async {
         await exploreManager.loadExploreData()
         await preloadVisibleContent()
@@ -268,7 +267,6 @@ struct ExploreView: View {
         await preloadVisibleContent()
     }
     
-    // FIX #9: Optimized array building
     private func preloadVisibleContent() async {
         var albumsToPreload: [Album] = []
         albumsToPreload.reserveCapacity(30)
@@ -295,6 +293,7 @@ struct ExploreView: View {
         )
     }
 }
+
 
 // MARK: - ExploreSection
 
@@ -342,11 +341,6 @@ struct ExploreSection: View {
                     }
                     .disabled(isRefreshing)
                     .foregroundColor(accentColor)
-                } else {
-                    Image(systemName: "arrow.right")
-                        .font(DSText.emphasized)
-                        .foregroundColor(theme.textColor)
-                        .padding(.trailing, DSLayout.elementPadding)
                 }
             }
             
@@ -371,20 +365,9 @@ struct ExploreSection: View {
     }
 }
 
+
 // MARK: - Shimmer Effect
 
-extension View {
-    @ViewBuilder
-    func shimmering(active: Bool = true) -> some View {
-        if active {
-            self.modifier(ShimmerModifier())
-        } else {
-            self
-        }
-    }
-}
-
-// FIX #11: Responsive shimmer animation
 struct ShimmerModifier: ViewModifier {
     @State private var phase: CGFloat = 0
     
@@ -416,6 +399,17 @@ struct ShimmerModifier: ViewModifier {
                         phase = shimmerWidth
                     }
                 }
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func shimmering(active: Bool = true) -> some View {
+        if active {
+            self.modifier(ShimmerModifier())
+        } else {
+            self
         }
     }
 }

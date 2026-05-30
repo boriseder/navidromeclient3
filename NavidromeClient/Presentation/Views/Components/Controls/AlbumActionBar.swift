@@ -94,6 +94,8 @@ struct ActionPillButton: View {
     let accentColor: Color
     let action: () -> Void
 
+    @Environment(ThemeManager.self) var theme
+
     @State private var isPressed = false
 
     var body: some View {
@@ -104,16 +106,16 @@ struct ActionPillButton: View {
                 Text(label)
                     .font(.system(size: 14, weight: .semibold))
             }
-            .foregroundStyle(isActive ? .black : .white)
+            .foregroundStyle(isActive ? theme.backgroundColor : theme.textColor)
             .frame(maxWidth: .infinity)
             .frame(height: 44)
             .background {
                 Capsule()
-                    .fill(isActive ? accentColor : Color.white.opacity(0.1))
+                    .fill(isActive ? accentColor : theme.textColor.opacity(0.1))
                     .overlay {
                         Capsule()
                             .stroke(
-                                isActive ? Color.clear : Color.white.opacity(0.18),
+                                isActive ? Color.clear : theme.textColor.opacity(0.18),
                                 lineWidth: 1
                             )
                     }

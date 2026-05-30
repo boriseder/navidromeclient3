@@ -14,6 +14,7 @@ struct AlbumHeaderView: View {
     @Environment(AppConfig.self) var appConfig
     @Environment(PlayerViewModel.self) var playerVM
     @Environment(DownloadManager.self) var downloadManager
+    @Environment(ThemeManager.self) var theme
 
     var body: some View {
         VStack {
@@ -32,22 +33,22 @@ struct AlbumHeaderView: View {
             VStack(alignment: .leading, spacing: DSLayout.contentGap) {
                 Text(album.name)
                     .font(DSText.sectionTitle)
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.9), radius: 1, x: 0, y: 1)
+                    .foregroundStyle(theme.textColor)
+                    .shadow(color: theme.textColor.opacity(0.2), radius: 1, x: 0, y: 1)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(album.artist)
                     .font(DSText.prominent)
-                    .foregroundStyle(.white.opacity(0.95))
-                    .shadow(color: .black.opacity(0.8), radius: 1, x: 0, y: 1)
+                    .foregroundStyle(theme.textColor.opacity(0.95))
+                    .shadow(color: theme.textColor.opacity(0.2), radius: 1, x: 0, y: 1)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(buildMetadataString())
                     .font(DSText.metadata)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .shadow(color: .black.opacity(0.7), radius: 1, x: 0, y: 1)
+                    .foregroundStyle(theme.textColor.opacity(0.7))
+                    .shadow(color: theme.textColor.opacity(0.2), radius: 1, x: 0, y: 1)
                     .multilineTextAlignment(.leading)
 
                 AlbumActionBar(album: album, songs: songs, isOfflineAlbum: isOfflineAlbum)

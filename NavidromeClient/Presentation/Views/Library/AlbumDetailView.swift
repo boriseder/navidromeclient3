@@ -33,8 +33,8 @@ struct AlbumDetailView: View {
     
     var body: some View {
         ZStack {
-            // Background Layer
-            if backgroundImageLoaded {
+            if theme.backgroundStyle == .dynamic && backgroundImageLoaded {
+                // Background Layer
                 blurredAlbumBackground
                     .transition(.opacity)
             }

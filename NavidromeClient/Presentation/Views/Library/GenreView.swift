@@ -121,6 +121,8 @@ struct GenreView: View {
 struct GenreListRow: View {
     let genre: Genre
     
+    @Environment(ThemeManager.self) var theme
+    
     var body: some View {
         EntityRow(
             title: genre.value,
@@ -132,8 +134,8 @@ struct GenreListRow: View {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    .white.opacity(0.4),
-                                    .white.opacity(0.15)
+                                    theme.textColor.opacity(0.3),
+                                    theme.textColor.opacity(0.15)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -142,9 +144,9 @@ struct GenreListRow: View {
                         .frame(width: 48, height: 48)
                         .overlay(
                             Circle()
-                                .stroke(.white.opacity(0.8), lineWidth: 1)
+                                .stroke(theme.textColor.opacity(0.15), lineWidth: 1)
                         )
-                    
+
                     Image(systemName: "music.note.list")
                         .font(.system(size: DSLayout.smallIcon))
                         .foregroundStyle(DSColor.onDark)

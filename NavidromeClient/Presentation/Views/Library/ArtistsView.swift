@@ -170,6 +170,7 @@ struct ArtistListRow: View {
     let artist: Artist
     
     @Environment(OfflineManager.self) var offlineManager
+    @Environment(ThemeManager.self) var theme
 
     var body: some View {
         let count = artist.albumCount ?? 0
@@ -191,7 +192,7 @@ struct ArtistListRow: View {
                         Text("\(count) Album\(count != 1 ? "s" : "")")
                             .font(DSText.fine)
                     }
-                    .foregroundStyle(DSColor.onDark)
+                    .foregroundColor(theme.textColor)
                 }
             }
         )

@@ -15,16 +15,14 @@ struct EntityRow<Leading: View, Trailing: View>: View {
             
             Text(title)
                 .font(DSText.emphasized)
-                .foregroundStyle(DSColor.onDark)
+                .foregroundColor(theme.textColor)
                 .lineLimit(1)
         
             Spacer()
             
             trailing
         }
-        // Padding 16 horizontal, 12 vertikal
-        .padding(.horizontal, DSLayout.contentPadding)
-        .padding(.vertical, DSLayout.elementPadding + DSLayout.tightPadding)
+        .padding(.vertical, DSLayout.elementPadding)
         .background(
             // Hintergrund wie in SongRow: Nur bei Interaktion/Hover leicht sichtbar
             ZStack {
@@ -32,7 +30,8 @@ struct EntityRow<Leading: View, Trailing: View>: View {
                     RoundedRectangle(cornerRadius: DSCorners.element)
                         .fill(theme.backgroundContrastColor.opacity(0.15))
                 } else {
-                    Color.clear
+                    RoundedRectangle(cornerRadius: DSCorners.element)
+                        .fill(theme.textColor.opacity(0.02))
                 }
             }
         )

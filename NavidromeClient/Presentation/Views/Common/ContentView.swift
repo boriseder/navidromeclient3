@@ -16,6 +16,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             switch networkMonitor.contentLoadingStrategy {
+            
             case .initializing:
                 Color.clear
 
@@ -57,10 +58,13 @@ struct ContentView: View {
             .tint(theme.accent)
 
             if playerVM.currentSong != nil {
-                MiniPlayerView()
-                    .padding(.bottom, 49) // tab bar height
-                    .padding(.horizontal, 8)
-                    .allowsHitTesting(true) // explicit, but default
+                Color.clear
+                    .overlay(alignment: .bottom) {
+                        MiniPlayerView()
+                            .allowsHitTesting(false)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 49)
+                    }
             }
         }
     }
