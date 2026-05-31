@@ -135,7 +135,7 @@ struct FavoritesView: View {
     // MARK: - Refactored Content View (Nutzt den ListLayoutWrapper)
     @ViewBuilder
     private var contentView: some View {
-        ListLayoutWrapper(spacing: 1) { // 1pt Spacing für SongRows beibehalten
+        ListLayoutWrapper(spacing: 1) {
             if favoritesManager.favoriteSongs.isEmpty {
                 Text("No favorites available")
                     .font(DSText.sectionTitle)
@@ -144,7 +144,6 @@ struct FavoritesView: View {
             }
             
             let songs = filteredSongs
-            // Sichere Iteration über Array mit id: \.element.id
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                 let isCurrentlyPlaying = playerVM.currentSong?.id == song.id && playerVM.isPlaying
                 let isLast = index == songs.count - 1
@@ -173,7 +172,13 @@ struct FavoritesView: View {
                 )
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerVM.currentSong != nil {
+                Color.clear.frame(height: DSLayout.miniPlayerHeight)
+            }
+        }
     }
+    
     
     // MARK: - Business Logic (Unverändert)
     

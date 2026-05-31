@@ -50,5 +50,7 @@ struct DynamicMusicBackground: View {
                 .blendMode(.overlay)
                 .ignoresSafeArea()
         }
+        .allowsHitTesting(false) // 👈 add this at the end
+
     }
 }

@@ -22,8 +22,8 @@ enum DSLayout {
     static let buttonHeight: CGFloat = 44
     static let searchBarHeight: CGFloat = 44
     static let tabBarHeight: CGFloat = 90
-    static let miniPlayerHeight: CGFloat = 49
-    
+    static let miniPlayerHeight: CGFloat = 68 // mini player card height only
+
     // MARK: Icon Sizes
     static let smallIcon: CGFloat = 16
     static let icon: CGFloat = 24

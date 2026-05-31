@@ -16,59 +16,61 @@ struct ContentView: View {
     var body: some View {
         Group {
             switch networkMonitor.contentLoadingStrategy {
-            
             case .initializing:
                 Color.clear
 
             case .setupRequired:
-                // WelcomeView is now a self-contained setup wizard.
-                // It configures appConfig internally; ContentView
-                // transitions automatically when strategy changes.
                 WelcomeView()
 
             case .online, .offlineOnly:
                 mainTabView
                     .overlay(networkStatusOverlay, alignment: .top)
+                    .overlay(alignment: .bottom) {
+                        if playerVM.currentSong != nil {
+                            MiniPlayerView()
+                                .padding(.horizontal, 8)
+                                .padding(.bottom, tabBarHeight)
+                        }
+                    }
             }
         }
         .animation(.easeInOut(duration: 0.3), value: networkMonitor.contentLoadingStrategy == .setupRequired)
     }
 
+    // MARK: - Tab Bar Height
+
+    private var tabBarHeight: CGFloat {
+        let bottomInset = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?
+            .windows.first?
+            .safeAreaInsets.bottom ?? 0
+        return 49 + bottomInset
+    }
+
     // MARK: - Main Tab View
 
     private var mainTabView: some View {
-        ZStack(alignment: .bottom) {
-            TabView {
-                ExploreView()
-                    .tabItem { Label("Explore", systemImage: "music.note.house") }
-                    .tag(0)
-                AlbumsView()
-                    .tabItem { Label("Albums", systemImage: "record.circle") }
-                    .tag(1)
-                ArtistsView()
-                    .tabItem { Label("Artists", systemImage: "person.2") }
-                    .tag(2)
-                GenreView()
-                    .tabItem { Label("Genres", systemImage: "music.note.list") }
-                    .tag(3)
-                FavoritesView()
-                    .tabItem { Label("Favorites", systemImage: "heart") }
-                    .tag(4)
-            }
-            .tint(theme.accent)
-
-            if playerVM.currentSong != nil {
-                Color.clear
-                    .overlay(alignment: .bottom) {
-                        MiniPlayerView()
-                            .allowsHitTesting(false)
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 49)
-                    }
-            }
+        TabView {
+            ExploreView()
+                .tabItem { Label("Explore", systemImage: "music.note.house") }
+                .tag(0)
+            AlbumsView()
+                .tabItem { Label("Albums", systemImage: "record.circle") }
+                .tag(1)
+            ArtistsView()
+                .tabItem { Label("Artists", systemImage: "person.2") }
+                .tag(2)
+            GenreView()
+                .tabItem { Label("Genres", systemImage: "music.note.list") }
+                .tag(3)
+            FavoritesView()
+                .tabItem { Label("Favorites", systemImage: "heart") }
+                .tag(4)
         }
+        .tint(theme.accent)
     }
-    
+
     // MARK: - Network Status Overlay
 
     @ViewBuilder

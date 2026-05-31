@@ -72,7 +72,7 @@ struct AlbumsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.clear, for: .navigationBar)
             .toolbarColorScheme(theme.colorScheme, for: .navigationBar)
-            .searchable(text: $searchText, prompt: "Search albums...")
+       //     .searchable(text: $searchText, prompt: "Search albums...")
             .refreshable {
                 guard networkMonitor.contentLoadingStrategy.shouldLoadOnlineContent else { return }
                 await refreshAllData()
@@ -150,14 +150,11 @@ struct AlbumsView: View {
         }
     }
     
-    // MARK: - Refactored Content View mit GridLayoutWrapper
     @ViewBuilder
     private var contentView: some View {
         GridLayoutWrapper {
-            // Arrays sicher über .enumerated iterieren für Swift 6
             ForEach(Array(displayedAlbums.enumerated()), id: \.element.id) { index, album in
                 NavigationLink(value: album) {
-                    // Nutzung der neuen, sauberen EntityCard
                     EntityCard(
                         title: album.name,
                         subtitle: album.artist
@@ -173,13 +170,18 @@ struct AlbumsView: View {
                             await musicLibraryManager.loadMoreAlbumsIfNeeded()
                         }
                     }
-                    
                     if index > lastPreloadedCount - 10 && index < displayedAlbums.count - 1 {
                         Task {
                             await preloadNextBatch(from: index)
                         }
                     }
                 }
+            }
+        }
+        // Reserve space for mini player above tab bar, only when active
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerVM.currentSong != nil {
+                Color.clear.frame(height: DSLayout.miniPlayerHeight)
             }
         }
     }

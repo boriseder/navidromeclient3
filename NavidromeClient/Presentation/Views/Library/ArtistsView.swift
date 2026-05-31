@@ -104,7 +104,13 @@ struct ArtistsView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerVM.currentSong != nil {
+                Color.clear.frame(height: DSLayout.miniPlayerHeight)
+            }
+        }
     }
+    
     
     // MARK: - Business Logic
     

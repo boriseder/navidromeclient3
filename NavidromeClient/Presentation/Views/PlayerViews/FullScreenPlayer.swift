@@ -13,6 +13,7 @@ import AVKit
 struct FullScreenPlayerView: View {
     @Environment(PlayerViewModel.self) var playerVM
     @Environment(AudioSessionManager.self) var audioSessionManager
+    @Environment(ThemeManager.self) var theme
     @Environment(\.dismiss) private var dismiss
     
     @State private var dragOffset: CGFloat = 0
@@ -22,60 +23,102 @@ struct FullScreenPlayerView: View {
     @State private var showingQueue = false
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                VStack(spacing: 5) {
-                    TopBar(dismiss: dismiss, showingQueue: $showingQueue)
-                        .padding(.horizontal, 20)
-                    Spacer(minLength: 30)
-                    
-                    SpotifyStackedAlbumArt(
-                        playerVM: playerVM,
-                        horizontalDragOffset: horizontalDragOffset,
-                        isHorizontalDragging: isHorizontalDragging,
-                        screenWidth: geometry.size.width
-                    )
-                    .scaleEffect(isDragging ? 0.95 : 1.0)
-                    .animation(.spring(response: 0.3), value: isDragging)
-
-                    Spacer(minLength: 20)
-
-                    if let song = playerVM.currentSong {
-                        SpotifySongInfoView(song: song, screenWidth: geometry.size.width)
+        ZStack {
+            
+            if theme.backgroundStyle == .dynamic {
+                Color.black
+                    .ignoresSafeArea()
+                    .overlay {
+                        blurredAlbumBackground
                     }
-                                        
-                    Spacer(minLength: 16)
-                    
-                    ProgressSection(playerVM: playerVM, screenWidth: geometry.size.width)
-                    
-                    Spacer(minLength: 24)
-                    
-                    MainControls(playerVM: playerVM)
-                    
-                    Spacer()
-                    BottomControls(
-                        playerVM: playerVM,
-                        audioSessionManager: audioSessionManager,
-                        screenWidth: geometry.size.width
-                    )
-                }
-                .frame(maxWidth: geometry.size.width*0.95, maxHeight: geometry.size.height*0.95)
-                .padding(.horizontal, 10)
-                .padding(.top, 70)
-                .padding(.bottom, 20)
             }
-            .ignoresSafeArea(.container, edges: [.top, .bottom])
-            .offset(y: dragOffset)
-            .gesture(combinedGesture(screenWidth: geometry.size.width))
-            .background(Color.black)
+
+           GeometryReader { geometry in
+                ZStack {
+                    VStack(spacing: 5) {
+                        TopBar(dismiss: dismiss, showingQueue: $showingQueue)
+                            .padding(.horizontal, 20)
+                        Spacer(minLength: 30)
+                        
+                        SpotifyStackedAlbumArt(
+                            playerVM: playerVM,
+                            horizontalDragOffset: horizontalDragOffset,
+                            isHorizontalDragging: isHorizontalDragging,
+                            screenWidth: geometry.size.width
+                        )
+                        .scaleEffect(isDragging ? 0.95 : 1.0)
+                        .animation(.spring(response: 0.3), value: isDragging)
+                        
+                        Spacer(minLength: 20)
+                        
+                        if let song = playerVM.currentSong {
+                            SpotifySongInfoView(song: song, screenWidth: geometry.size.width)
+                        }
+                        
+                        Spacer(minLength: 16)
+                        
+                        ProgressSection(playerVM: playerVM, screenWidth: geometry.size.width)
+                        
+                        Spacer(minLength: 24)
+                        
+                        MainControls(playerVM: playerVM)
+                        
+                        Spacer()
+                        BottomControls(
+                            playerVM: playerVM,
+                            audioSessionManager: audioSessionManager,
+                            screenWidth: geometry.size.width
+                        )
+                    }
+                    .frame(maxWidth: geometry.size.width * 0.95, maxHeight: geometry.size.height * 0.95)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 70)
+                    .padding(.bottom, 20)
+                }
+                .ignoresSafeArea(.container, edges: [.top, .bottom])
+                .offset(y: dragOffset)
+                .gesture(combinedGesture(screenWidth: geometry.size.width))
+            }
         }
         .animation(.interactiveSpring(), value: dragOffset)
+        // Load background image whenever the song changes
         .sheet(isPresented: $showingQueue) {
             QueueView()
                 .environment(playerVM)
         }
     }
-    
+
+    // MARK: - Blurred Background
+
+    @ViewBuilder
+    private var blurredAlbumBackground: some View {
+        if let albumId = playerVM.currentSong?.albumId {
+            AlbumImageView(albumId: albumId, context: .fullscreen)
+                .frame(
+                    width: CGFloat(ImageContext.fullscreen.size),
+                    height: CGFloat(ImageContext.fullscreen.size)
+                )
+                .blur(radius: 20)
+                .scaleEffect(1.5)
+                .offset(y: -100)
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            .black.opacity(0.7),
+                            .black.opacity(0.35),
+                            .black.opacity(0.3),
+                            .black.opacity(0.2),
+                            .black.opacity(0.7)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
+        }
+    }
+        
     private func combinedGesture(screenWidth: CGFloat) -> some Gesture {
         DragGesture()
             .onChanged { value in
@@ -519,3 +562,4 @@ struct AudioSourceButton: UIViewRepresentable {
     
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
+

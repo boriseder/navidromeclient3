@@ -23,7 +23,6 @@ struct ListLayoutWrapper<Content: View>: View {
             LazyVStack(spacing: spacing) {
                 content()
             }
-            .padding(.bottom, DSLayout.miniPlayerHeight)
         }
         .scrollIndicators(.hidden)
         .padding(.horizontal, DSLayout.screenPadding)

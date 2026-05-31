@@ -120,12 +120,18 @@ struct ExploreView: View {
                         .transition(.opacity)
                 }
             }
-            .padding(.bottom, DSLayout.miniPlayerHeight)
         }
         .scrollIndicators(.hidden)
         .padding(.horizontal, DSLayout.screenPadding)
         .animation(.easeInOut(duration: 0.3), value: currentViewState)
+        // Reserve space for mini player above tab bar, only when active
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerVM.currentSong != nil {
+                Color.clear.frame(height: DSLayout.miniPlayerHeight)
+            }
+        }
     }
+    
     
     // MARK: - Skeleton View
     

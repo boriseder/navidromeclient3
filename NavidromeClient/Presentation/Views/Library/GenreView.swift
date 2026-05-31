@@ -73,13 +73,17 @@ struct GenreView: View {
     
     @ViewBuilder
     private var contentView: some View {
-        // Nutzt den zentralen Layout-Wrapper (Spacing ist standardmäßig tightGap)
         ListLayoutWrapper {
             ForEach(displayedGenres, id: \.value) { genre in
                 NavigationLink(value: genre) {
                     GenreListRow(genre: genre)
                 }
                 .buttonStyle(.plain)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playerVM.currentSong != nil {
+                Color.clear.frame(height: DSLayout.miniPlayerHeight)
             }
         }
     }

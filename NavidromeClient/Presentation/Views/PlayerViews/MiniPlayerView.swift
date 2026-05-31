@@ -104,7 +104,10 @@ struct MiniPlayerView: View {
             .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 6)
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: dragOffset)
             .task(id: song.id) { await loadCover(albumId: song.albumId) }
-            .fullScreenCover(isPresented: $showFullScreen) { FullScreenPlayerView() }
+            .fullScreenCover(isPresented: $showFullScreen) {
+                FullScreenPlayerView()
+            }
+            .contentShape(Rectangle())
 
         }
     }

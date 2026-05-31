@@ -10,7 +10,7 @@ import SwiftUI
 
 struct GridLayoutWrapper<Content: View>: View {
     @ViewBuilder let content: () -> Content
-    
+
     var body: some View {
         ScrollView {
             LazyVGrid(
@@ -20,7 +20,6 @@ struct GridLayoutWrapper<Content: View>: View {
             ) {
                 content()
             }
-            .padding(.bottom, DSLayout.miniPlayerHeight)
         }
         .scrollIndicators(.hidden)
         .padding(.horizontal, DSLayout.screenPadding)
