@@ -8,6 +8,15 @@
 //  - FIXED Bug 04: initialize() guard now correctly matches .failed(_) with
 //    any associated value, not just the empty string literal .failed("")
 //
+//  FIXED (review):
+//  - credentialsObserverTask is now stored and cancelled on deinit (was fire-and-forget leak)
+//  - setupNotificationObservers: try? replaced with do/catch that sets state = .failed
+//  - initialize(): createUnifiedService failure now sets state = .failed instead of leaving
+//    state as .notStarted with no signal to the caller
+//  - performFactoryReset: local state reset before posting notification (was posting with stale state)
+//  - performFactoryReset: state after reset is .notStarted, not .completed
+//  - getCredentials() replaced with direct .credentials property access
+//
 
 import Foundation
 import Observation
@@ -17,7 +26,7 @@ import Observation
 final class AppInitializer {
 
     // MARK: - Initialization State
-    
+
     enum InitializationState: Equatable {
         case notStarted
         case completed
@@ -28,24 +37,38 @@ final class AppInitializer {
     private(set) var isConfigured: Bool = false
 
     private(set) var unifiedService: UnifiedSubsonicService?
-    
+
     // MARK: - Computed Properties
-    
+
     var areServicesReady: Bool {
         return isConfigured && state == .completed
     }
 
     // MARK: - Initialization
 
+    // Stored so the loop can be cancelled on deinit instead of leaking forever.
+    @ObservationIgnored nonisolated(unsafe) private var credentialsObserverTask: Task<Void, Never>?
+
     init() {
         setupNotificationObservers()
     }
-    
+
+    deinit {
+        credentialsObserverTask?.cancel()
+    }
+
     private func setupNotificationObservers() {
-        Task { @MainActor in
+        credentialsObserverTask = Task { @MainActor [weak self] in
             for await notification in NotificationCenter.default.notifications(named: .credentialsUpdated) {
+                guard let self else { break }
                 guard notification.object is ServerCredentials else { continue }
-                try? await self.reinitializeAfterConfiguration()
+                do {
+                    try await self.reinitializeAfterConfiguration()
+                } catch {
+                    // Surface the failure rather than silently swallowing it
+                    self.state = .failed(error.localizedDescription)
+                    AppLogger.general.error("[AppInitializer] Reinitialization after credentials update failed: \(error)")
+                }
             }
         }
     }
@@ -71,12 +94,21 @@ final class AppInitializer {
         }
 
         AppLogger.general.info("[AppInitializer] === Initialization start ===")
-        
-        let credentials = AppConfig.shared.getCredentials()
+
+        let credentials = AppConfig.shared.credentials
         isConfigured = credentials != nil
 
         if let creds = credentials {
-            try createUnifiedService(with: creds)
+            do {
+                try createUnifiedService(with: creds)
+            } catch {
+                // Set .failed so the caller and any state observers know
+                // initialization didn't complete — without this, state would
+                // stay .notStarted with no signal that something went wrong.
+                state = .failed(error.localizedDescription)
+                AppLogger.general.error("[AppInitializer] Service creation failed: \(error)")
+                throw error
+            }
         }
 
         state = .completed
@@ -87,15 +119,15 @@ final class AppInitializer {
 
     func reinitializeAfterConfiguration() async throws {
         AppLogger.general.info("[AppInitializer] Reinitializing after configuration...")
-        
+
         reset()
         try await initialize()
-        
+
         AppLogger.general.info("[AppInitializer] Reinitialization completed")
     }
 
     // MARK: - Service Management
-    
+
     private func createUnifiedService(with creds: ServerCredentials) throws {
         unifiedService = UnifiedSubsonicService(
             baseURL: creds.baseURL,
@@ -109,7 +141,7 @@ final class AppInitializer {
         // ping completes and the UI shows "no connection" on first launch.
         NetworkMonitor.shared.updateConfiguration(isConfigured: true)
         NetworkMonitor.shared.configureService(unifiedService)
-        
+
         AppLogger.general.info("[AppInitializer] UnifiedSubsonicService created and configured")
     }
 
@@ -124,11 +156,11 @@ final class AppInitializer {
         musicLibraryManager: MusicLibraryManager,
         playerVM: PlayerViewModel
     ) {
-        guard state == .completed else {
-            AppLogger.general.warn("[AppInitializer] Cannot configure managers - not initialized (state: \(state))")
+        guard areServicesReady else {
+            AppLogger.general.warn("[AppInitializer] Cannot configure managers - services not ready (state: \(state), isConfigured: \(isConfigured))")
             return
         }
-        
+
         guard let service = unifiedService else {
             AppLogger.general.warn("[AppInitializer] Cannot configure managers - no service")
             return
@@ -146,7 +178,7 @@ final class AppInitializer {
         favoritesManager.configure(service: service)
         exploreManager.configure(service: service)
         musicLibraryManager.configure(service: service)
-        
+
         playerVM.configure(service: service)
 
         AppLogger.general.info("[AppInitializer] ✅ All managers configured successfully")
@@ -159,11 +191,11 @@ final class AppInitializer {
         favoritesManager: FavoritesManager,
         musicLibraryManager: MusicLibraryManager
     ) async {
-        guard state == .completed else {
-            AppLogger.general.warn("[AppInitializer] Cannot load data - not initialized (state: \(state))")
+        guard areServicesReady else {
+            AppLogger.general.warn("[AppInitializer] Cannot load data - services not ready (state: \(state), isConfigured: \(isConfigured))")
             return
         }
-        
+
         guard unifiedService != nil else {
             AppLogger.general.warn("[AppInitializer] Cannot load data - no service")
             return
@@ -176,7 +208,7 @@ final class AppInitializer {
             group.addTask { await favoritesManager.loadFavoriteSongs() }
             group.addTask { await musicLibraryManager.loadInitialDataIfNeeded() }
         }
-        
+
         AppLogger.general.info("[AppInitializer] ✅ Initial data loaded")
     }
 
@@ -184,22 +216,24 @@ final class AppInitializer {
 
     func performFactoryReset() async {
         AppLogger.general.info("[AppInitializer] === Factory Reset Start ===")
-        
+
         AppConfig.shared.clearCredentials()
-        
-        NetworkMonitor.shared.updateConfiguration(isConfigured: false)
-        NetworkMonitor.shared.reset()
-        
-        NotificationCenter.default.post(name: .factoryResetRequested, object: nil)
-        
+
+        // Reset all local state BEFORE posting the notification.
+        // Any observer that fires immediately will otherwise read stale values
+        // (e.g. isConfigured = true, unifiedService still set).
         unifiedService = nil
         isConfigured = false
-        state = .completed
+        state = .notStarted  // .notStarted, not .completed — the app needs to go through setup again
         NetworkMonitor.shared.configureService(nil)
-        
+        NetworkMonitor.shared.updateConfiguration(isConfigured: false)
+        NetworkMonitor.shared.reset()
+
+        NotificationCenter.default.post(name: .factoryResetRequested, object: nil)
+
         AppLogger.general.info("[AppInitializer] === Factory Reset Complete ===")
     }
-    
+
     // MARK: - Reset
 
     func reset() {
@@ -207,7 +241,7 @@ final class AppInitializer {
         state = .notStarted
         isConfigured = false
         NetworkMonitor.shared.configureService(nil)
-        
+
         AppLogger.general.info("[AppInitializer] State reset")
     }
 }

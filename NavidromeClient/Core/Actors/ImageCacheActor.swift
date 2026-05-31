@@ -6,6 +6,14 @@
 //  Owns image memory cache, decoding, scaling, and deduplication.
 //  No network. No UI state. No MainActor.
 //
+//  FIXED (review):
+//  - cachedImage() unified with peekCachedImage() — both were doing the same
+//    work; actor isolation on cachedImage() was an unnecessary hop since
+//    NSCache is thread-safe. One nonisolated implementation now serves both.
+//  - commonSizes defined once as a static constant (was copy-pasted in two places)
+//  - diskCacheKey and requestKey were identical — collapsed into one method
+//  - CacheType .rawValue string redundancy removed ("album" = "album")
+//
 
 import Foundation
 import UIKit
@@ -13,11 +21,15 @@ import UIKit
 actor ImageCacheActor {
 
     // MARK: - Memory Cache
+
     // nonisolated(unsafe): NSCache is thread-safe by design, so concurrent
-    // reads and writes from any context are safe. This lets peekCachedImage()
-    // read from them synchronously without an actor hop.
-    nonisolated(unsafe) private let albumCache  = NSCache<NSString, AlbumCoverArt>()
-    nonisolated(unsafe) private let artistCache = NSCache<NSString, AlbumCoverArt>()
+    // reads and writes from any context are safe. This lets cachedImage()
+    // read synchronously without an actor hop.
+    @ObservationIgnored nonisolated(unsafe) private let albumCache  = NSCache<NSString, AlbumCoverArt>()
+    @ObservationIgnored nonisolated(unsafe) private let artistCache = NSCache<NSString, AlbumCoverArt>()
+
+    // Sizes tried when an exact match isn't cached — used for downscale fallback.
+    private static let commonSizes = [80, 100, 150, 200, 240, 300, 400, 800, 1000]
 
     // MARK: - In-flight deduplication
     // Key: "\(type)_\(id)_\(size)"
@@ -32,12 +44,12 @@ actor ImageCacheActor {
     init(storage: PersistentImageCache = .shared) {
         self.storage = storage
 
-        albumCache.countLimit       = 300
-        albumCache.totalCostLimit   = 120 * 1024 * 1024
+        albumCache.countLimit      = 300
+        albumCache.totalCostLimit  = 120 * 1024 * 1024
         albumCache.evictsObjectsWithDiscardedContent = false
 
-        artistCache.countLimit      = 200
-        artistCache.totalCostLimit  = 60 * 1024 * 1024
+        artistCache.countLimit     = 200
+        artistCache.totalCostLimit = 60 * 1024 * 1024
         artistCache.evictsObjectsWithDiscardedContent = false
     }
 
@@ -45,8 +57,10 @@ actor ImageCacheActor {
 
     /// Returns a cached image without hitting disk or network.
     /// Tries exact size first, then downsizes a larger cached variant.
-    func cachedImage(for id: String, type: CacheType, size: Int) -> UIImage? {
-        let cache = cache(for: type)
+    /// Safe to call from any isolation context — NSCache is thread-safe.
+    /// Used on the MainActor (e.g. updateNowPlayingInfo) to avoid an await.
+    nonisolated func cachedImage(for id: String, type: CacheType, size: Int) -> UIImage? {
+        let cache = nonisolatedCache(for: type)
         let key   = cacheKey(id: id, size: size) as NSString
 
         if let art = cache.object(forKey: key),
@@ -55,8 +69,7 @@ actor ImageCacheActor {
         }
 
         // Try downscaling a larger cached size
-        let commonSizes = [80, 100, 150, 200, 240, 300, 400, 800, 1000]
-        for larger in commonSizes.filter({ $0 > size }).sorted() {
+        for larger in Self.commonSizes.filter({ $0 > size }).sorted() {
             let largerKey = cacheKey(id: id, size: larger) as NSString
             if let art = cache.object(forKey: largerKey),
                let img = art.getImage(for: size) {
@@ -69,40 +82,19 @@ actor ImageCacheActor {
         return nil
     }
 
-    /// Synchronous peek into the NSCache — safe to call from any isolation
-    /// context because NSCache itself is thread-safe. Used by
-    /// CoverArtManager.getAlbumImage() on the MainActor so that
-    /// updateNowPlayingInfo() can supply lock-screen artwork without an await.
-    nonisolated func peekCachedImage(for id: String, type: CacheType, size: Int) -> UIImage? {
-        let cache = type == .album ? albumCache : artistCache
-        let key   = "\(id)_\(size)" as NSString
-        if let art = cache.object(forKey: key) {
-            return art.getImage(for: size)
-        }
-        // Try any larger cached size
-        let commonSizes = [80, 100, 150, 200, 240, 300, 400, 800, 1000]
-        for larger in commonSizes.filter({ $0 > size }).sorted() {
-            let largerKey = "\(id)_\(larger)" as NSString
-            if let art = cache.object(forKey: largerKey) {
-                return art.getImage(for: size)
-            }
-        }
-        return nil
-    }
-
     // MARK: - Store image in memory
 
     func store(image: UIImage, for id: String, type: CacheType, size: Int) {
-        let key     = cacheKey(id: id, size: size) as NSString
+        let key      = cacheKey(id: id, size: size) as NSString
         let coverArt = AlbumCoverArt(image: image, size: size)
-        cache(for: type).setObject(coverArt, forKey: key, cost: coverArt.memoryFootprint)
+        nonisolatedCache(for: type).setObject(coverArt, forKey: key, cost: coverArt.memoryFootprint)
     }
 
     // MARK: - Disk read → memory store
 
     /// Loads from disk cache. Returns nil if not on disk.
     func loadFromDisk(for id: String, type: CacheType, size: Int) async -> UIImage? {
-        let diskKey = diskCacheKey(id: id, type: type, size: size)
+        let diskKey = storedKey(id: id, type: type, size: size)
         guard let image = await storage.image(for: diskKey, size: size) else { return nil }
         store(image: image, for: id, type: type, size: size)
         return image
@@ -111,7 +103,7 @@ actor ImageCacheActor {
     // MARK: - Persist image to disk
 
     func saveToDisk(image: UIImage, for id: String, type: CacheType, size: Int) async {
-        let diskKey = diskCacheKey(id: id, type: type, size: size)
+        let diskKey = storedKey(id: id, type: type, size: size)
         await storage.store(image, for: diskKey, size: size)
     }
 
@@ -125,17 +117,13 @@ actor ImageCacheActor {
         size: Int,
         loader: @escaping @Sendable () async -> UIImage?
     ) async -> UIImage? {
-        let key = requestKey(id: id, type: type, size: size)
+        let key = storedKey(id: id, type: type, size: size)
 
-        // Already in-flight — await its result
         if let existing = inflightTasks[key] {
             return await existing.value
         }
 
-        // Start new task
-        let task = Task<UIImage?, Never> {
-            await loader()
-        }
+        let task = Task<UIImage?, Never> { await loader() }
         inflightTasks[key] = task
 
         let result = await task.value
@@ -155,25 +143,24 @@ actor ImageCacheActor {
     // MARK: - Cache type
 
     enum CacheType: String, Sendable {
-        case album  = "album"
-        case artist = "artist"
+        case album
+        case artist
     }
 
     // MARK: - Private helpers
 
-    private func cache(for type: CacheType) -> NSCache<NSString, AlbumCoverArt> {
+    /// nonisolated cache accessor — safe because both caches are nonisolated(unsafe).
+    nonisolated private func nonisolatedCache(for type: CacheType) -> NSCache<NSString, AlbumCoverArt> {
         type == .album ? albumCache : artistCache
     }
 
-    private func cacheKey(id: String, size: Int) -> String {
+    nonisolated private func cacheKey(id: String, size: Int) -> String {
         "\(id)_\(size)"
     }
 
-    private func diskCacheKey(id: String, type: CacheType, size: Int) -> String {
-        "\(type.rawValue)_\(id)_\(size)"
-    }
-
-    private func requestKey(id: String, type: CacheType, size: Int) -> String {
+    /// Single key format used for both disk storage and inflight deduplication.
+    /// Format: "\(type)_\(id)_\(size)"
+    private func storedKey(id: String, type: CacheType, size: Int) -> String {
         "\(type.rawValue)_\(id)_\(size)"
     }
 }

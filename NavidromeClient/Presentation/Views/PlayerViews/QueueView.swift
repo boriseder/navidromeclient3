@@ -204,7 +204,7 @@ struct CurrentlyPlayingRow: View {
             }
             .task(id: song.albumId) {
                 guard let albumId = song.albumId else { cover = nil; return }
-                if let cached = await coverArtManager.imageCache.cachedImage(
+                if let cached = coverArtManager.imageCache.cachedImage(
                     for: albumId, type: .album, size: ImageContext.list.size
                 ) { cover = cached; return }
                 cover = await coverArtManager.loadAlbumImage(for: albumId, context: .list)
@@ -264,7 +264,7 @@ struct QueueSongRow: View {
                 }
                 .task(id: song.albumId) {
                     guard let albumId = song.albumId else { cover = nil; return }
-                    if let cached = await coverArtManager.imageCache.cachedImage(
+                    if let cached = coverArtManager.imageCache.cachedImage(
                         for: albumId, type: .album, size: ImageContext.list.size
                     ) { cover = cached; return }
                     cover = await coverArtManager.loadAlbumImage(for: albumId, context: .list)

@@ -255,7 +255,7 @@ struct ExploreView: View {
     
     private func loadInitialData() async {
         // Cache username
-        if let username = appConfig.getCredentials()?.username {
+        if let username = appConfig.credentials?.username {
             cachedUsername = username
         }
         

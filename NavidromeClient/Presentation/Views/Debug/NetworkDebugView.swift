@@ -11,6 +11,7 @@ struct NetworkDebugView: View {
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(OfflineManager.self) private var offlineManager
     @Environment(ConnectionViewModel.self) private var connectionManager
+    @Environment(AppConfig.self) private var appConfig
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
@@ -76,7 +77,7 @@ struct NetworkDebugView: View {
                 VStack(spacing: 12) {
                     Button {
                         Task {
-                            await connectionManager.testConnection(credentials: AppConfig.shared.getCredentials())
+                            await connectionManager.testConnection(credentials: appConfig.credentials)
                         }
                     } label: {
                         HStack {

@@ -59,7 +59,7 @@ struct AlbumImageView: View {
         .animation(.easeInOut(duration: 0.3), value: image != nil)
         .task(id: "\(targetAlbumId)_\(context.size)") {
             // Fast path: check actor memory cache
-            if let cached = await coverArtManager.imageCache.cachedImage(
+            if let cached = coverArtManager.imageCache.cachedImage(
                 for: targetAlbumId, type: .album, size: context.size
             ) {
                 self.image = cached

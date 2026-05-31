@@ -149,7 +149,7 @@ struct MiniPlayerView: View {
 
     private func loadCover(albumId: String?) async {
         guard let albumId else { coverImage = nil; return }
-        if let cached = await coverArtManager.imageCache.cachedImage(
+        if let cached = coverArtManager.imageCache.cachedImage(
             for: albumId, type: .album, size: ImageContext.miniPlayer.size
         ) {
             coverImage = cached; return

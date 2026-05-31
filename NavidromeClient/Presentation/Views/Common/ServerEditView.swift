@@ -85,7 +85,7 @@ struct ServerEditView: View {
             .padding(.vertical, 24)
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle(appConfig.getCredentials() != nil ? "Edit Server" : "Server Setup")
+        .navigationTitle(appConfig.credentials != nil ? "Edit Server" : "Server Setup")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: prefillExistingCredentials)
         .onChange(of: host) { _, _ in resetConnectionResult() }
@@ -388,7 +388,7 @@ struct ServerEditView: View {
     // MARK: - Logic
 
     private func prefillExistingCredentials() {
-        guard let creds = appConfig.getCredentials() else { return }
+        guard let creds = appConfig.credentials else { return }
         let url = creds.baseURL
         scheme = url.scheme == "https" ? .https : .http
         host = url.host ?? ""

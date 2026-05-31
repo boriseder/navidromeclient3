@@ -77,7 +77,7 @@ struct ServerSection: View {
 
     var body: some View {
         Section {
-            if let creds = appConfig.getCredentials() {
+            if let creds = appConfig.credentials {
                 SettingsRow(title: "Server", value: creds.baseURL.absoluteString)
                 SettingsRow(title: "User", value: creds.username)
                 SettingsRow(
@@ -137,7 +137,7 @@ struct DebugSection: View {
                 Label("Network Debug", systemImage: "network")
             }
             NavigationLink(destination: DesignSystemGallery()) {
-                Label("Deign System Gallery", systemImage: "paintpalette")
+                Label("Design System Gallery", systemImage: "paintpalette")
             }
         } header: {
             Text("Developer")

@@ -4,13 +4,8 @@
 //
 //  Created by Boris Eder on 03.05.26.
 //
-
-
-//
-//  AppStorageActor.swift
-//  NavidromeClient
-//
-//  Temporary singleton wrapper. Replaced by DI in Step 7.
+//  Temporary singleton wrapper — to be replaced with injected StorageActor
+//  once the DI layer is in place.
 //
 
 enum AppStorageActor {

@@ -77,29 +77,21 @@ class CoverArtManager {
     }
 
     // MARK: - Synchronous memory reads (for views and lock screen)
-    // These are hot-path reads that must not suspend. They use the nonisolated
-    // NSCache peek on ImageCacheActor, which is thread-safe.
-    // If the image hasn't been loaded yet they return nil — callers that need
-    // a guaranteed result should use loadAlbumImage(for:context:) in a .task.
+    // Hot-path reads that never suspend. cachedImage() on ImageCacheActor is
+    // nonisolated — NSCache is thread-safe so no actor hop is needed.
 
     func getAlbumImage(for albumId: String, context: ImageContext) -> UIImage? {
-        imageCache.peekCachedImage(for: albumId, type: .album, size: context.size)
+        imageCache.cachedImage(for: albumId, type: .album, size: context.size)
     }
 
     func getArtistImage(for artistId: String, context: ImageContext) -> UIImage? {
-        imageCache.peekCachedImage(for: artistId, type: .artist, size: context.size)
+        imageCache.cachedImage(for: artistId, type: .artist, size: context.size)
     }
 
     func getSongImage(for song: Song, context: ImageContext) -> UIImage? {
         guard let albumId = song.albumId else { return nil }
         return getAlbumImage(for: albumId, context: context)
     }
-
-    // MARK: - Synchronous cache peek (used by preload guards and MiniPlayer)
-    // Calls into the actor synchronously via assumeIsolated-free pattern:
-    // the caller must already hold a cached value from a prior async load.
-    // For the MiniPlayer and NowPlaying overlay we keep the old NSCache
-    // peek via a nonisolated helper on ImageCacheActor.
 
     // MARK: - Async image loading (main entry points)
 
@@ -143,7 +135,7 @@ class CoverArtManager {
         let requestKey = "\(type.rawValue)_\(id)_\(size)"
 
         // 1. Memory check (actor-isolated)
-        if let cached = await imageCache.cachedImage(for: id, type: type, size: size) {
+        if let cached = imageCache.cachedImage(for: id, type: type, size: size) {
             return cached
         }
 
