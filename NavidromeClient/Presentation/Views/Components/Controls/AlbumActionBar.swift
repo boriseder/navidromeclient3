@@ -50,14 +50,10 @@ struct AlbumActionBar: View {
                 accentColor: theme.accent
             ) {
                 Task {
-                    if isAlbumCurrentlyLoaded {
-                        playerVM.toggleShuffle()
-                    } else {
-                        await shuffleAlbum()
-                    }
+                    await shuffleAlbum() // always re-shuffle, regardless of loaded state
                 }
             }
-
+            
             // ── Download (secondary, icon-only) ─────────────────────────
             DownloadButton(album: album, songs: songs)
         }

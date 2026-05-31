@@ -13,11 +13,15 @@ struct DownloadButton: View {
     let songs: [Song]
 
     @Environment(DownloadManager.self) var downloadManager
+    @Environment(NetworkMonitor.self) var networkMonitor
     @Environment(ThemeManager.self) var theme
+
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         let state = downloadManager.getDownloadState(for: album.id)
         let progress = downloadManager.downloadProgress[album.id] ?? 0.0
+        let isOfflineAndIdle = !networkMonitor.canLoadOnlineContent && state == .idle
 
         Button {
             handleTap(state: state)
@@ -25,11 +29,13 @@ struct DownloadButton: View {
             ZStack {
                 // Background circle — matches pill style
                 Circle()
-                    .fill(state == .downloaded ? theme.textColor.opacity(0.15) : theme.textColor.opacity(0.08))
+                    .fill(state == .downloaded
+                          ? theme.textColor.opacity(0.15)
+                          : theme.textColor.opacity(isOfflineAndIdle ? 0.04 : 0.08))
                     .overlay {
                         Circle()
                             .stroke(
-                                theme.textColor.opacity(0.18),
+                                theme.textColor.opacity(isOfflineAndIdle ? 0.08 : 0.18),
                                 lineWidth: 1
                             )
                     }
@@ -40,10 +46,13 @@ struct DownloadButton: View {
                 case .idle:
                     Image(systemName: "arrow.down")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(theme.textColor.opacity(0.8))
+                        .foregroundStyle(theme.textColor.opacity(isOfflineAndIdle ? 0.3 : 0.8))
+
                 case .error:
-                    Image(systemName: "arrow.down")
-                        .foregroundStyle(.red.opacity(0.8))  // or an exclamationmark.triangle
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.red.opacity(0.8))
+
                 case .downloading:
                     ZStack {
                         Circle()
@@ -78,9 +87,22 @@ struct DownloadButton: View {
             }
         }
         .frame(width: 44, height: 44)
-        .disabled(state == .cancelling)
+        .disabled(state == .cancelling || isOfflineAndIdle)
         .buttonStyle(ScaleButtonStyle())
         .animation(.easeInOut(duration: 0.15), value: state)
+        .confirmationDialog(
+            "Remove \"\(album.name)\"?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Remove Download", role: .destructive) {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                downloadManager.deleteDownload(albumId: album.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will delete the downloaded files from your device.")
+        }
     }
 
     // MARK: - Actions
@@ -94,7 +116,7 @@ struct DownloadButton: View {
         case .downloading:
             downloadManager.cancelDownload(albumId: album.id)
         case .downloaded:
-            downloadManager.deleteDownload(albumId: album.id)
+            showDeleteConfirmation = true  // 👈 confirm before deleting
         case .cancelling:
             break
         }
